@@ -691,3 +691,26 @@ func TestSeqSwitchAutosaves(t *testing.T) {
 	assert.Equal(t, 6, u.seq.Tracks(), "extra tracks survive slot navigation")
 	assert.True(t, u.seq.Step(5, 2), "programmed step survives slot navigation")
 }
+
+// TestSeqCopyAtLastSlotIsNoop verifies copyCurrent does nothing when the SEQ
+// knob is already on the last slot: there is no slot after it to duplicate
+// into, so onCopy must not be invoked (copying onto the current slot is a
+// silent no-op or a misleading "no free slot" error).
+func TestSeqCopyAtLastSlotIsNoop(t *testing.T) {
+	const maxSlots = 16
+	seq := sequencer.New(8, 4, func(int, uint8) {})
+	var copied []int
+	r := newSequencerRack(seq, func() {}, func(bool) {}, maxSlots,
+		func(int) {}, func(slot int) { copied = append(copied, slot) },
+		func() {}, func() {})
+
+	// Copying from a middle slot targets the next slot.
+	r.SetSlot(3)
+	r.copyCurrent()
+	require.Equal(t, []int{4}, copied)
+
+	// Copying from the last slot must be a no-op (nowhere to copy into).
+	r.SetSlot(maxSlots)
+	r.copyCurrent()
+	assert.Equal(t, []int{4}, copied, "copy at last slot should not fire onCopy")
+}

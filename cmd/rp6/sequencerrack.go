@@ -251,8 +251,12 @@ func (r *sequencerRack) copyCurrent() {
 	if r.onCopy == nil {
 		return
 	}
-	target := min(r.slotStep.Value()+1, r.maxSlots)
-	r.onCopy(target)
+	// No slot after the last one to copy into; copying onto the current slot
+	// would be a silent no-op (or a misleading "no free slot" error), so bail.
+	if r.slotStep.Value() >= r.maxSlots {
+		return
+	}
+	r.onCopy(r.slotStep.Value() + 1)
 }
 
 // syncFromEngine refreshes all widgets to match the engine (after a load).
