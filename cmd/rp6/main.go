@@ -372,6 +372,7 @@ func (u *ui) floatPad() {
 	u.padFloating = true
 	u.buildPadRack() // fresh object tree owned by the new window
 	w := fyne.CurrentApp().NewWindow("RP6 — Pads")
+	w.SetIcon(appIcon())
 	u.padWin = w
 	w.SetContent(u.padRackObj)
 	w.SetCloseIntercept(func() {
@@ -1667,7 +1668,9 @@ func main() {
 
 	a := app.NewWithID(appID)
 	a.Settings().SetTheme(uitheme.Amber{})
+	a.SetIcon(appIcon())
 	w := a.NewWindow("RP6 — P-6 Pad Controller")
+	w.SetIcon(appIcon())
 
 	u := newUI()
 	u.emuDir = *emuDir

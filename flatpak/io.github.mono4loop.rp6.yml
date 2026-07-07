@@ -26,6 +26,7 @@ finish-args:
   # whichever way the host routes audio. Same pair used by org.rncbc.qtractor.
   - --socket=pulseaudio
   - --filesystem=xdg-run/pipewire-0
+  - --filesystem=xdg-music
 
   # Sequences are persisted to $XDG_DATA_HOME/rp6 (internal/store). No
   # filesystem permission is needed: inside the sandbox XDG_DATA_HOME is

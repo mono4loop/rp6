@@ -11,7 +11,7 @@ BINARY_NAME := rp6
 # Tests deliberately run without tags so Fyne's thread-safety checks stay on.
 TAGS ?= capture wayland migrated_fynedo
 
-.PHONY: build install run test fmt vet check clean serve web android android-release
+.PHONY: build install run test fmt vet check clean serve web android android-release icon
 
 build:
 	go build -tags "$(TAGS)" -ldflags "-s -w" -o build/$(BINARY_NAME) ./cmd/$(BINARY_NAME)
@@ -135,3 +135,16 @@ check: fmt vet test
 
 clean:
 	rm -rf build
+
+# --- Icon --------------------------------------------------------------------
+# The app icon's single source of truth is the SVG embedded into the desktop
+# binary (cmd/rp6/assets/icon.svg, wired via cmd/rp6/icon.go -> a.SetIcon). This
+# target regenerates the derived artifacts from it: the 512x512 PNG referenced
+# by FyneApp.toml + the Android package targets, and the Flatpak icon (which the
+# flatpak manifest installs from flatpak/<app-id>.svg). Needs rsvg-convert
+# (librsvg). Run it after editing the SVG.
+ICON_SRC := cmd/$(BINARY_NAME)/assets/icon.svg
+icon:
+	rsvg-convert -w 512 -h 512 $(ICON_SRC) -o web/icon.png
+	cp $(ICON_SRC) flatpak/io.github.mono4loop.rp6.svg
+	@echo "regenerated web/icon.png + flatpak/io.github.mono4loop.rp6.svg from $(ICON_SRC)"
