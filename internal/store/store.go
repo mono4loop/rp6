@@ -9,6 +9,7 @@ package store
 import (
 	"database/sql"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"slices"
@@ -218,7 +219,10 @@ func (s *Store) List() ([]Entry, error) {
 		if err := rows.Scan(&e.Slot, &e.Name, &ts); err != nil {
 			return nil, err
 		}
-		e.Updated, _ = time.Parse(time.RFC3339, ts)
+		e.Updated, err = time.Parse(time.RFC3339, ts)
+		if err != nil {
+			return nil, fmt.Errorf("store: invalid updated_at %q for slot %d: %w", ts, e.Slot, err)
+		}
 		out = append(out, e)
 	}
 	return out, rows.Err()

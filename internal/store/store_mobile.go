@@ -8,6 +8,7 @@ package store
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
@@ -132,7 +133,10 @@ func (s *Store) List() ([]Entry, error) {
 	out := make([]Entry, 0, len(slots))
 	for _, sl := range slots {
 		r := p.Seqs[sl]
-		up, _ := time.Parse(time.RFC3339, r.Updated)
+		up, err := time.Parse(time.RFC3339, r.Updated)
+		if err != nil {
+			return nil, fmt.Errorf("store: invalid updated_at %q for slot %d: %w", r.Updated, sl, err)
+		}
 		out = append(out, Entry{Slot: sl, Name: r.Name, Updated: up})
 	}
 	return out, nil

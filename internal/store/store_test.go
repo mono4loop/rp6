@@ -238,3 +238,27 @@ func TestLegacyMigration(t *testing.T) {
 	_, _, ok, _ = s2.Load(1)
 	assert.True(t, ok)
 }
+
+// TestListSurfacesCorruptTimestamp verifies List() reports an error when a
+// stored updated_at is not a valid RFC3339 timestamp (data corruption) instead
+// of silently substituting the zero time (rp1m).
+func TestListSurfacesCorruptTimestamp(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "rp6.db")
+	s, err := Open(path, "test")
+	require.NoError(t, err)
+	defer s.Close()
+
+	require.NoError(t, s.Save(1, "seq", []byte("{}")))
+
+	// A healthy List works.
+	entries, err := s.List()
+	require.NoError(t, err)
+	require.Len(t, entries, 1)
+
+	// Corrupt the timestamp directly in the DB.
+	_, err = s.db.Exec(`UPDATE sequences SET updated_at=? WHERE profile=? AND slot=?`, "not-a-timestamp", "test", 1)
+	require.NoError(t, err)
+
+	_, err = s.List()
+	assert.Error(t, err, "corrupt updated_at should surface as an error, not a silent zero time")
+}
