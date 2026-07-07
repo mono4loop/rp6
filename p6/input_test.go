@@ -1,0 +1,95 @@
+package p6
+
+import (
+	"bufio"
+	"bytes"
+	"testing"
+
+	"github.com/stretchr/testify/assert"
+)
+
+// collect parses the whole byte slice and returns the emitted events.
+func collect(t *testing.T, data []byte) []Event {
+	t.Helper()
+	var evs []Event
+	err := parseMIDI(bufio.NewReader(bytes.NewReader(data)), func(e Event) { evs = append(evs, e) })
+	// parseMIDI returns io.EOF at the end of the buffer, which is expected here.
+	assert.Error(t, err)
+	return evs
+}
+
+func TestParseNoteOnPad(t *testing.T) {
+	// Note On ch11 (status 0x9A), note 48 (bank A pad 1), vel 100.
+	evs := collect(t, []byte{0x9A, 48, 100})
+	if assert.Len(t, evs, 1) {
+		e := evs[0]
+		assert.Equal(t, EventNoteOn, e.Type)
+		assert.Equal(t, 11, e.Channel)
+		assert.EqualValues(t, 48, e.Data1)
+		assert.EqualValues(t, 100, e.Data2)
+		bank, pad, err := PadForNote(e.Data1)
+		assert.NoError(t, err)
+		assert.Equal(t, 0, bank)
+		assert.Equal(t, 1, pad)
+	}
+}
+
+func TestParseNoteOnZeroVelIsNoteOff(t *testing.T) {
+	evs := collect(t, []byte{0x9A, 60, 0})
+	if assert.Len(t, evs, 1) {
+		assert.Equal(t, EventNoteOff, evs[0].Type)
+	}
+}
+
+func TestParseRunningStatus(t *testing.T) {
+	// One status byte then two note pairs (running status).
+	evs := collect(t, []byte{0x9A, 48, 100, 53, 90})
+	if assert.Len(t, evs, 2) {
+		assert.Equal(t, EventNoteOn, evs[0].Type)
+		assert.EqualValues(t, 48, evs[0].Data1)
+		assert.Equal(t, EventNoteOn, evs[1].Type)
+		assert.EqualValues(t, 53, evs[1].Data1)
+		assert.EqualValues(t, 90, evs[1].Data2)
+	}
+}
+
+func TestParseRealtimeInterleaved(t *testing.T) {
+	// A clock byte (0xF8) between the status and data must not corrupt the note.
+	evs := collect(t, []byte{0x9A, 0xF8, 48, 100})
+	// Expect: a realtime event and a note-on.
+	var rt, note int
+	for _, e := range evs {
+		switch e.Type {
+		case EventRealTime:
+			rt++
+			assert.EqualValues(t, 0xF8, e.Status)
+		case EventNoteOn:
+			note++
+			assert.EqualValues(t, 48, e.Data1)
+		}
+	}
+	assert.Equal(t, 1, rt)
+	assert.Equal(t, 1, note)
+}
+
+func TestParseControlChangeAndSkips(t *testing.T) {
+	// CC ch15 (0xBE) cc7 val64; then a sysex that must be skipped; then a PC.
+	data := []byte{0xBE, 7, 64, 0xF0, 1, 2, 3, 0xF7, 0xCF, 5}
+	evs := collect(t, data)
+	var cc, pc int
+	for _, e := range evs {
+		switch e.Type {
+		case EventControlChange:
+			cc++
+			assert.Equal(t, 15, e.Channel)
+			assert.EqualValues(t, 7, e.Data1)
+			assert.EqualValues(t, 64, e.Data2)
+		case EventProgramChange:
+			pc++
+			assert.Equal(t, 16, e.Channel)
+			assert.EqualValues(t, 5, e.Data1)
+		}
+	}
+	assert.Equal(t, 1, cc)
+	assert.Equal(t, 1, pc)
+}

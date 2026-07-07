@@ -1,0 +1,7 @@
+/rp6
+/build
+/.flatpak-builder/
+/docs/hardware/macropad/__pycache__/
+.kata.local.toml
+*.apk
+/rp6-release.keystore

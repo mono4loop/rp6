@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>io.github.mono4loop.rp6</id>
+  <name>RP6</name>
+  <summary>Touch-friendly pad controller for the Roland P-6 sampler</summary>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>MIT</project_license>
+  <developer id="io.github.mono4loop">
+    <name>Sergio Rubio</name>
+  </developer>
+  <description>
+    <p>
+      RP6 is a desktop GUI that drives a Roland P-6 (AIRA Compact sampler)
+      over its class-compliant USB MIDI port. It provides a 4x6 grid of
+      finger-friendly pads across banks A-H, transport and tempo controls,
+      delay/reverb sliders, a per-pad effects rack, and a host-side step
+      sequencer with SQLite-backed sequence storage.
+    </p>
+    <p>
+      RP6 can also run without the hardware attached, using a built-in
+      sample-based emulator for testing and offline use.
+    </p>
+  </description>
+  <launchable type="desktop-id">io.github.mono4loop.rp6.desktop</launchable>
+  <categories>
+    <category>Audio</category>
+    <category>AudioVideo</category>
+    <category>Music</category>
+  </categories>
+  <url type="homepage">https://github.com/mono4loop/rp6</url>
+  <url type="bugtracker">https://github.com/mono4loop/rp6/issues</url>
+  <content_rating type="oars-1.1"/>
+  <releases>
+    <release version="0.1.0" date="2026-01-01">
+      <description>
+        <p>Initial release.</p>
+      </description>
+    </release>
+  </releases>
+</component>

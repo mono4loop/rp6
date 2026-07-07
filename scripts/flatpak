@@ -1,0 +1,82 @@
+#!/usr/bin/env bash
+# Build (and optionally install/run) the rp6 flatpak locally.
+#
+# Prerequisites:
+#   flatpak install flathub org.freedesktop.Platform//25.08 \
+#       org.freedesktop.Sdk//25.08 org.freedesktop.Sdk.Extension.golang//25.08
+#
+# This drives flatpak-builder against flatpak/io.github.mono4loop.rp6.yml.
+# The manifest currently builds straight from a `dir` source (this checkout)
+# with network access enabled during the build, so it is NOT yet suitable
+# for a Flathub submission (which requires fully vendored, offline builds).
+# It is meant for local packaging/testing.
+#
+# Usage:
+#   scripts/flatpak build            # build only, into build/flatpak
+#   scripts/flatpak install          # build + install --user
+#   scripts/flatpak bundle           # build + export a single-file .flatpak
+#   scripts/flatpak run              # install (if needed) + run
+#   scripts/flatpak clean            # remove the local build dir
+set -euo pipefail
+
+root_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+manifest="$root_dir/flatpak/io.github.mono4loop.rp6.yml"
+app_id="io.github.mono4loop.rp6"
+build_dir="$root_dir/build/flatpak"
+repo_dir="$root_dir/build/flatpak-repo"
+bundle_out="$root_dir/build/rp6.flatpak"
+
+require() {
+	command -v "$1" >/dev/null 2>&1 || {
+		echo "error: '$1' is required but not found in PATH" >&2
+		exit 1
+	}
+}
+
+cmd_build() {
+	require flatpak-builder
+	mkdir -p "$(dirname "$build_dir")"
+	flatpak-builder --force-clean --user "$build_dir" "$manifest"
+}
+
+cmd_install() {
+	require flatpak-builder
+	flatpak-builder --force-clean --user --install "$build_dir" "$manifest"
+}
+
+# cmd_bundle exports the build into a local OSTree repo, then packs it into a
+# single distributable file (build/rp6.flatpak) that anyone can install with
+# `flatpak install --user rp6.flatpak` — the same artifact the CI release builds.
+cmd_bundle() {
+	require flatpak-builder
+	require flatpak
+	mkdir -p "$(dirname "$build_dir")"
+	flatpak-builder --force-clean --repo="$repo_dir" "$build_dir" "$manifest"
+	flatpak build-bundle "$repo_dir" "$bundle_out" "$app_id"
+	echo "wrote $bundle_out"
+	echo "install with: flatpak install --user \"$bundle_out\""
+}
+
+cmd_run() {
+	require flatpak
+	if ! flatpak info --user "$app_id" >/dev/null 2>&1; then
+		cmd_install
+	fi
+	flatpak run --user "$app_id"
+}
+
+cmd_clean() {
+	rm -rf "$build_dir" "$repo_dir" "$bundle_out"
+}
+
+case "${1:-build}" in
+build) cmd_build ;;
+install) cmd_install ;;
+bundle) cmd_bundle ;;
+run) cmd_run ;;
+clean) cmd_clean ;;
+*)
+	echo "usage: $0 {build|install|bundle|run|clean}" >&2
+	exit 1
+	;;
+esac

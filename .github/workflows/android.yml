@@ -1,0 +1,77 @@
+name: Android APK
+
+# Build a signed release APK (targetSdkVersion 35) on every version tag and
+# attach it to the GitHub Release, signed with the SAME key you use locally so
+# builds from either place upgrade over each other.
+#
+# One-time setup (use your own keystore, or the dev one `make android-release`
+# generates, i.e. rp6-release.keystore):
+#   1. base64 -w0 rp6-release.keystore   # copy the output
+#   2. Add these repository secrets (Settings -> Secrets and variables -> Actions):
+#        ANDROID_KEYSTORE_BASE64    = <the base64 from step 1>
+#        ANDROID_KEYSTORE_PASSWORD  = <store password>   (dev default: android)
+#        ANDROID_KEY_PASSWORD       = <key password>     (dev default: android)
+#        ANDROID_KEY_ALIAS          = <key alias>        (dev default: rp6)
+#   Never commit the .keystore itself (it's gitignored).
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write # attach the APK to the release
+
+env:
+  # Overridable via repo Actions variables (gh variable set …), else these
+  # defaults. ANDROID_ABI: `android/arm64` for phones, `android` for universal.
+  ANDROID_ABI: ${{ vars.ANDROID_ABI || 'android/arm64' }}
+  NDK_VERSION: ${{ vars.ANDROID_NDK_VERSION || '27.2.12479018' }}
+
+jobs:
+  apk:
+    name: Build signed APK
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.26.x"
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: android-actions/setup-android@v3
+
+      - name: Install SDK packages + NDK
+        run: |
+          sdkmanager "platform-tools" "platforms;android-35" "build-tools;35.0.0" "ndk;${NDK_VERSION}"
+          echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/${NDK_VERSION}" >> "$GITHUB_ENV"
+
+      - name: Install fyne tool
+        run: |
+          go install fyne.io/tools/cmd/fyne@v1.7.2
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+
+      - name: Decode signing keystore
+        run: echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 -d > "$RUNNER_TEMP/release.keystore"
+
+      - name: Build signed release APK
+        env:
+          KEYSTORE: ${{ runner.temp }}/release.keystore
+          STOREPASS: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEYPASS: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+        run: |
+          make android-release \
+            APP_VERSION="${GITHUB_REF_NAME#v}" \
+            APP_BUILD="${{ github.run_number }}"
+
+      - name: Attach to release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: build/android/RP6.apk
+          fail_on_unmatched_files: true

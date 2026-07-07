@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=RP6
+GenericName=P-6 Pad Controller
+Comment=Touch-friendly pad controller for the Roland P-6 sampler
+Exec=rp6
+Icon=io.github.mono4loop.rp6
+Terminal=false
+Categories=Audio;AudioVideo;Music;
+Keywords=MIDI;Roland;P-6;AIRA;sampler;pads;sequencer;
+StartupNotify=true

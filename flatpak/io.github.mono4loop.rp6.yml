@@ -1,0 +1,54 @@
+app-id: io.github.mono4loop.rp6
+runtime: org.freedesktop.Platform
+runtime-version: "25.08"
+sdk: org.freedesktop.Sdk
+sdk-extensions:
+  - org.freedesktop.Sdk.Extension.golang
+command: rp6
+
+finish-args:
+  # GUI. Built with the `wayland` tag (see build-commands), so Fyne's glfw
+  # driver targets GLFW's native Wayland backend rather than X11.
+  - --share=ipc
+  - --socket=wayland
+  - --device=dri
+
+  # The P-6 talks over raw USB MIDI (/dev/snd/midiC*D0) and is metered via a
+  # raw USB-audio capture endpoint (/dev/snd/pcmC*D0c, "capture" build tag).
+  # Neither is exposed through a portal, so the sandbox needs direct device
+  # access. This is the standard tradeoff other MIDI/ALSA flatpak apps make
+  # (e.g. flathub/net.sourceforge.kmetronome, flathub/org.rncbc.qtractor).
+  - --device=all
+
+  # Belt-and-suspenders for the "capture" build's audio backend (malgo /
+  # miniaudio dlopens ALSA/PipeWire at runtime): grants the PipeWire/Pulse
+  # runtime socket in addition to the raw /dev/snd access above, so it works
+  # whichever way the host routes audio. Same pair used by org.rncbc.qtractor.
+  - --socket=pulseaudio
+  - --filesystem=xdg-run/pipewire-0
+
+  # Sequences are persisted to $XDG_DATA_HOME/rp6 (internal/store). No
+  # filesystem permission is needed: inside the sandbox XDG_DATA_HOME is
+  # redirected to the always-writable per-app dir
+  # (~/.var/app/io.github.mono4loop.rp6/data), and store.DefaultPath() honors it.
+
+build-options:
+  # Building from a plain `dir` source needs module downloads, which
+  # flatpak-builder blocks by default. Vendoring the dependencies is
+  # required for a fully offline, Flathub-eligible build; until then this
+  # manifest builds with network access enabled below for local/dev use.
+  build-args:
+    - --share=network
+
+modules:
+  - name: rp6
+    buildsystem: simple
+    build-commands:
+      - /usr/lib/sdk/golang/bin/go build -tags "capture wayland migrated_fynedo" -trimpath -buildvcs=false -ldflags="-s -w" -o rp6 ./cmd/rp6
+      - install -Dm00755 rp6 $FLATPAK_DEST/bin/rp6
+      - install -Dm00644 flatpak/$FLATPAK_ID.desktop $FLATPAK_DEST/share/applications/$FLATPAK_ID.desktop
+      - install -Dm00644 flatpak/$FLATPAK_ID.metainfo.xml $FLATPAK_DEST/share/metainfo/$FLATPAK_ID.metainfo.xml
+      - install -Dm00644 flatpak/$FLATPAK_ID.svg $FLATPAK_DEST/share/icons/hicolor/scalable/apps/$FLATPAK_ID.svg
+    sources:
+      - type: dir
+        path: ..

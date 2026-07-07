@@ -1,0 +1,37 @@
+rp6 "modular-hits" sample kit
+=============================
+
+48 pad samples (A1..H6) for the rp6 P-6 emulator, laid out like the hardware's
+8 banks (A-H) x 6 pads. Run with:
+
+    rp6 -emu samples/modular-hits          # or: RP6_EMU_SAMPLES=samples/modular-hits rp6
+
+(To actually hear it, build with the audio backend: `make run` / `-tags capture`.)
+
+Source & license
+----------------
+All WAV files are one-shot hits from the "Modular-Hits" pack by publicsamples
+(percussive/tonal hits recorded from a modular synth rig):
+
+    https://github.com/publicsamples/Modular-Hits/tree/master/WAV
+
+See that repo for licensing/provenance of the original recordings. Files are
+used as-is (stereo, 16-bit, 44.1kHz PCM) -- no conversion needed.
+
+Unlike the other synth-derived kits (retro-pads/low-register/mid-register/
+high-register), this pack is made of distinct one-shot hits rather than
+chromatic runs of the same patch, so each pad here is a genuinely different
+sound (no pitch-shifted repeats).
+
+Bank layout
+-----------
+A  kicks              E  bass hits
+B  snares              F  chord hits (1/2)
+C  hats                G  chord hits (2/2)
+D  toms                H  fx / textures
+
+Each pad within a bank is a different take from that category, picked spread
+across the source folder so the 6 pads per bank cover a variety of hits
+rather than near-duplicates.
+
+Replace any file with your own <PadLabel>.wav (e.g. A1.wav) to customize a pad.

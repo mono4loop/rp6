@@ -1,0 +1,46 @@
+name: Flatpak
+
+# Build a single-file Flatpak bundle (rp6.flatpak) on every version tag and
+# attach it to the GitHub Release for that tag, using the official
+# flatpak-github-actions (https://github.com/flatpak/flatpak-github-actions).
+#
+# Notes:
+#   * The container image tag MUST match `runtime-version` in
+#     flatpak/io.github.mono4loop.rp6.yml (currently 25.08). Bump both together.
+#     Images live at ghcr.io/flathub-infra/flatpak-github-actions (the Docker Hub
+#     bilelmoussaoui/* mirror lags and lacks 25.08).
+#   * The manifest builds from a `dir` source with network enabled during the
+#     build (not yet vendored for an offline/Flathub build — see scripts/flatpak).
+#     Fine for a downloadable release artifact; not a Flathub submission.
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write # create/upload the release asset
+
+jobs:
+  flatpak:
+    name: Build Flatpak bundle
+    runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/flathub-infra/flatpak-github-actions:freedesktop-25.08
+      options: --privileged
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build bundle
+        uses: flatpak/flatpak-github-actions/flatpak-builder@v6
+        with:
+          bundle: rp6.flatpak
+          manifest-path: flatpak/io.github.mono4loop.rp6.yml
+          cache-key: flatpak-builder-${{ github.sha }}
+
+      - name: Attach to release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: rp6.flatpak
+          fail_on_unmatched_files: true
