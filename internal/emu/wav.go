@@ -255,23 +255,17 @@ func remixChannels(in []float32, srcCh, dstCh int) []float32 {
 	frames := len(in) / srcCh
 	out := make([]float32, frames*dstCh)
 	for f := range frames {
-		// Average the source channels to a mono value, then fan it out. For
-		// stereo->stereo this branch isn't hit; for mono->stereo it duplicates;
-		// for stereo->mono it averages — all sensible defaults for pad samples.
+		// Average the source channels to a single mono value, then fan it out
+		// to every destination channel. Equal-channel counts already returned
+		// above, so this covers mono->stereo (duplicate) and any downmix
+		// (fold all source channels in) — sensible defaults for pad samples.
 		var sum float32
 		for ch := 0; ch < srcCh; ch++ {
 			sum += in[f*srcCh+ch]
 		}
 		mono := sum / float32(srcCh)
-		if srcCh == 1 {
-			mono = in[f] // exact for mono source
-		}
 		for ch := range dstCh {
-			if srcCh >= dstCh && ch < srcCh {
-				out[f*dstCh+ch] = in[f*srcCh+ch] // keep matching channels
-			} else {
-				out[f*dstCh+ch] = mono
-			}
+			out[f*dstCh+ch] = mono
 		}
 	}
 	return out

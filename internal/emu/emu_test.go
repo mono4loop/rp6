@@ -69,6 +69,20 @@ func TestResampleNoOp(t *testing.T) {
 	assert.Equal(t, c.Samples, out)
 }
 
+func TestRemixDownmix(t *testing.T) {
+	// Stereo->mono averages the source channels rather than dropping one.
+	out := remixChannels([]float32{1.0, -1.0}, 2, 1)
+	assert.Equal(t, []float32{0.0}, out)
+
+	// 4ch->2ch folds all source channels in (average fanned out), not dropped.
+	out = remixChannels([]float32{1.0, 3.0, 0.0, 0.0}, 4, 2)
+	assert.Equal(t, []float32{1.0, 1.0}, out)
+
+	// Mono->stereo duplicates.
+	out = remixChannels([]float32{0.5, -0.25}, 1, 2)
+	assert.Equal(t, []float32{0.5, 0.5, -0.25, -0.25}, out)
+}
+
 func TestParsePadLabel(t *testing.T) {
 	cases := []struct {
 		name      string
