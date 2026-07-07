@@ -5,7 +5,6 @@ import (
 	"image/color"
 	"math"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"fyne.io/fyne/v2"
@@ -140,27 +139,12 @@ func (k *Knob) SetPending(on bool) {
 }
 
 func (k *Knob) flashLoop(stop <-chan struct{}) {
-	t := time.NewTicker(180 * time.Millisecond)
-	defer t.Stop()
-	var busy atomic.Bool // coalesce: never queue a refresh while one is pending
-	for {
-		select {
-		case <-stop:
-			return
-		case <-t.C:
-			if busy.Load() {
-				continue
-			}
-			busy.Store(true)
-			fyne.Do(func() {
-				k.flashOn = !k.flashOn
-				if k.plate != nil {
-					k.Refresh()
-				}
-				busy.Store(false)
-			})
+	coalescedTicker(180*time.Millisecond, stop, func() {
+		k.flashOn = !k.flashOn
+		if k.plate != nil {
+			k.Refresh()
 		}
-	}
+	})
 }
 
 func (k *Knob) set(v int) {

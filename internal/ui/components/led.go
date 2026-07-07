@@ -4,7 +4,6 @@ import (
 	"image/color"
 	"math"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"fyne.io/fyne/v2"
@@ -62,30 +61,14 @@ func (l *LED) StartPulse() {
 	l.mu.Unlock()
 
 	go func() {
-		t := time.NewTicker(40 * time.Millisecond)
-		defer t.Stop()
 		phase := 0.0
-		var pending atomic.Bool // coalesce: never queue a refresh while one is pending
-		for {
-			select {
-			case <-stop:
-				return
-			case <-t.C:
-				if pending.Load() {
-					continue // the render loop hasn't drained the last refresh yet
-				}
-				phase += 0.12 // ~2s per breath
-				p := 0.4 + 0.6*(0.5+0.5*math.Sin(phase))
-				pending.Store(true)
-				fyne.Do(func() {
-					l.pulse = p
-					if l.body != nil {
-						l.Refresh()
-					}
-					pending.Store(false)
-				})
+		coalescedTicker(40*time.Millisecond, stop, func() {
+			phase += 0.12 // ~2s per breath
+			l.pulse = 0.4 + 0.6*(0.5+0.5*math.Sin(phase))
+			if l.body != nil {
+				l.Refresh()
 			}
-		}
+		})
 	}()
 }
 
