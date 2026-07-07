@@ -3,7 +3,7 @@
 A touch-friendly controller for the **Roland P-6** (AIRA Compact sampler) — plus
 a built-in software sampler and sequencer so you can play it even without the hardware.
 
-Works on Linux desktop, in the browser (experimental), and on Android. [Fyne](https://fyne.io) powered.
+Works on Linux desktop, [in the browser](https://rp6.rbel.co) (experimental), and on Android. [Fyne](https://fyne.io) powered.
 
 Supports Roland P-6 sampler and [Adafruit Macropad](/docs/hardware/macropad/README.md) as external USB MIDI hardware.
 
