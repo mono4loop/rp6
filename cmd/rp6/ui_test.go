@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"errors"
+	"log"
 	"os"
 	"path/filepath"
 	"sync"
@@ -741,4 +742,26 @@ func TestEmuDirRememberedAcrossRestart(t *testing.T) {
 	require.NoError(t, os.WriteFile(f, []byte("x"), 0o644))
 	u.rememberEmuDir(f)
 	assert.Equal(t, "", u.savedEmuDir())
+}
+
+// TestDeviceFailedLogsError verifies the real disconnect reason is logged (once
+// per connection) so field reports have something to diagnose, rather than the
+// error being silently discarded (a673).
+func TestDeviceFailedLogsError(t *testing.T) {
+	u := newTestUI(t)
+	u.useEmu = true // avoid the hardware->emulator fallback path
+
+	var buf bytes.Buffer
+	old := log.Writer()
+	log.SetOutput(&buf)
+	defer log.SetOutput(old)
+
+	gen := u.devGen.Load()
+	u.deviceFailed(gen, errors.New("broken pipe"))
+	assert.Contains(t, buf.String(), "broken pipe")
+
+	// A second failure on the same connection is deduped (no repeat log).
+	buf.Reset()
+	u.deviceFailed(gen, errors.New("broken pipe"))
+	assert.NotContains(t, buf.String(), "broken pipe")
 }

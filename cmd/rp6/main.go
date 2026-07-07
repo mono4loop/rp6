@@ -1463,6 +1463,7 @@ func (u *ui) deviceFailed(gen uint64, err error) {
 	if !u.devLost.CompareAndSwap(false, true) {
 		return // already reported for this connection
 	}
+	log.Printf("rp6: device failed: %v", err)
 	if u.clock != nil {
 		_ = u.clock.Stop()
 	}
