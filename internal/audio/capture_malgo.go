@@ -23,6 +23,8 @@ type malgoCapturer struct {
 
 	mu sync.Mutex
 	fn FrameFunc
+
+	buf []float32 // reused across callbacks to avoid per-callback allocation
 }
 
 // OpenCapture opens the first capture device whose name contains nameMatch
@@ -97,6 +99,9 @@ func OpenCapture(nameMatch string) (Capturer, error) {
 }
 
 // onData converts miniaudio's little-endian float32 byte buffer into samples.
+// miniaudio calls this serially from a single audio thread, so the reused scratch
+// buffer needs no lock. fn must consume samples synchronously (not retain the
+// slice), as the buffer is overwritten on the next callback.
 func (c *malgoCapturer) onData(_, in []byte, frames uint32) {
 	c.mu.Lock()
 	fn := c.fn
@@ -105,7 +110,10 @@ func (c *malgoCapturer) onData(_, in []byte, frames uint32) {
 		return
 	}
 	n := len(in) / 4
-	samples := make([]float32, n)
+	if cap(c.buf) < n {
+		c.buf = make([]float32, n)
+	}
+	samples := c.buf[:n]
 	for i := 0; i < n; i++ {
 		samples[i] = math.Float32frombits(binary.LittleEndian.Uint32(in[i*4:]))
 	}
