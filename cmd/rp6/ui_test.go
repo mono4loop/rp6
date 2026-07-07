@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"errors"
+	"os"
 	"path/filepath"
 	"sync"
 	"testing"
@@ -713,4 +714,31 @@ func TestSeqCopyAtLastSlotIsNoop(t *testing.T) {
 	r.SetSlot(maxSlots)
 	r.copyCurrent()
 	assert.Equal(t, []int{4}, copied, "copy at last slot should not fire onCopy")
+}
+
+// TestEmuDirRememberedAcrossRestart covers the app-preferences persistence that
+// lets a runtime-picked emulator pak survive a restart (vxrv): rememberEmuDir
+// stores the directory and savedEmuDir returns it, but a stale pointer (moved/
+// deleted pak, or a non-directory) is rejected so launch falls back to the
+// built-in kit instead of failing to open a missing directory.
+func TestEmuDirRememberedAcrossRestart(t *testing.T) {
+	u := newTestUI(t)
+	dir := t.TempDir()
+
+	// Nothing remembered yet.
+	assert.Equal(t, "", u.savedEmuDir())
+
+	// An existing pak directory round-trips (restored on the next launch).
+	u.rememberEmuDir(dir)
+	assert.Equal(t, dir, u.savedEmuDir())
+
+	// A stale pointer (pak moved/deleted) is ignored.
+	u.rememberEmuDir(filepath.Join(dir, "gone"))
+	assert.Equal(t, "", u.savedEmuDir())
+
+	// A regular file (not a directory) is likewise rejected.
+	f := filepath.Join(dir, "f.wav")
+	require.NoError(t, os.WriteFile(f, []byte("x"), 0o644))
+	u.rememberEmuDir(f)
+	assert.Equal(t, "", u.savedEmuDir())
 }

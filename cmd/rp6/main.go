@@ -428,6 +428,38 @@ func (u *ui) addRackShortcut(w fyne.Window, key fyne.KeyName, fn func()) {
 // numSeqSlots is the number of saved-sequence slots.
 const numSeqSlots = 16
 
+// prefKeyEmuDir is the app-preferences key holding the last emulator samples
+// directory picked at runtime. The sequence store's meta table is profile-
+// scoped and can't hold it (we don't know the profile until we know emuDir),
+// so this lives in the app's global preferences and survives a restart.
+const prefKeyEmuDir = "emu.samplesDir"
+
+// rememberEmuDir persists the emulator samples directory so the next launch
+// reopens that pak instead of the built-in kit.
+func (u *ui) rememberEmuDir(dir string) {
+	if app := fyne.CurrentApp(); app != nil {
+		app.Preferences().SetString(prefKeyEmuDir, strings.TrimSpace(dir))
+	}
+}
+
+// savedEmuDir returns the last remembered emulator samples directory, or "" if
+// none was saved or the saved directory no longer exists (a stale pointer, e.g.
+// the pak was moved or deleted — the caller then falls back to the built-in kit).
+func (u *ui) savedEmuDir() string {
+	app := fyne.CurrentApp()
+	if app == nil {
+		return ""
+	}
+	dir := strings.TrimSpace(app.Preferences().String(prefKeyEmuDir))
+	if dir == "" {
+		return ""
+	}
+	if fi, err := os.Stat(dir); err != nil || !fi.IsDir() {
+		return ""
+	}
+	return dir
+}
+
 // storeProfile returns the persistence profile for the active backend, so
 // sequences stay scoped to the endpoint they were made for: "p6" for the
 // hardware (and any no-emulator run), or "emu:<abs-samples-dir>" for an
@@ -590,6 +622,7 @@ func (u *ui) setEmuSamples(dir string) {
 	u.emuDir = dir
 	u.useEmu = true
 	u.emuFallback.Store(false) // picking a kit is a deliberate emulator choice
+	u.rememberEmuDir(dir)      // survive a restart (see vxrv)
 	u.reconnectProfile()
 	u.setStatus("emulator samples: " + dir)
 }
@@ -1679,6 +1712,12 @@ func main() {
 	// MIDI); when it isn't reachable the connect below falls back to the
 	// emulator, and the device watcher connects to it if it appears.
 	u.useEmu = *emuDir != "" || onMobile
+	// If the CLI didn't pin a pak, reuse the last one picked at runtime so the
+	// emulator reopens that pak instead of the built-in kit. Backend selection
+	// (useEmu) is deliberately left untouched — see vxrv.
+	if strings.TrimSpace(u.emuDir) == "" {
+		u.emuDir = u.savedEmuDir()
+	}
 	u.build(w)
 	u.connect()
 	if !u.useEmu && u.dev == nil {
