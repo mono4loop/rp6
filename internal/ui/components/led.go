@@ -131,7 +131,7 @@ type ledRenderer struct {
 	objects []fyne.CanvasObject
 }
 
-func (r *ledRenderer) Destroy() {}
+func (r *ledRenderer) Destroy() { r.l.StopPulse() }
 
 func (r *ledRenderer) MinSize() fyne.Size { return fyne.NewSize(24, 24) }
 

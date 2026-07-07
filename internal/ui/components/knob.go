@@ -296,7 +296,7 @@ type knobRenderer struct {
 	objects []fyne.CanvasObject
 }
 
-func (r *knobRenderer) Destroy() {}
+func (r *knobRenderer) Destroy() { r.k.SetPending(false) }
 
 func (r *knobRenderer) MinSize() fyne.Size { return fyne.NewSize(r.k.cfg.Width, 58) }
 

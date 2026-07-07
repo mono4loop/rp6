@@ -154,3 +154,25 @@ func TestKnobIndicators(t *testing.T) {
 	b := g.Image(ringPx, 11, 1, 16, 1, accent)
 	assert.NotEqual(t, a.(*image.RGBA).Pix, b.(*image.RGBA).Pix, "different slot highlights a different tile")
 }
+
+// TestKnobDestroyStopsFlash verifies the renderer's Destroy() tears down the
+// pending-flash goroutine, so a widget torn down without an explicit
+// SetPending(false) doesn't leak a ticker forever (efhb).
+func TestKnobDestroyStopsFlash(t *testing.T) {
+	a := test.NewApp()
+	a.Settings().SetTheme(theme.DefaultTheme()) // real fonts for the knob LCD
+	k := newTestKnob(nil)
+	r := k.CreateRenderer()
+
+	k.SetPending(true)
+	k.flashMu.Lock()
+	flashing := k.flashing
+	k.flashMu.Unlock()
+	require.True(t, flashing, "SetPending(true) should start flashing")
+
+	r.Destroy()
+	k.flashMu.Lock()
+	flashing = k.flashing
+	k.flashMu.Unlock()
+	assert.False(t, flashing, "Destroy should stop the flash goroutine")
+}

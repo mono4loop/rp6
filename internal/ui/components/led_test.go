@@ -6,6 +6,7 @@ import (
 
 	"fyne.io/fyne/v2/test"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestLEDSetColorAndLit(t *testing.T) {
@@ -22,4 +23,25 @@ func TestLEDSetColorAndLit(t *testing.T) {
 
 	l.SetLit(false)
 	assert.False(t, l.lit)
+}
+
+// TestLEDDestroyStopsPulse verifies the renderer's Destroy() tears down the
+// breathing goroutine, so a widget torn down without an explicit StopPulse()
+// doesn't leak a ticker forever (efhb).
+func TestLEDDestroyStopsPulse(t *testing.T) {
+	test.NewApp()
+	l := NewLED(color.NRGBA{A: 0xFF})
+	r := l.CreateRenderer()
+
+	l.StartPulse()
+	l.mu.Lock()
+	pulsing := l.pulsing
+	l.mu.Unlock()
+	require.True(t, pulsing, "StartPulse should start the pulse")
+
+	r.Destroy()
+	l.mu.Lock()
+	pulsing = l.pulsing
+	l.mu.Unlock()
+	assert.False(t, pulsing, "Destroy should stop the pulse goroutine")
 }
