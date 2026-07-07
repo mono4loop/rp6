@@ -1,0 +1,40 @@
+name: Tests
+
+# Run the Go test suite on every push and pull request. Tests deliberately run
+# without build tags (matching `make test`), so no audio backend is needed and
+# Fyne's thread-safety checks stay on. A second step exercises the capture-only
+# code paths (the malgo VU meter + emulator audio sink) under `-tags capture`.
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: go test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.26.x"
+
+      # Fyne is cgo and links against OpenGL + X11 even for the headless test
+      # driver, so the graphics dev headers must be present (untagged builds use
+      # the X11 glfw driver). See AGENTS.md "Build prerequisites".
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            gcc libgl1-mesa-dev xorg-dev libxkbcommon-dev
+
+      - name: go test ./...
+        run: make test
+
+      - name: go test -tags capture (audio + emulator sink)
+        run: go test -tags capture ./internal/audio/... ./internal/emu/...
