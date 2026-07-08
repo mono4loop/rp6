@@ -39,5 +39,11 @@ jobs:
       - name: go test ./...
         run: make test
 
+      # The emulator's malgo/miniaudio sink opens a real playback device, and
+      # GitHub runners have no sound card ("cannot find card '0'"). Load the ALSA
+      # dummy driver so miniaudio has a (silent) device to open.
+      - name: Load dummy ALSA sound card
+        run: sudo modprobe snd-dummy
+
       - name: go test -tags capture (audio + emulator sink)
         run: go test -tags capture ./internal/audio/... ./internal/emu/...
