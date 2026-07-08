@@ -25,13 +25,16 @@ jobs:
           go-version: "1.26.x"
 
       # Fyne is cgo and links against OpenGL + X11 even for the headless test
-      # driver, so the graphics dev headers must be present (untagged builds use
-      # the X11 glfw driver). See AGENTS.md "Build prerequisites".
+      # driver, so the graphics dev headers must be present. The pinned GLFW
+      # builds both its X11 and Wayland backends on Linux (selected at runtime),
+      # so the Wayland dev headers are needed too, even for untagged builds.
+      # See AGENTS.md "Build prerequisites".
       - name: Install build dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-            gcc libgl1-mesa-dev xorg-dev libxkbcommon-dev
+            gcc libgl1-mesa-dev xorg-dev libxkbcommon-dev \
+            libwayland-dev wayland-protocols
 
       - name: go test ./...
         run: make test
