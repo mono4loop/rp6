@@ -1275,58 +1275,6 @@ func patternName(idx int) string {
 	return fmt.Sprintf("%d-%02d", idx/16+1, idx%16+1)
 }
 
-// parsePattern accepts several notations for a pattern, returning a 0-based
-// pattern index (0..63):
-//
-//   - "bank-slot"      e.g. "2-05"           (bank 1-4, slot 1-16)
-//   - "bankslot" (3 digits) e.g. "205", "416" (first digit bank, last two slot)
-//   - a 1- or 2-digit 1-based pattern number, e.g. "1", "64"
-func parsePattern(s string) (int, bool) {
-	s = strings.TrimSpace(s)
-	if s == "" {
-		return 0, false
-	}
-	if bank, slot, ok := strings.Cut(s, "-"); ok {
-		return patternIndex(bank, slot)
-	}
-	if _, err := strconv.Atoi(s); err != nil {
-		return 0, false
-	}
-	switch len(s) {
-	case 1, 2: // 1-based pattern number
-		n, _ := strconv.Atoi(s)
-		if n < 1 || n > 64 {
-			return 0, false
-		}
-		return n - 1, true
-	case 3: // concatenated bank + two-digit slot
-		return patternIndex(s[:1], s[1:])
-	default:
-		return 0, false
-	}
-}
-
-// patternIndex converts a bank (1-4) and slot (1-16) into a 0-based index.
-func patternIndex(bankStr, slotStr string) (int, bool) {
-	b, err1 := strconv.Atoi(strings.TrimSpace(bankStr))
-	sl, err2 := strconv.Atoi(strings.TrimSpace(slotStr))
-	if err1 != nil || err2 != nil || b < 1 || b > 4 || sl < 1 || sl > 16 {
-		return 0, false
-	}
-	return (b-1)*16 + (sl - 1), true
-}
-
-// parseTempo accepts a bare number, optionally with a "BPM" suffix.
-func parseTempo(s string) (int, bool) {
-	s = strings.ToLower(strings.TrimSpace(s))
-	s = strings.TrimSpace(strings.TrimSuffix(s, "bpm"))
-	n, err := strconv.Atoi(s)
-	if err != nil {
-		return 0, false
-	}
-	return n, true
-}
-
 // fxSlider builds a labeled 0-127 slider with a red 7-segment readout that
 // sends cc on the Auto channel as it moves.
 func (u *ui) fxSlider(name string, cc uint8) fyne.CanvasObject {

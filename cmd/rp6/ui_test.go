@@ -146,50 +146,6 @@ func TestTempoStepperClampsAndUpdatesBPM(t *testing.T) {
 	assert.Equal(t, float64(40), u.bpm)
 }
 
-func TestParsePattern(t *testing.T) {
-	cases := []struct {
-		in   string
-		want int
-		ok   bool
-	}{
-		{"1-01", 0, true},
-		{"2-05", 20, true},
-		{"4-16", 63, true},
-		{"1", 0, true},
-		{"64", 63, true},
-		{"101", 0, true},  // concatenated bank+slot
-		{"205", 20, true}, // 2-05
-		{"416", 63, true}, // 4-16
-		{"0", 0, false},
-		{"65", 0, false},
-		{"5-01", 0, false},
-		{"1-17", 0, false},
-		{"500", 0, false}, // bank 5 invalid
-		{"120", 0, false}, // slot 20 invalid
-		{"junk", 0, false},
-	}
-	for _, c := range cases {
-		got, ok := parsePattern(c.in)
-		assert.Equal(t, c.ok, ok, "input %q", c.in)
-		if c.ok {
-			assert.Equal(t, c.want, got, "input %q", c.in)
-		}
-	}
-}
-
-func TestParseTempo(t *testing.T) {
-	v, ok := parseTempo("140")
-	assert.True(t, ok)
-	assert.Equal(t, 140, v)
-
-	v, ok = parseTempo("128 BPM")
-	assert.True(t, ok)
-	assert.Equal(t, 128, v)
-
-	_, ok = parseTempo("fast")
-	assert.False(t, ok)
-}
-
 func TestFXSliderSendsCC(t *testing.T) {
 	u := newTestUI(t)
 	var buf bytes.Buffer
