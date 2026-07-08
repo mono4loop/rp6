@@ -236,34 +236,6 @@ func (u *ui) build(w fyne.Window) {
 
 	u.win = w
 
-	// Track the Ctrl key (when nothing is focused) so the sequencer's + button
-	// can reveal its copy/delete icons while hovered with Ctrl held. The GLFW driver
-	// doesn't report modifiers on hover events, so we feed the state in.
-	//
-	// GLFW reports keys by physical position, not the remapped keysym, so a
-	// Caps-Lock-remapped-to-Ctrl key still arrives as "CapsLock" here (even
-	// though the click's modifier bitfield correctly shows Control). Accept it
-	// too so the hint works for that common remap.
-	if dc, ok := w.Canvas().(desktop.Canvas); ok {
-		isCtrl := func(e *fyne.KeyEvent) bool {
-			switch e.Name {
-			case desktop.KeyControlLeft, desktop.KeyControlRight, desktop.KeyCapsLock:
-				return true
-			}
-			return false
-		}
-		dc.SetOnKeyDown(func(e *fyne.KeyEvent) {
-			if isCtrl(e) {
-				u.seqRack.SetModifierActive(true)
-			}
-		})
-		dc.SetOnKeyUp(func(e *fyne.KeyEvent) {
-			if isCtrl(e) {
-				u.seqRack.SetModifierActive(false)
-			}
-		})
-	}
-
 	// Ctrl+Shift+P/D/F/S/M toggle the Pads, Delay-Reverb, FX, Sequencer, Meter racks.
 	u.addRackShortcut(w, fyne.KeyP, u.togglePads)
 	u.addRackShortcut(w, fyne.KeyD, func() { u.toggleVisible(u.dlyRevObj, u.dlyRevBtn) })

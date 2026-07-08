@@ -240,11 +240,6 @@ func (r *sequencerRack) SetSeqName(s string) { r.nameEntry.SetText(s) }
 // queued slot change waiting for the next bar.
 func (r *sequencerRack) setSlotPending(on bool) { r.slotStep.SetPending(on) }
 
-// SetModifierActive is retained for the app's Ctrl-key tracking; the current
-// rack toggles capture Ctrl on click directly, so there's no hover hint to
-// update. Kept as a no-op so callers stay simple.
-func (r *sequencerRack) SetModifierActive(bool) {}
-
 // copyCurrent duplicates the current sequence into the next slot (the separate
 // copy button; the slot knob has no +/Ctrl alt like the old stepper did).
 func (r *sequencerRack) copyCurrent() {

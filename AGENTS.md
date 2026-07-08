@@ -21,7 +21,9 @@ class-compliant **USB MIDI** port:
   (`components.RackToggle`, lit when active): the first **floats** the
   pad rack into its own window and **docks** it back (also on window close); the
   second toggles **listening to P-6 MIDI input** (reflecting hardware pad
-  presses in the UI — eye icon, off by default); the third is **double density**
+  presses in the UI — eye icon; on by default for a connected P-6, off for the
+  emulator, which has no MIDI input — see `setListenDefault`); the third is
+  **double density**
   (grid icon) — all 8 banks on a single page with half-size pads (off by
   default). Density rebuilds the grid and swaps it into a holder container.
 - A "rack unit" toolbar: illuminated **Play/Stop** transport (with a MIDI clock
@@ -37,16 +39,19 @@ class-compliant **USB MIDI** port:
 - A toggleable **software step sequencer** (up to 8 assignable tracks, default
   6; each track 1–4 **bars** long and looping at its own length = polymeter;
   16 steps/bar, tempo-synced, own Play/Stop, per-track mute) that drives the
-  pads host-side. Each track row has, left→right, a **dedicated mute** key
-  (speaker icon), a **bar-length** key (cycles 1→4), a **pad-assign** key (the
-  `A1`..`H6` label), then the step cells. Assigning a pad is a **touch-friendly
-  two-step gesture** (no modifier keys): tap the pad-assign key to **arm** the
-  track (it lights solid/inverted — the `RackToggle.armed` state), then tap any
-  pad (grid, hardware, or external MIDI) to make it that track's sample; the
-  track disarms automatically (so an accidental pad hit can't change it). Tap
-  the armed key again to cancel; arm another track to move the arm. It can also
-  **dock** as a right-hand column beside the pads (the pad rack then adapts to
-  the remaining space).
+  pads host-side. Each track row is just a **pad-assign** key (the `A1`..`H6`
+  label) followed by that track's step cells. Mute and bar-length are **not**
+  per-track keys: a **shared second control row** (a speaker-icon **mute** and a
+  **BARS** toggle that cycles 1→4) acts on the currently-**armed** track and
+  greys out when none is armed. Arming a track and assigning its pad are one
+  **touch-friendly gesture** (no modifier keys): tap a track's pad-assign key to
+  **arm** it (it lights hardest — the `RackToggle.armed` state), which both
+  points the second-row mute/bars controls at that track and makes the next
+  tapped pad (grid, hardware, or external MIDI) its sample; assigning a pad
+  disarms the track automatically (so an accidental pad hit can't change it).
+  Tap the armed key again to cancel; arm another track to move the arm. It can
+  also **dock** as a right-hand column beside the pads (the pad rack then adapts
+  to the remaining space).
   **Sequences are saved to SQLite** (`internal/store`) in numbered slots with a
   name + tempo; the working slot autosaves on quit and reloads on launch.
   Persistence is **scoped to a profile** (`"p6"` for hardware / no-`-emu` runs,
@@ -154,6 +159,7 @@ internal/emu/       software P-6 emulator: plays WAV samples (NO Fyne)
   sink.go           sink interface (audio output the mixer renders into)
   sink_stub.go      default (no tag): silent sink (loads+mixes, no sound)
   sink_malgo.go     //go:build capture: miniaudio/malgo playback backend
+  sink_js.go        (js) Web Audio sink (AudioWorklet, resumed on a user gesture)
 internal/effects/   host-side effects engine (NO Fyne, NO p6 — pure logic)
   effects.go        Engine: per-pad slots, Roll (tempo-synced retrigger), Tap,
                     background rollers; fires pads via a Trigger callback
@@ -172,6 +178,9 @@ internal/midiin/    pluggable MIDI *input* controllers (NO Fyne) — the input-
                     macropad_alsa.go (!android && !js) opens the rawmidi node;
                     macropad_android.go (android) reads from midibridge instead
                     — the MIDI->Handlers mapping (handle) is shared
+  webmidi/          (js) Web MIDI input driver — the browser counterpart to the
+                    ALSA drivers; webmidi_js.go uses the Web MIDI API + p6.ParseMIDI
+                    (webmidi.go is a no-op stub elsewhere)
 midibridge/         (NO Fyne, NO p6 — pure Go, gomobile-bindable) the Android
                     MIDI transport bridge: the Java MidiManager layer reports
                     devices + shuttles bytes (AddDevice/RemoveDevice/SetOutput/
@@ -187,11 +196,18 @@ internal/androidusb/ (android) reads USB-MIDI straight from Go over JNI — no
                     androidusb_stub.go a no-op elsewhere. Wired by cmd/rp6/
                     android.go (startAndroidMIDI). This is how Android USB MIDI
                     actually works today (see docs/android-midi.md)
-internal/store/     SQLite persistence (NO Fyne, NO p6, pure-Go modernc driver)
-  store.go          (profile,slot) -> (name, JSON blob) + (profile,key) meta;
-                    DB at XDG_DATA_HOME/rp6; InsertGap/DeleteSlot shift slots so
-                    copy=insert, delete=close; every op is scoped to a profile
-                    (legacy pre-profile DBs migrate their rows to "p6" on open)
+internal/store/     sequence persistence (NO Fyne, NO p6); (profile,slot) ->
+                    (name, JSON blob) + (profile,key) meta, every op scoped to a
+                    profile; InsertGap/DeleteSlot shift slots so copy=insert,
+                    delete=close. store_common.go holds the shared, backend-
+                    agnostic bits; the backend is build-tagged per platform:
+  store.go          (!js && !android && !ios) desktop: pure-Go modernc.org/sqlite,
+                    DB at XDG_DATA_HOME/rp6 (legacy pre-profile DBs migrate their
+                    rows to "p6" on open)
+  store_mobile.go   (android||ios) a JSON file in private storage (modernc sqlite
+                    trips Android's seccomp filter); store_js.go (js) a localStorage
+                    JSON blob (no fs / no sqlite on wasm) — both mirror the SQLite
+                    store's API + profile scoping exactly
 internal/audio/     reusable audio capture (NO Fyne, NO p6)
   audio.go          Capturer interface, Peak/RMS, NormDB, Meter (smoothed VU)
   capture_stub.go   default (no tag): OpenCapture -> ErrUnavailable
@@ -207,17 +223,13 @@ internal/ui/components/   GENERIC, reusable Fyne widgets (NO p6 import!)
   knob.go           Knob: a machined gunmetal rotary cap (seated on the rack)
                     on the left + a dark LCD display (amber caption + value) to
                     its right; focusable (cap ring lights when focused); mouse
-                    drag / scroll wheel / arrow keys change it. TEMPO + PATTERN,
+                     drag / scroll wheel / arrow keys change it. TEMPO + PATTERN,
                     and the sequencer's TRK (track count) + SEQ (slot) knobs
-  lcdstepper.go     LCDStepper: editable OLED-style value + / - steppers
-                    (optional Width for compact readouts); OnAltStep makes + a
-                    ModifierButton (Ctrl+click = duplicate)
-  modifierbutton.go ModifierButton: button with a Ctrl+click alt action; while
-                    hovered with Ctrl held it swaps its label for an alt icon
-                    (Ctrl state fed in via SetModifierActive — GLFW omits it on
-                    hover). Used by the seq Clear (delete).
-  transportbutton.go TransportButton: illuminated play(triangle)/stop(glyph) key;
-                    NewTransportToggle is a single Play<->Stop toggle key
+  transportbutton.go TransportButton: illuminated play/stop key (the triangle +
+                    ■ are drawn as images, not font glyphs, so they render on web
+                    too); NewTransportToggle is the toolbar's Play<->Stop toggle,
+                    NewWalkerToggle the same toggle with walking-feet icons (the
+                    sequencer's Play/Stop)
   levelmeter.go     LevelMeter: vertical segmented LED meter + peak hold
   led.go            LED: round status indicator, soft glow, optional breathe
   racktoggle.go     RackToggle: backlit rack-label on/off toggle (lit in accent
@@ -227,10 +239,10 @@ internal/ui/components/   GENERIC, reusable Fyne widgets (NO p6 import!)
                     (via desktop.Mouseable). Used for the bottom-bar section
                     toggles (PADS/DLY-REV/FX/SEQ/VU), the pad rack's left tool
                     strip (float/listen/density icons), the pad grid's A-D/E-H
-                    page selector, the sequencer's per-track mute keys and
-                    bar-length keys, and the sequencer's pad-assign keys (tap to
-                    arm, then tap a pad to assign — tinted with the track's pad
-                    bank color)
+                    page selector, the sequencer's armed-track mute + bar-length
+                    controls (a shared second row), and the sequencer's per-track
+                    pad-assign keys (tap to arm, then tap a pad to assign —
+                    tinted with the track's pad bank color)
   devicebadge.go    DeviceBadge: backlit synth "nameplate" naming the connected
                     device (name + mode tag + status LED + settings gear),
                     backlit in an accent color; fixed footprint (never reflows).
@@ -461,7 +473,7 @@ selects the granular source A1..H6).
 - **Toggling visibility doesn't relayout by itself.** Fyne's border layout
   respects `Visible()`, but you must trigger a relayout: keep a reference to the
   container (`u.root`) and call `.Refresh()` after `Show()/Hide()` (see
-  `toggleMeter`).
+  `toggleVisible`, the shared show/hide helper behind every section toggle).
 - **Don't move a CanvasObject tree between windows — rebuild it.** Fyne keys the
   object→canvas association in a global 1:1 map (`internal/cache/canvases.go`,
   `SetCanvasForObject` uses `LoadOrStore`), so re-parenting the *same* tree to a
@@ -473,17 +485,16 @@ selects the granular source A1..H6).
   objects, so normal `Refresh()` works there (flash included) with no repaint
   hacks. (Docking a rack that stays in the *same* window — e.g. the sequencer
   side-column, or the density grid swap — is fine; that's not a window change.)
-- **Keep widget footprints fixed if they swap content**, or the layout jumps.
-  The old inline editor used `container.NewGridWrap` for this; the current
-  `LCDStepper` avoids it entirely by being always-editable.
+- **Keep widget footprints fixed if they swap content**, or the layout jumps —
+  either reserve the space (`container.NewGridWrap`) or make the widget always
+  render the same layout rather than hiding/showing sub-objects on state change.
 - **Focus/first-show is fragile.** An editable widget created hidden and focused
-  on first show may not behave (this bit the earlier double-click editor). The
-  fix that stuck: the `LCDStepper` is **always visible** (option C) — no
-  hide/show, no first-show focus penalty. It's a custom focusable widget
-  (`Tapped`→focus, `TypedRune/TypedKey`, first keystroke replaces the value).
-- Icons: don't rely on font glyphs for important shapes — the `▶` glyph looked
-  bad, so the Play triangle is drawn as a supersampled image
-  (`triangleImage`). The `■` stop glyph was fine and kept.
+  on first show may not behave (this bit an earlier double-click inline editor).
+  The reliable fix was to keep such a widget **always visible** — no hide/show,
+  no first-show focus penalty — rather than revealing it on demand.
+- Icons: don't rely on font glyphs for important shapes — the `▶`/`■` glyphs
+  looked bad and don't render on web, so the transport Play triangle and Stop
+  square are both drawn as antialiased images (`triangleImage` / `squareImage`).
 - Theme: `internal/ui/theme.Amber` overrides `Primary/Hyperlink/Focus/Selection/
   Hover` to amber and forces the dark variant. Accent = `#E1873B` (bank-B
   orange) chosen so **white** text stays readable on highlighted buttons.

@@ -16,14 +16,6 @@ type Clip struct {
 	SampleRate int
 }
 
-// Frames returns the number of sample frames in the clip.
-func (c *Clip) Frames() int {
-	if c.Channels <= 0 {
-		return 0
-	}
-	return len(c.Samples) / c.Channels
-}
-
 // errNotWAV and friends describe decode failures.
 var (
 	errNotWAV      = errors.New("emu: not a RIFF/WAVE file")

@@ -15,6 +15,17 @@ import (
 // ledOff is the color of an unlit LED-ring segment (gray).
 var ledOff = color.NRGBA{R: 0x4A, G: 0x4A, B: 0x52, A: 0xFF}
 
+// The amber "LCD readout" palette used by the Knob's display (and re-used for
+// the pad grid's page accent): a near-black inset panel, bright amber text, and
+// a dim border. transparent is the zero (fully-transparent) fill for the
+// unlit focus glow.
+var (
+	lcdPanel    = color.NRGBA{R: 0x12, G: 0x0A, B: 0x04, A: 0xFF}
+	lcdText     = color.NRGBA{R: 0xFF, G: 0xA5, B: 0x2A, A: 0xFF}
+	lcdBorder   = color.NRGBA{R: 0x3A, G: 0x22, B: 0x0C, A: 0xFF}
+	transparent = color.NRGBA{}
+)
+
 // KnobConfig configures a Knob.
 type KnobConfig struct {
 	Label string // small caption shown inside the display
@@ -583,4 +594,38 @@ func fillRoundRect(img *image.RGBA, x0, y0, x1, y1, r float64, col color.Color) 
 			}
 		}
 	}
+}
+
+func clampInt(v, min, max int) int {
+	if v < min {
+		return min
+	}
+	if v > max {
+		return max
+	}
+	return v
+}
+
+// itoa is a small, allocation-light integer-to-string for the knob's default
+// value formatter.
+func itoa(v int) string {
+	if v == 0 {
+		return "0"
+	}
+	neg := v < 0
+	if neg {
+		v = -v
+	}
+	var b [12]byte
+	i := len(b)
+	for v > 0 {
+		i--
+		b[i] = byte('0' + v%10)
+		v /= 10
+	}
+	if neg {
+		i--
+		b[i] = '-'
+	}
+	return string(b[i:])
 }
