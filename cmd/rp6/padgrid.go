@@ -1,8 +1,10 @@
 package main
 
 import (
+	"bytes"
 	"image"
 	"image/color"
+	"image/png"
 
 	"fyne.io/fyne/v2"
 	"github.com/mono4loop/rp6/internal/ui/components"
@@ -10,6 +12,33 @@ import (
 )
 
 const banksPerPage = p6.NumBanks / 2 // 4
+
+// padLayout selects how the 48 pads are paged across the grid.
+type padLayout int
+
+const (
+	// layoutPaged shows 4 banks per page across 2 tabs (A–D, E–H). Default.
+	layoutPaged padLayout = iota
+	// layoutTwoBank shows 2 banks per page across 4 tabs (A–B, C–D, E–F, G–H).
+	layoutTwoBank
+	// layoutDense shows all 8 banks on one page with half-size pads.
+	layoutDense
+)
+
+// numLayouts is the number of pad layouts the layout selector cycles through.
+const numLayouts = 3
+
+// banksForLayout reports how many banks are shown per page in a layout.
+func banksForLayout(l padLayout) int {
+	switch l {
+	case layoutTwoBank:
+		return 2
+	case layoutDense:
+		return p6.NumBanks
+	default:
+		return banksPerPage
+	}
+}
 
 // Connection status LED colors.
 var (
@@ -36,15 +65,11 @@ var bankColors = [p6.NumBanks]color.Color{
 	color.NRGBA{R: 0xD2, G: 0x4B, B: 0x9C, A: 0xFF}, // H  magenta
 }
 
-// bankPad maps a grid (page, row, col) to a P-6 0-based bank and 1-based pad.
-func bankPad(page, row, col int) (bank, number int) {
-	return page*banksPerPage + row, col + 1
-}
-
-// densePad maps a single-page (row, col) to bank/pad when all 8 banks are shown
-// at once (row = bank A..H, col = pad 1..6).
-func densePad(row, col int) (bank, number int) {
-	return row, col + 1
+// cellBankPad maps a grid (page, row, col) to a P-6 0-based bank and 1-based pad
+// for the given layout. Each page holds banksForLayout(layout) banks stacked as
+// rows, so bank = page*banksPerPage_layout + row and pad = col+1.
+func cellBankPad(l padLayout, page, row, col int) (bank, number int) {
+	return page*banksForLayout(l) + row, col + 1
 }
 
 // padID gives each of the 48 pads a stable 0-based id (used by the effects
@@ -83,21 +108,33 @@ func bankNRGBAForID(id int) color.NRGBA {
 	return deviceHwAccent
 }
 
-// newPadGrid configures the generic pad grid for the P-6: a 4x6 grid paged into
-// banks A-D and E-H. onTrigger receives a 0-based bank and 1-based pad number;
-// badges returns the effect icons for a pad. When dense is true, all 8 banks are
-// shown on a single page with half-size pads.
-func newPadGrid(dense bool, onTrigger func(bank, number int), badges func(bank, number int) []image.Image) *components.PadGrid {
+// pagesForLayout returns the page-selector labels for a layout.
+func pagesForLayout(l padLayout) []string {
+	switch l {
+	case layoutTwoBank:
+		return []string{"A – B", "C – D", "E – F", "G – H"}
+	case layoutDense:
+		return []string{"Banks A – H"}
+	default:
+		return []string{"Banks A – D", "Banks E – H"}
+	}
+}
+
+// newPadGrid configures the generic pad grid for the P-6 in the given layout:
+//   - layoutPaged:   4 banks/page, 2 tabs (A–D, E–H)
+//   - layoutTwoBank: 2 banks/page, 4 tabs (A–B, C–D, E–F, G–H)
+//   - layoutDense:   all 8 banks on one page with half-size pads
+//
+// onTrigger receives a 0-based bank and 1-based pad number; badges returns the
+// effect icons for a pad.
+func newPadGrid(layout padLayout, onTrigger func(bank, number int), badges func(bank, number int) []image.Image) *components.PadGrid {
 	cell := func(page, row, col int) (bank, number int) {
-		if dense {
-			return densePad(row, col)
-		}
-		return bankPad(page, row, col)
+		return cellBankPad(layout, page, row, col)
 	}
 	cfg := components.PadGridConfig{
-		Rows:       banksPerPage,   // 4 banks per page
+		Rows:       banksForLayout(layout),
 		Cols:       p6.PadsPerBank, // 6 pads
-		Pages:      []string{"Banks A – D", "Banks E – H"},
+		Pages:      pagesForLayout(layout),
 		PageAccent: deviceHwAccent, // match the rack toggles
 		Cell: func(page, row, col int) (string, color.Color) {
 			bank, number := cell(page, row, col)
@@ -112,10 +149,60 @@ func newPadGrid(dense bool, onTrigger func(bank, number int), badges func(bank, 
 			onTrigger(bank, number)
 		},
 	}
-	if dense {
-		cfg.Rows = p6.NumBanks // all 8 banks A-H at once
-		cfg.Pages = []string{"Banks A – H"}
+	if layout == layoutDense {
 		cfg.CellMinSize = fyne.NewSize(22, 22) // half of the normal 44 floor
 	}
 	return components.NewPadGrid(cfg)
+}
+
+// layoutIcons holds one icon per padLayout (indexed by the layout value), used
+// by the pad rack's RackCycle layout selector. Each icon is a small grid whose
+// row count matches the banks-per-page of that layout (2 / 4 / 8), so denser
+// layouts look denser.
+var layoutIcons = buildLayoutIcons()
+
+func buildLayoutIcons() []fyne.Resource {
+	icons := make([]fyne.Resource, numLayouts)
+	names := []string{"layout-paged.png", "layout-twobank.png", "layout-dense.png"}
+	for l := range numLayouts {
+		icons[l] = gridIconResource(names[l], banksForLayout(padLayout(l)))
+	}
+	return icons
+}
+
+// gridIconResource renders a monochrome grid icon with rows rows × 3 columns of
+// cells and wraps it as a Fyne resource (drawn oversized for clean downscaling).
+func gridIconResource(name string, rows int) fyne.Resource {
+	const (
+		size = 48 // canvas is square
+		cols = 3
+		pad  = 5 // outer padding
+		gap  = 3 // gap between cells
+	)
+	fg := color.NRGBA{R: 0xE0, G: 0xE0, B: 0xE0, A: 0xFF}
+
+	img := image.NewNRGBA(image.Rect(0, 0, size, size))
+	inner := float64(size - 2*pad)
+	cellW := (inner - float64(cols-1)*gap) / float64(cols)
+	cellH := (inner - float64(rows-1)*gap) / float64(rows)
+	for r := range rows {
+		for c := range cols {
+			x0 := pad + float64(c)*(cellW+gap)
+			y0 := pad + float64(r)*(cellH+gap)
+			fillRect(img, x0, y0, cellW, cellH, fg)
+		}
+	}
+	var buf bytes.Buffer
+	_ = png.Encode(&buf, img)
+	return fyne.NewStaticResource(name, buf.Bytes())
+}
+
+// fillRect paints a solid rectangle onto img at the given float bounds.
+func fillRect(img *image.NRGBA, x0, y0, w, h float64, c color.NRGBA) {
+	x1, y1 := int(x0+w+0.5), int(y0+h+0.5)
+	for y := int(y0 + 0.5); y < y1; y++ {
+		for x := int(x0 + 0.5); x < x1; x++ {
+			img.SetNRGBA(x, y, c)
+		}
+	}
 }

@@ -90,8 +90,8 @@ type ui struct {
 	padGridArea *fyne.Container   // holds the current grid object (swapped on density toggle)
 	padFloatBtn *components.RackToggle
 	midiInBtn   *components.RackToggle
-	densityBtn  *components.RackToggle
-	dense       bool        // all 8 banks on one page (half-size pads)
+	layoutBtn   *components.RackCycle
+	padLayout   padLayout   // how the 48 pads are paged across the grid
 	listenMIDI  atomic.Bool // reflect hardware pad presses in the UI
 	padWin      fyne.Window // non-nil while the pad rack floats in its own window
 	padFloating bool
@@ -138,7 +138,7 @@ type ui struct {
 }
 
 func newUI() *ui {
-	u := &ui{bpm: 120, selPad: -1}
+	u := &ui{bpm: 120, selPad: -1, padLayout: loadPadLayout()}
 	u.activity = &activitySource{}
 	u.meterSrc = u.activity
 	u.fx = effects.New(u.firePad)
@@ -300,7 +300,7 @@ func (u *ui) relayout() {
 // routing and per-window textures. Button/selection state is re-applied so the
 // rebuild is seamless.
 func (u *ui) buildPadRack() {
-	u.grid = newPadGrid(u.dense, u.onPadTrigger, u.padBadges)
+	u.grid = newPadGrid(u.padLayout, u.onPadTrigger, u.padBadges)
 	u.padGridArea = container.NewStack(u.grid.Object())
 
 	// Slim left tool strip: backlit icon toggles (lit = active, faded = off).
@@ -309,10 +309,12 @@ func (u *ui) buildPadRack() {
 	u.padFloatBtn.SetOn(u.padFloating)
 	u.midiInBtn = components.NewRackToggleIcon(theme.VisibilityIcon(), tool, u.toggleMIDIListen)
 	u.updateMIDIInBtn()
-	u.densityBtn = components.NewRackToggleIcon(theme.GridIcon(), tool, u.toggleDensity)
-	u.densityBtn.SetOn(u.dense)
+	// Layout selector: a 3-state cycle (paged A–D/E–H → two-bank A–B…G–H → dense
+	// all-8) whose icon shows the current density.
+	u.layoutBtn = components.NewRackCycle(layoutIcons, tool, func(s int) { u.setLayout(padLayout(s)) })
+	u.layoutBtn.SetState(int(u.padLayout))
 
-	padTools := container.NewVBox(u.padFloatBtn, u.midiInBtn, u.densityBtn)
+	padTools := container.NewVBox(u.padFloatBtn, u.midiInBtn, u.layoutBtn)
 	padBody := container.NewBorder(nil, nil, padTools, nil, u.padGridArea)
 	u.padRackObj = components.NewRackPanel(padBody)
 
@@ -432,6 +434,30 @@ func (u *ui) savedEmuDir() string {
 		return ""
 	}
 	return dir
+}
+
+// prefKeyPadLayout is the app-preferences key holding the pad-grid layout
+// (paged / two-bank / dense). It's a global UI preference — not tied to a
+// device profile — so it lives in the app's preferences and survives a restart.
+const prefKeyPadLayout = "pad.layout"
+
+// loadPadLayout returns the remembered pad layout, defaulting to the two-bank
+// layout when nothing valid is saved (or no app is running, e.g. in tests).
+func loadPadLayout() padLayout {
+	if app := fyne.CurrentApp(); app != nil {
+		v := app.Preferences().IntWithFallback(prefKeyPadLayout, int(layoutTwoBank))
+		if v >= 0 && v < numLayouts {
+			return padLayout(v)
+		}
+	}
+	return layoutTwoBank
+}
+
+// rememberPadLayout persists the pad layout so the next launch restores it.
+func rememberPadLayout(l padLayout) {
+	if app := fyne.CurrentApp(); app != nil {
+		app.Preferences().SetInt(prefKeyPadLayout, int(l))
+	}
 }
 
 // storeProfile returns the persistence profile for the active backend, so
@@ -1497,22 +1523,24 @@ func (u *ui) fireExternalPad(id int, velocity uint8) {
 }
 
 // gridPos maps a pad (0-based bank, 1-based number) to its (page,row,col) in the
-// current pad-grid layout (paged A-D/E-H, or the dense single page).
+// current pad-grid layout (paged A-D/E-H, two-bank tabs, or the dense single
+// page).
 func (u *ui) gridPos(bank, number int) (page, row, col int) {
-	if u.dense {
-		return 0, bank, number - 1
-	}
-	return bank / banksPerPage, bank % banksPerPage, number - 1
+	bpp := banksForLayout(u.padLayout)
+	return bank / bpp, bank % bpp, number - 1
 }
 
-// toggleDensity switches the pad grid between the paged A-D/E-H layout and a
-// dense single page showing all 8 banks with half-size pads.
-func (u *ui) toggleDensity() {
-	u.dense = !u.dense
-	u.grid = newPadGrid(u.dense, u.onPadTrigger, u.padBadges)
+// setLayout switches the pad grid to a new layout (paged / two-bank / dense),
+// rebuilding the grid and swapping it into the holder.
+func (u *ui) setLayout(l padLayout) {
+	u.padLayout = l
+	rememberPadLayout(l) // global preference — survives a restart
+	u.grid = newPadGrid(u.padLayout, u.onPadTrigger, u.padBadges)
 	u.padGridArea.Objects = []fyne.CanvasObject{u.grid.Object()}
 	u.padGridArea.Refresh()
-	u.densityBtn.SetOn(u.dense)
+	if u.layoutBtn != nil {
+		u.layoutBtn.SetState(int(u.padLayout))
+	}
 	// Re-apply the selection highlight to the rebuilt grid.
 	if u.selPad >= 0 {
 		bank, number := padBankNumber(u.selPad)

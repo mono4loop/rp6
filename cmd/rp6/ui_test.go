@@ -53,6 +53,7 @@ func newTestUI(t *testing.T) *ui {
 
 func TestShowPageAssignsBanks(t *testing.T) {
 	u := newTestUI(t)
+	u.setLayout(layoutPaged)
 	g := u.grid
 	last := len(g.Pads()) - 1
 
@@ -67,6 +68,7 @@ func TestShowPageAssignsBanks(t *testing.T) {
 
 func TestPadTapSelectsAndTriggers(t *testing.T) {
 	u := newTestUI(t)
+	u.setLayout(layoutPaged)
 	var buf bytes.Buffer
 	u.dev = p6.New(&buf, p6.DefaultConfig())
 
@@ -386,19 +388,49 @@ func TestTogglePads(t *testing.T) {
 	assert.True(t, u.padRackObj.Visible())
 }
 
-func TestDensityToggle(t *testing.T) {
+func TestLayoutCycle(t *testing.T) {
 	u := newTestUI(t)
-	assert.False(t, u.dense, "paged by default")
-	assert.Len(t, u.grid.Pads(), 24, "4 banks x 6 pads per page")
+	assert.Equal(t, layoutTwoBank, u.padLayout, "two-bank by default")
+	assert.Len(t, u.grid.Pads(), 12, "2 banks x 6 pads per page")
 
-	u.toggleDensity()
-	assert.True(t, u.dense)
-	assert.Len(t, u.grid.Pads(), 48, "all 8 banks x 6 pads on one page")
+	u.setLayout(layoutPaged)
+	assert.Equal(t, layoutPaged, u.padLayout)
+	assert.Len(t, u.grid.Pads(), 24, "4 banks x 6 pads per page")
 	assert.Same(t, u.grid.Object(), u.padGridArea.Objects[0], "grid swapped into the holder")
 
-	u.toggleDensity()
-	assert.False(t, u.dense)
-	assert.Len(t, u.grid.Pads(), 24)
+	u.setLayout(layoutDense)
+	assert.Equal(t, layoutDense, u.padLayout)
+	assert.Len(t, u.grid.Pads(), 48, "all 8 banks x 6 pads on one page")
+
+	u.setLayout(layoutTwoBank)
+	assert.Equal(t, layoutTwoBank, u.padLayout)
+	assert.Len(t, u.grid.Pads(), 12)
+}
+
+func TestLayoutButtonCycles(t *testing.T) {
+	u := newTestUI(t)
+	require.NotNil(t, u.layoutBtn)
+	assert.Equal(t, int(layoutTwoBank), u.layoutBtn.State())
+
+	u.layoutBtn.Tapped(nil)
+	assert.Equal(t, layoutDense, u.padLayout, "tap advances the layout")
+	assert.Equal(t, int(layoutDense), u.layoutBtn.State())
+
+	u.layoutBtn.Tapped(nil)
+	assert.Equal(t, layoutPaged, u.padLayout, "wraps back to paged")
+
+	u.layoutBtn.Tapped(nil)
+	assert.Equal(t, layoutTwoBank, u.padLayout)
+}
+
+func TestLayoutPersists(t *testing.T) {
+	// setLayout writes the choice to the app preferences; a fresh ui built on
+	// the same app should reload it (simulating a restart).
+	u := newTestUI(t)
+	u.setLayout(layoutDense)
+
+	u2 := newUI()
+	assert.Equal(t, layoutDense, u2.padLayout, "layout restored from preferences")
 }
 
 func TestMIDIListenToggle(t *testing.T) {

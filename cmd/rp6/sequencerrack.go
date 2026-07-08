@@ -150,7 +150,7 @@ func newSequencerRack(seq *sequencer.Engine, onLayout func(), onDock func(bool),
 	gap := canvas.NewRectangle(color.Transparent)
 	gap.SetMinSize(fyne.NewSize(0, 12))
 
-	blocks := []fyne.CanvasObject{header, header2, gap}
+	trackObjs := make([]fyne.CanvasObject, 0, maxT+1)
 	for t := range maxT {
 		track := t
 		seq.SetPad(t, t) // default: tracks -> pads A1, A2, ...
@@ -191,16 +191,26 @@ func newSequencerRack(seq *sequencer.Engine, onLayout func(), onDock func(bool),
 		block := container.NewBorder(nil, nil, headerCol, nil, barsCol)
 		r.blocks[t] = block
 		r.lastStep[t] = -1
-		blocks = append(blocks, block)
+		trackObjs = append(trackObjs, block)
 	}
 
 	// Trailing spacer so the last track isn't flush against the rack's bottom
 	// frame.
 	bottomGap := canvas.NewRectangle(color.Transparent)
 	bottomGap.SetMinSize(fyne.NewSize(0, 10))
-	blocks = append(blocks, bottomGap)
+	trackObjs = append(trackObjs, bottomGap)
 
-	r.obj = components.NewRackPanel(container.NewVBox(blocks...))
+	// The track rows live in a vertical scroller so they stay reachable when
+	// there are more tracks/bars than fit the available height (e.g. many tracks
+	// docked as a side column). The transport + armed-track control rows stay
+	// pinned above it. A modest min height keeps a few tracks visible even when
+	// the rack is stacked in an unbounded VBox.
+	tracks := container.NewVBox(trackObjs...)
+	scroll := container.NewVScroll(tracks)
+	scroll.SetMinSize(fyne.NewSize(tracks.MinSize().Width, 240))
+
+	top := container.NewVBox(header, header2, gap)
+	r.obj = components.NewRackPanel(container.NewBorder(top, nil, nil, nil, scroll))
 	r.applyTracks(defaultTracks)
 	r.updateArmedControls() // nothing armed yet -> greyed
 	return r
