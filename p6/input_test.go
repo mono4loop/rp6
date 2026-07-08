@@ -93,3 +93,41 @@ func TestParseControlChangeAndSkips(t *testing.T) {
 	assert.Equal(t, 1, cc)
 	assert.Equal(t, 1, pc)
 }
+
+// TestParseRealtimeInSystemCommon checks a realtime byte interleaved within a
+// system-common message's data bytes is still emitted (not swallowed as data).
+// Song Position Pointer (0xF2) carries two data bytes; a clock (0xF8) sits
+// between them (nb91).
+func TestParseRealtimeInSystemCommon(t *testing.T) {
+	data := []byte{0xF2, 0x10, 0xF8, 0x20, 0x9A, 48, 100}
+	evs := collect(t, data)
+	var rt, note int
+	for _, e := range evs {
+		switch e.Type {
+		case EventRealTime:
+			rt++
+			assert.EqualValues(t, 0xF8, e.Status)
+		case EventNoteOn:
+			note++
+			assert.EqualValues(t, 48, e.Data1)
+			assert.EqualValues(t, 100, e.Data2)
+		}
+	}
+	assert.Equal(t, 1, rt, "interleaved realtime must be emitted, not swallowed")
+	assert.Equal(t, 1, note, "the trailing note must still parse")
+}
+
+// TestParseResyncOnNewStatus checks that when a new status byte arrives before a
+// message's data bytes are complete (a truncated/corrupt message), the parser
+// resynchronizes on the new status instead of consuming the status byte as data
+// and emitting a corrupt event (nb91).
+func TestParseResyncOnNewStatus(t *testing.T) {
+	// Note On ch11, note 48, then a NEW status byte instead of the velocity.
+	data := []byte{0x9A, 48, 0x9A, 53, 100}
+	evs := collect(t, data)
+	if assert.Len(t, evs, 1, "the truncated first note must be dropped, not emitted corrupt") {
+		assert.Equal(t, EventNoteOn, evs[0].Type)
+		assert.EqualValues(t, 53, evs[0].Data1)
+		assert.EqualValues(t, 100, evs[0].Data2)
+	}
+}

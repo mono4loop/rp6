@@ -31,6 +31,11 @@ type Event struct {
 // ErrNoInput is returned by Listen when the device was not opened for reading.
 var ErrNoInput = errors.New("p6: device not open for reading")
 
+// errResync signals that a status byte appeared where a data byte was expected
+// (a truncated/corrupt message). The offending byte is unread so the top-level
+// loop reprocesses it as a new status. It never escapes parseMIDI.
+var errResync = errors.New("p6: resync on unexpected status byte")
+
 // Listen reads MIDI from the device and calls handler for each parsed message,
 // blocking until the device is closed (then returning the read error, typically
 // due to Close). Run it in a goroutine. handler is called on that goroutine, so
@@ -70,13 +75,21 @@ func parseMIDI(br *bufio.Reader, handler func(Event)) error {
 			}
 			running = 0
 		case b >= 0xF1 && b <= 0xF7: // system common — consume its data bytes
-			if err := skipSystemCommon(br, b); err != nil {
+			if err := skipSystemCommon(br, b, handler); err != nil {
+				if errors.Is(err, errResync) {
+					running = 0
+					continue
+				}
 				return err
 			}
 			running = 0
 		case b >= 0x80: // channel status byte
 			running = b
 			if err := dispatch(br, running, nil, handler); err != nil {
+				if errors.Is(err, errResync) {
+					running = 0
+					continue
+				}
 				return err
 			}
 		default: // data byte -> running status
@@ -85,6 +98,10 @@ func parseMIDI(br *bufio.Reader, handler func(Event)) error {
 			}
 			first := b
 			if err := dispatch(br, running, &first, handler); err != nil {
+				if errors.Is(err, errResync) {
+					running = 0
+					continue
+				}
 				return err
 			}
 		}
@@ -101,19 +118,7 @@ func dispatch(br *bufio.Reader, status byte, first *byte, handler func(Event)) e
 			first = nil
 			return v, nil
 		}
-		// System realtime messages may interleave between data bytes; emit and
-		// skip them so they don't corrupt the message.
-		for {
-			bb, err := br.ReadByte()
-			if err != nil {
-				return 0, err
-			}
-			if bb >= 0xF8 {
-				handler(Event{Type: EventRealTime, Status: bb})
-				continue
-			}
-			return bb, nil
-		}
+		return readData(br, handler)
 	}
 	ch := int(status&0x0F) + 1
 	switch status & 0xF0 {
@@ -187,7 +192,7 @@ func skipSysex(br *bufio.Reader, handler func(Event)) error {
 	}
 }
 
-func skipSystemCommon(br *bufio.Reader, status byte) error {
+func skipSystemCommon(br *bufio.Reader, status byte, handler func(Event)) error {
 	n := 0
 	switch status {
 	case 0xF1, 0xF3: // MTC quarter frame, song select
@@ -196,9 +201,32 @@ func skipSystemCommon(br *bufio.Reader, status byte) error {
 		n = 2
 	}
 	for i := 0; i < n; i++ {
-		if _, err := br.ReadByte(); err != nil {
+		if _, err := readData(br, handler); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+// readData reads the next MIDI data byte. System-realtime bytes (0xF8..0xFF) may
+// interleave anywhere, so they are emitted and skipped transparently. If a
+// status byte (>=0x80) appears where a data byte was expected — a truncated or
+// corrupt message — the byte is unread and errResync is returned so the caller
+// aborts the current message and the top-level loop resynchronizes on it.
+func readData(br *bufio.Reader, handler func(Event)) (byte, error) {
+	for {
+		bb, err := br.ReadByte()
+		if err != nil {
+			return 0, err
+		}
+		if bb >= 0xF8 { // system realtime — may interleave anywhere
+			handler(Event{Type: EventRealTime, Status: bb})
+			continue
+		}
+		if bb >= 0x80 { // unexpected status byte — truncated message, resync
+			_ = br.UnreadByte()
+			return 0, errResync
+		}
+		return bb, nil
+	}
 }
