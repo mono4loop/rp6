@@ -1,11 +1,13 @@
 # RP6
 
-A touch-friendly controller for the **Roland P-6** (AIRA Compact sampler) — plus
-a built-in software sampler and sequencer so you can play it even without the hardware.
+A touch-friendly controller for the **Roland P-6** (AIRA Compact sampler). It
+also bundles a software sampler and step sequencer, so it works without the
+hardware too.
 
-Works on Linux desktop, [in the browser](https://rp6.rbel.co) (experimental), and on Android. [Fyne](https://fyne.io) powered.
+Runs on Linux desktop, [in the browser](https://rp6.rbel.co) (experimental), and
+on Android. Built with [Fyne](https://fyne.io).
 
-Supports Roland P-6 sampler and [Adafruit Macropad](/docs/hardware/macropad/README.md) as external USB MIDI hardware.
+Talks to the Roland P-6 and the [Adafruit Macropad](/docs/hardware/macropad/README.md) over USB MIDI.
 
 <p align="center">
   <img src="web/screenshot.png" alt="rp6 on the desktop" height="380">
@@ -13,12 +15,13 @@ Supports Roland P-6 sampler and [Adafruit Macropad](/docs/hardware/macropad/READ
   <img src="web/screenshot-pixel.png" alt="rp6 on Android" height="380">
 </p>
 
-__Note: RP6 is currently alpha quality. It works best on desktops and Android devices with large screens (tablets). The UI does not gracefully adapt to low screen resolutions__
+__Note: RP6 is alpha quality. It works best on desktops and larger Android
+screens (tablets); the UI doesn't adapt gracefully to small resolutions yet.__
 
 ## Features
 
-- **48 pads, banks A–H** — finger-friendly grid, paged A–D / E–H (or a dense
-  single-page view). Tap to trigger; the last hit is highlighted.
+- **48 pads, banks A–H** — a grid paged A–D / E–H (or a dense single-page
+  view). Tap to trigger; the last hit is highlighted.
 - **Step sequencer** — up to 8 tracks, each 1–4 bars and looping at its own
   length (polymeter), 16 steps/bar, tempo-synced, with per-track **mute**. Assign
   a pad to a track with a tap, program steps, press play. Save/load **16
@@ -28,20 +31,22 @@ __Note: RP6 is currently alpha quality. It works best on desktops and Android de
   selector, driving the P-6 over MIDI clock.
 - **Effects** — a per-pad effects rack (tempo-synced **Roll**) and global
   **Delay / Reverb** controls.
-- **Built-in emulator** — no P-6? RP6 ships with a playable "modular-hits" sample
-  kit, so it makes sound out of the box. Tap the device badge to switch between
-  the emulator and a connected P-6.
+- **Built-in emulator** — no P-6 needed: RP6 bundles a playable "modular-hits"
+  sample kit. Tap the device badge to switch between the emulator and a connected
+  P-6.
 - **Activity / VU meter** — a level meter on the right (real USB-audio VU on
   desktop builds).
 - **Amber hardware-style UI** — backlit rack panels, knobs and 7-segment
-  readouts; fully touch-operable (no right-click or keyboard needed).
+  readouts; works entirely by touch.
 
 ## Running it
 
 There are pre-built Android APK and Flatpak packages in [releases](/releases).
 
-Plug in the P-6 or an [Adafruit MacroPad](/docs/hardware/macropad/README.md) over USB and it connects automatically; unplug and RP6 falls back to the built-in emulator, reconnecting when it reappears. No hardware? It
-just runs the emulator.
+Plug in the P-6 or an [Adafruit MacroPad](/docs/hardware/macropad/README.md) over
+USB and it connects automatically. Unplug it and RP6 falls back to the built-in
+emulator, reconnecting when it reappears. With no hardware at all, it just runs
+the emulator.
 
 ## Using it with a P-6
 
@@ -62,7 +67,8 @@ The bundled kit is one-shot hits from the “Modular-Hits” pack by *publicsamp
 
 ## With the Adafruit Macropad
 
-You'll need to setup your macropad loading the circuitpython code located [here](/docs/hardware/macropad/code.py).
+You'll need to set up your Macropad with the CircuitPython code
+[here](/docs/hardware/macropad/code.py).
 
 ## License
 
