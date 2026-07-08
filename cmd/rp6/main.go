@@ -101,12 +101,21 @@ type ui struct {
 	fxRack      *effectsRack
 	seqRack     *sequencerRack
 	meter       *components.LevelMeter
-	meterArea   fyne.CanvasObject
+	meterArea   *fyne.Container   // stable holder; its child is the framed meter (V or H)
+	meterHoriz  bool              // meter currently laid out horizontally (compact mode)
 	dlyRevObj   fyne.CanvasObject // the Delay/Reverb rack panel (toggleable)
 
 	transportRack fyne.CanvasObject
 	statusBar     fyne.CanvasObject
 	seqSide       bool // sequencer docked as a right-hand column
+
+	// compact is the phone/portrait form factor (narrow window): the VU meter
+	// moves from the right-hand side to a horizontal strip along the bottom,
+	// between the pads and the status bar. contentHolder is a stable wrapper
+	// whose custom layout reports window size changes to onCanvasResize so the
+	// app can flip between the wide and compact arrangements live.
+	compact       bool
+	contentHolder *fyne.Container
 
 	// bottom-bar visibility toggles (backlit rack labels)
 	padBtn    *components.RackToggle
@@ -209,11 +218,11 @@ func (u *ui) build(w fyne.Window) {
 	u.transportRack = components.NewRackPanel(toolbar)
 
 	// Vertical master meter on the right, framed as a rack panel (toggleable).
-	// A short "VU" cap keeps the rack column narrow.
+	// A short "VU" cap keeps the rack column narrow. In compact (phone) mode it
+	// re-frames horizontally and moves to the bottom — see applyMeterOrientation.
 	u.meter = components.NewLevelMeter()
-	u.meterArea = components.NewRackPanel(container.NewBorder(
-		widget.NewLabelWithStyle("VU", fyne.TextAlignCenter, fyne.TextStyle{Bold: true}),
-		nil, nil, nil, u.meter))
+	u.meterArea = container.NewStack()
+	u.applyMeterOrientation(false)
 
 	// Visibility toggles on the bottom bar: backlit rack labels (lit = shown,
 	// greyed = hidden), tinted in the P-6 amber accent.
@@ -256,10 +265,14 @@ func (u *ui) build(w fyne.Window) {
 	u.relayout()
 }
 
-// relayout (re)assembles the window content, honoring which racks are visible
-// and the sequencer's docked (right-hand column) mode.
+// relayout (re)assembles the window content, honoring which racks are visible,
+// the sequencer's docked (right-hand column) mode, and the compact (phone)
+// form factor (VU meter along the bottom instead of down the right side).
 func (u *ui) relayout() {
 	seqDocked := u.seqSide && u.seqRack.Object().Visible()
+
+	// Keep the meter's orientation in sync with the form factor.
+	u.applyMeterOrientation(u.compact)
 
 	topObjs := []fyne.CanvasObject{u.transportRack, u.dlyRevObj, u.fxRack.Object()}
 	if !seqDocked {
@@ -287,8 +300,108 @@ func (u *ui) relayout() {
 		centerObjs = []fyne.CanvasObject{center}
 	}
 
-	u.root = container.NewBorder(top, u.statusBar, nil, u.meterArea, centerObjs...)
-	u.win.SetContent(u.root)
+	if u.compact {
+		// Phone/portrait: VU strip stacks above the status bar at the bottom.
+		bottom := container.NewVBox(u.meterArea, u.statusBar)
+		u.root = container.NewBorder(top, bottom, nil, nil, centerObjs...)
+	} else {
+		// Wide: VU meter runs down the right-hand side.
+		u.root = container.NewBorder(top, u.statusBar, nil, u.meterArea, centerObjs...)
+	}
+
+	// A stable outer holder (created once) watches the window size so we can flip
+	// between the wide and compact arrangements as the window resizes. Swapping
+	// its child avoids re-doing SetContent on every relayout.
+	if u.contentHolder == nil {
+		u.contentHolder = container.New(&sizeWatch{onResize: u.onCanvasResize}, u.root)
+		u.win.SetContent(u.contentHolder)
+	} else {
+		u.contentHolder.Objects = []fyne.CanvasObject{u.root}
+		u.contentHolder.Refresh()
+	}
+}
+
+// applyMeterOrientation re-frames the VU meter for the current form factor: a
+// tall vertical column (wide layout, "VU" cap on top) or a horizontal strip
+// (compact layout, "VU" cap on the left). The meter widget itself is reused; only
+// its framing is rebuilt, and meterArea is a stable holder so its visibility
+// (the VU toggle) is preserved across the swap.
+func (u *ui) applyMeterOrientation(horizontal bool) {
+	if u.meterArea != nil && len(u.meterArea.Objects) > 0 && u.meterHoriz == horizontal {
+		return
+	}
+	u.meterHoriz = horizontal
+	u.meter.SetHorizontal(horizontal)
+	capLabel := widget.NewLabelWithStyle("VU", fyne.TextAlignCenter, fyne.TextStyle{Bold: true})
+	var inner fyne.CanvasObject
+	if horizontal {
+		inner = container.NewBorder(nil, nil, capLabel, nil, u.meter)
+	} else {
+		inner = container.NewBorder(capLabel, nil, nil, nil, u.meter)
+	}
+	u.meterArea.Objects = []fyne.CanvasObject{components.NewRackPanel(inner)}
+	u.meterArea.Refresh()
+}
+
+// onCanvasResize is called by the content holder's layout on every window resize.
+// It classifies the window as compact (phone/portrait) by width, with hysteresis
+// to avoid flip-flopping at the boundary, and re-lays out on a change.
+func (u *ui) onCanvasResize(size fyne.Size) {
+	compact := classifyCompact(u.compact, size.Width)
+	if compact == u.compact {
+		return
+	}
+	u.compact = compact
+	// Defer off the current layout pass to avoid re-entrant relayout.
+	go fyne.Do(u.relayout)
+}
+
+// classifyCompact decides whether a window of the given width is the compact
+// (phone/portrait) form factor, with hysteresis around the threshold: it only
+// flips once clearly past either edge, otherwise it keeps the current state.
+func classifyCompact(current bool, width float32) bool {
+	const (
+		compactEnter = 500 // narrower than this -> compact
+		compactExit  = 560 // wider than this -> wide
+	)
+	switch {
+	case width < compactEnter:
+		return true
+	case width > compactExit:
+		return false
+	default:
+		return current
+	}
+}
+
+// sizeWatch is a pass-through layout (its single child fills the whole area)
+// that reports the container's size to onResize on every layout pass. It lets
+// the app react to live window resizes (to flip between the wide and compact
+// arrangements) without subclassing the window.
+type sizeWatch struct {
+	onResize func(fyne.Size)
+	last     fyne.Size
+}
+
+func (s *sizeWatch) Layout(objs []fyne.CanvasObject, size fyne.Size) {
+	for _, o := range objs {
+		o.Resize(size)
+		o.Move(fyne.NewPos(0, 0))
+	}
+	if size != s.last {
+		s.last = size
+		if s.onResize != nil {
+			s.onResize(size)
+		}
+	}
+}
+
+func (s *sizeWatch) MinSize(objs []fyne.CanvasObject) fyne.Size {
+	var m fyne.Size
+	for _, o := range objs {
+		m = m.Max(o.MinSize())
+	}
+	return m
 }
 
 // buildPadRack (re)builds the pad rack — the tool column plus the pad grid — as
@@ -1673,6 +1786,7 @@ func main() {
 	if strings.TrimSpace(u.emuDir) == "" {
 		u.emuDir = u.savedEmuDir()
 	}
+	w.Resize(fyne.NewSize(858, 900))
 	u.build(w)
 	u.connect()
 	if !u.useEmu && u.dev == nil {
@@ -1714,6 +1828,5 @@ func main() {
 		a.Quit()
 	})
 
-	w.Resize(fyne.NewSize(858, 900))
 	w.ShowAndRun()
 }

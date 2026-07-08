@@ -178,6 +178,39 @@ func TestToggleMeter(t *testing.T) {
 	assert.True(t, u.meterArea.Visible())
 }
 
+func TestCompactMovesMeterToBottom(t *testing.T) {
+	u := newTestUI(t)
+	require.False(t, u.compact, "wide by default")
+	require.False(t, u.meterHoriz, "meter vertical when wide")
+
+	// Compact form factor -> horizontal meter along the bottom. Drive the state
+	// directly + relayout synchronously (production defers relayout via fyne.Do;
+	// calling it here concurrently would race the headless text shaper).
+	u.compact = true
+	u.relayout()
+	assert.True(t, u.meterHoriz, "meter goes horizontal in compact mode")
+	assert.True(t, u.meterArea.Visible(), "meter still shown after reflow")
+
+	// Back to wide -> vertical side meter.
+	u.compact = false
+	u.relayout()
+	assert.False(t, u.meterHoriz, "meter back to vertical when wide")
+}
+
+func TestClassifyCompactHysteresis(t *testing.T) {
+	// Clearly narrow -> compact; clearly wide -> not compact.
+	assert.True(t, classifyCompact(false, 420))
+	assert.False(t, classifyCompact(true, 900))
+
+	// Within the hysteresis band (500..560) the state is held, not flipped.
+	assert.False(t, classifyCompact(false, 530), "530px keeps a wide window wide")
+	assert.True(t, classifyCompact(true, 530), "530px keeps a compact window compact")
+
+	// Edges: past 560 -> wide, below 500 -> compact.
+	assert.False(t, classifyCompact(true, 561))
+	assert.True(t, classifyCompact(false, 499))
+}
+
 func TestSequencerRackDefaultsVisible(t *testing.T) {
 	u := newTestUI(t)
 	assert.True(t, u.seqRack.Object().Visible(), "sequencer shown by default")

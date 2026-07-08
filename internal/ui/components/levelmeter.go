@@ -18,12 +18,15 @@ var (
 
 const meterSegments = 16
 
-// LevelMeter is a vertical segmented LED level meter (0..1) with a falling
-// peak-hold indicator.
+// LevelMeter is a segmented LED level meter (0..1) with a falling peak-hold
+// indicator. It lays out vertically by default (segment 0 at the bottom) or
+// horizontally when SetHorizontal(true) is set (segment 0 at the left) — the
+// latter suits a compact/phone layout where the meter sits along the bottom.
 type LevelMeter struct {
 	widget.BaseWidget
-	level float64
-	peak  float64
+	level      float64
+	peak       float64
+	horizontal bool
 
 	panel *canvas.Rectangle
 	cells [meterSegments]*canvas.Rectangle
@@ -34,6 +37,17 @@ func NewLevelMeter() *LevelMeter {
 	m := &LevelMeter{}
 	m.ExtendBaseWidget(m)
 	return m
+}
+
+// SetHorizontal switches the meter between the default vertical orientation and
+// a horizontal one (segments running left→right). Safe to call before or after
+// the renderer exists.
+func (m *LevelMeter) SetHorizontal(h bool) {
+	if m.horizontal == h {
+		return
+	}
+	m.horizontal = h
+	m.Refresh()
 }
 
 // SetLevel sets the current level (clamped to 0..1) and updates the peak-hold,
@@ -88,7 +102,12 @@ type meterRenderer struct {
 
 func (r *meterRenderer) Destroy() {}
 
-func (r *meterRenderer) MinSize() fyne.Size { return fyne.NewSize(22, 180) }
+func (r *meterRenderer) MinSize() fyne.Size {
+	if r.m.horizontal {
+		return fyne.NewSize(180, 22)
+	}
+	return fyne.NewSize(22, 180)
+}
 
 func (r *meterRenderer) Layout(size fyne.Size) {
 	r.m.panel.Resize(size)
@@ -96,6 +115,17 @@ func (r *meterRenderer) Layout(size fyne.Size) {
 
 	const padX, padY, gap = 6, 6, 3
 	n := float32(meterSegments)
+	if r.m.horizontal {
+		cellW := (size.Width - 2*padX - gap*(n-1)) / n
+		h := size.Height - 2*padY
+		for i := range meterSegments {
+			// segment 0 sits at the left
+			x := padX + float32(i)*(cellW+gap)
+			r.m.cells[i].Resize(fyne.NewSize(cellW, h))
+			r.m.cells[i].Move(fyne.NewPos(x, padY))
+		}
+		return
+	}
 	cellH := (size.Height - 2*padY - gap*(n-1)) / n
 	w := size.Width - 2*padX
 	for i := range meterSegments {
