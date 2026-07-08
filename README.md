@@ -13,7 +13,7 @@ Supports Roland P-6 sampler and [Adafruit Macropad](/docs/hardware/macropad/READ
   <img src="web/screenshot-pixel.png" alt="rp6 on Android" height="380">
 </p>
 
-__Note: RP6 is currently alpha quality__
+__Note: RP6 is currently alpha quality. It works best on desktops and Android devices with large screens (tablets). The UI does not gracefully adapt to low screen resolutions__
 
 ## Features
 
