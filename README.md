@@ -41,7 +41,7 @@ screens (tablets); the UI doesn't adapt gracefully to small resolutions yet.__
 
 ## Running it
 
-There are pre-built Android APK and Flatpak packages in [releases](/releases).
+There are pre-built Android APK and Flatpak packages in [releases](https://github.com/mono4loop/rp6/releases).
 
 Plug in the P-6 or an [Adafruit MacroPad](/docs/hardware/macropad/README.md) over
 USB and it connects automatically. Unplug it and RP6 falls back to the built-in
