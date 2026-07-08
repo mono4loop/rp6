@@ -9,7 +9,7 @@ BINARY_NAME := rp6
 # All three are on by default. Override for a different combination, e.g.
 # `make run TAGS=capture` (X11 driver) or `make run TAGS=wayland` (no audio).
 # Tests deliberately run without tags so Fyne's thread-safety checks stay on.
-TAGS ?= capture wayland migrated_fynedo
+TAGS ?= capture wayland migrated_fynedo jam
 
 .PHONY: build install run test fmt vet check clean serve web android android-release icon
 

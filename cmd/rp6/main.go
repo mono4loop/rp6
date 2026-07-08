@@ -223,7 +223,9 @@ func (u *ui) build(w fyne.Window) {
 	u.fxBtn = components.NewRackToggle("FX", acc, func() { u.toggleVisible(u.fxRack.Object(), u.fxBtn) })
 	u.seqBtn = components.NewRackToggle("SEQ", acc, u.toggleSeqView)
 	u.meterBtn = components.NewRackToggle("VU", acc, func() { u.toggleVisible(u.meterArea, u.meterBtn) })
-	toggles := container.NewHBox(u.padBtn, u.dlyRevBtn, u.fxBtn, u.seqBtn, u.meterBtn)
+	toggleObjs := []fyne.CanvasObject{u.padBtn, u.dlyRevBtn, u.fxBtn, u.seqBtn, u.meterBtn}
+	toggleObjs = append(toggleObjs, u.jamToggles()...) // JAM button (absent in -tags nojam / web / mobile builds)
+	toggles := container.NewHBox(toggleObjs...)
 
 	u.status = widget.NewLabel("")
 	info := widget.NewButtonWithIcon("", theme.InfoIcon(), u.showInfo)
@@ -1135,6 +1137,7 @@ func (u *ui) bumpMeter(velocity uint8) {
 func (u *ui) onPadTrigger(bank, number int) {
 	id := padID(bank, number)
 	u.padSelected(id)
+	u.jamBroadcastPad(id, p6.DefaultVelocity) // share this live hit with jam peers (no-op in -tags nojam / web / mobile builds)
 
 	u.fx.Tap(id) // fires via firePad (which bumps the meter); toggles roll if assigned
 
@@ -1422,7 +1425,8 @@ func (u *ui) onMIDIIn(dev p6.Controller, ev p6.Event) {
 	}
 	id := padID(bank, number)
 	page, row, col := u.gridPos(bank, number)
-	u.bumpMeter(ev.Data2) // meter reacts to hardware hits (any goroutine)
+	u.bumpMeter(ev.Data2)           // meter reacts to hardware hits (any goroutine)
+	u.jamBroadcastPad(id, ev.Data2) // share the hardware hit with jam peers (no-op in -tags nojam / web / mobile builds)
 	fyne.Do(func() {
 		u.grid.Highlight(page, row, col)
 		u.padSelected(id)
@@ -1481,7 +1485,8 @@ func (u *ui) startMIDIInput() {
 // pad presses without re-triggering — the controller produces no sound itself,
 // so here we DO fire the note. Runs on the controller's read goroutine.
 func (u *ui) fireExternalPad(id int, velocity uint8) {
-	u.firePadVel(id, velocity) // sound (also bumps the meter); concurrency-safe
+	u.firePadVel(id, velocity)      // sound (also bumps the meter); concurrency-safe
+	u.jamBroadcastPad(id, velocity) // share this live hit with jam peers (no-op in -tags nojam / web / mobile builds)
 	bank, number := padBankNumber(id)
 	page, row, col := u.gridPos(bank, number)
 	fyne.Do(func() {
@@ -1567,6 +1572,7 @@ func (u *ui) setStatus(msg string) {
 func (u *ui) close() {
 	u.stopMeter() // stop UI animators before the run loop tears down
 	u.stopDeviceWatch()
+	u.stopJam()
 	u.fx.StopAll()
 	u.seq.Stop()
 	u.seqRack.setSlotPending(false) // stop the SEQ knob flash goroutine
@@ -1662,6 +1668,7 @@ func main() {
 		u.startDeviceWatch()
 	}
 	u.startAndroidMIDI() // no-op except on Android
+	u.startJam()         // join a shared jam session if RP6_JAM_CODE is set (no-op in -tags nojam / web / mobile builds)
 	u.statusLED.StartPulse()
 	u.startDiagnostics()
 

@@ -34,6 +34,8 @@ screens (tablets); the UI doesn't adapt gracefully to small resolutions yet.__
 - **Built-in emulator** — no P-6 needed: RP6 bundles a playable "modular-hits"
   sample kit. Tap the device badge to switch between the emulator and a connected
   P-6.
+- **Shared jam sessions** *(experimental, desktop only)* — play together over the internet. See the
+  [setup guide](docs/jams.md).
 - **Activity / VU meter** — a level meter on the right (real USB-audio VU on
   desktop builds).
 - **Amber hardware-style UI** — backlit rack panels, knobs and 7-segment

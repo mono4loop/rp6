@@ -140,6 +140,18 @@ func (g *PadGrid) Highlight(page, row, col int) {
 	}
 }
 
+// FlashPad briefly lights a cell (the tap-flash) to reflect an external trigger
+// WITHOUT changing the current page or the selection — the caller only sees a
+// blink. If the cell is not on the currently shown page it is a no-op (there is
+// nothing visible to flash). Use this (rather than Highlight) when a remote
+// event should be visible but must not disturb the local UI state.
+func (g *PadGrid) FlashPad(page, row, col int) {
+	if page != g.page || row < 0 || row >= g.cfg.Rows || col < 0 || col >= g.cfg.Cols {
+		return
+	}
+	g.pads[row*g.cfg.Cols+col].Flash()
+}
+
 // RefreshBadges re-pulls each visible pad's badges from the Badges config.
 func (g *PadGrid) RefreshBadges() {
 	if g.cfg.Badges == nil {
