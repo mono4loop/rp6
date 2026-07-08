@@ -6,4 +6,4 @@ package main
 const appID = "io.github.mono4loop.rp6"
 
 // version is the RP6 release version, shown in the info dialog.
-const version = "v1.0.0-alpha.1"
+const version = "v1.0.0-alpha.3"
