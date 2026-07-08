@@ -39,11 +39,13 @@ jobs:
       - name: go test ./...
         run: make test
 
-      # The emulator's malgo/miniaudio sink opens a real playback device, and
-      # GitHub runners have no sound card ("cannot find card '0'"). Load the ALSA
-      # dummy driver so miniaudio has a (silent) device to open.
-      - name: Load dummy ALSA sound card
-        run: sudo modprobe snd-dummy
+      # The emulator's malgo/miniaudio sink opens the ALSA "default" device, and
+      # GitHub runners have no sound card ("cannot find card '0'"). Point the
+      # default PCM at ALSA's built-in null backend so miniaudio can open a
+      # (silent) device — no hardware and no snd-dummy kernel module (which is
+      # absent on the runner kernel) required.
+      - name: Configure a null ALSA device
+        run: printf 'pcm.!default { type null }\nctl.!default { type null }\n' | sudo tee /etc/asound.conf
 
       - name: go test -tags capture (audio + emulator sink)
         run: go test -tags capture ./internal/audio/... ./internal/emu/...
