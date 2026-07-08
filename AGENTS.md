@@ -59,6 +59,12 @@ class-compliant **USB MIDI** port:
   never intermingle (see `ui.storeProfile`).
   Changing the sequence slot (SEQ knob) while playing is **quantized to the next
   bar** (queued in `pendingSlot`, applied from the step callback / on stop).
+- A **shared jam session** (bottom-bar person-icon toggle): several RP6s connect
+  peer-to-peer over WebRTC and share **live pad hits** — a peer's tap plays on
+  your device and blinks the pad (like an external MIDI controller), without
+  disturbing your selection/UI. **Desktop-only**, built by default (disable with
+  `-tags nojam`; excluded on web + mobile). Needs a small signaling server
+  (`cmd/rp6-signal`). Design + setup: `docs/architecture/jams.md`, `docs/jams.md`.
 - The pad grid, delay/reverb, effects and sequencer are all **toggleable racks**
   (see the bottom-bar toggles below).
 - A **rack-framed bottom bar** that hosts the **visibility toggles** — backlit
@@ -98,6 +104,13 @@ The default build tags are **`capture wayland migrated_fynedo`**:
 `make run TAGS=capture` (X11 driver) or `make run TAGS=wayland` (no audio).
 Tests never use tags (they exercise the stub + a fake capturer, and keep Fyne's
 thread-safety checks active), so `go test ./...` needs no audio libraries.
+
+**Jam sessions** are compiled by default on desktop and pull in `pion/webrtc`
+(MIT); disable with **`-tags nojam`** (also auto-excluded on web/mobile). Runtime
+config is env-only: `RP6_JAM_SIGNAL` (server), `RP6_JAM_CODE` (session), plus the
+in-app dialog. The WebRTC end-to-end tests are opt-in — set **`RP6_JAM_E2E=1`**
+(otherwise they skip, so `go test ./...` stays fast/hermetic). See §3 and
+`docs/architecture/jams.md`.
 
 Manual quality gate used throughout development (run after edits):
 
@@ -212,6 +225,22 @@ internal/audio/     reusable audio capture (NO Fyne, NO p6)
   audio.go          Capturer interface, Peak/RMS, NormDB, Meter (smoothed VU)
   capture_stub.go   default (no tag): OpenCapture -> ErrUnavailable
   capture_malgo.go  //go:build capture: miniaudio/malgo capture backend
+internal/jam/       host-side shared jam sessions (NO Fyne, NO p6, NO pion) —
+                    peers broadcast live pad hits to each other. Generic +
+                    callback-based like effects/sequencer, loopback-testable with
+                    no network. DESKTOP-ONLY: compiled by default, dropped by
+                    -tags nojam and on web/mobile. Full design: docs/architecture/jams.md
+  jam.go            Engine: SendPad (async, off the UI/audio path) + OnPad, over a
+                    pluggable Transport; message.go 4-byte codec; code.go session
+                    codes; loopback.go in-memory Transport for tests
+  webrtc/           (!nojam && !js && !android && !ios) pion/webrtc mesh transport:
+                    unreliable/unordered data channel, WS signaling client,
+                    supervised reconnect, RTT logging; doc.go is the !jam stub that
+                    keeps pion out of the excluded builds
+  signal/           the WS signaling hub (NO pion): path-gated /s/<code> + rate
+                    limits/caps/keepalive; served by the cmd/rp6-signal binary.
+                    App wiring is cmd/rp6/jam.go (+ jam_stub.go no-ops) — the JAM
+                    button, join dialog, and broadcast/apply at the live pad sources
 internal/ui/components/   GENERIC, reusable Fyne widgets (NO p6 import!)
   pad.go            Pad: colored, selectable, tap-flash key + bottom badge icons
   padgrid.go        PadGrid: generic paged, selectable grid (Cell/Badges/OnTrigger);
