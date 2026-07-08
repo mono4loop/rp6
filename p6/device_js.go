@@ -198,5 +198,8 @@ func (c *webMIDICloser) Close() error {
 	if c.onmsg.Truthy() {
 		c.onmsg.Release()
 	}
+	if c.out.Truthy() {
+		c.out.Call("close") // release the MIDIOutput port opened in OpenPath
+	}
 	return nil
 }
