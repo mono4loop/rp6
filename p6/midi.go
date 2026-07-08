@@ -5,9 +5,11 @@ package p6
 // status byte.
 
 const (
-	statusNoteOn        = 0x90
-	statusControlChange = 0xB0
-	statusProgramChange = 0xC0
+	statusNoteOff           = 0x80
+	statusNoteOn            = 0x90
+	statusControlChange     = 0xB0
+	statusProgramChange     = 0xC0
+	statusChannelAftertouch = 0xD0
 
 	// System realtime messages (single byte).
 	msgClock    = 0xF8

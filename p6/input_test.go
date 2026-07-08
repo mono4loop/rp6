@@ -131,3 +131,35 @@ func TestParseResyncOnNewStatus(t *testing.T) {
 		assert.EqualValues(t, 100, evs[0].Data2)
 	}
 }
+
+// TestParseExplicitNoteOff covers a real 0x80 note-off status (distinct from a
+// note-on with zero velocity).
+func TestParseExplicitNoteOff(t *testing.T) {
+	evs := collect(t, []byte{0x8A, 48, 64}) // note off ch11, note 48, vel 64
+	if assert.Len(t, evs, 1) {
+		assert.Equal(t, EventNoteOff, evs[0].Type)
+		assert.Equal(t, 11, evs[0].Channel)
+		assert.EqualValues(t, 48, evs[0].Data1)
+		assert.EqualValues(t, 64, evs[0].Data2)
+	}
+}
+
+// TestParseIgnoredChannelMessagesConsumeData ensures messages the parser emits
+// no Event for (poly aftertouch 0xA0 = 2 bytes, channel aftertouch 0xD0 = 1
+// byte, pitch bend 0xE0 = 2 bytes) still consume the right number of data bytes,
+// so a following message parses cleanly rather than being misaligned.
+func TestParseIgnoredChannelMessagesConsumeData(t *testing.T) {
+	cases := [][]byte{
+		{0xAA, 48, 100, 0x9A, 60, 100}, // poly aftertouch then note-on
+		{0xDA, 100, 0x9A, 60, 100},     // channel aftertouch (1 byte) then note-on
+		{0xEA, 0, 64, 0x9A, 60, 100},   // pitch bend then note-on
+	}
+	for _, data := range cases {
+		evs := collect(t, data)
+		if assert.Len(t, evs, 1, "%#v", data) {
+			assert.Equal(t, EventNoteOn, evs[0].Type)
+			assert.EqualValues(t, 60, evs[0].Data1)
+			assert.EqualValues(t, 100, evs[0].Data2)
+		}
+	}
+}
