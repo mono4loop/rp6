@@ -127,7 +127,8 @@ type ui struct {
 	statusLED   *components.LED
 	root        *fyne.Container
 	status      *widget.Label
-	deviceBadge *components.DeviceBadge // top rack: backlit device nameplate
+	deviceBadge *components.DeviceBadge // pad rack tool row: backlit device nameplate
+	deviceState components.DeviceState  // last-known connection state, re-applied when the badge is rebuilt (float/dock)
 
 	// connecting guards connect() against re-entrant / overlapping calls.
 	// devGen tags the live connection so a background failure (mid-session
@@ -199,13 +200,8 @@ func (u *ui) build(w fyne.Window) {
 	})
 
 	transport := container.NewHBox(u.playBtn)
-	name, tag, accent := u.deviceIdentity()
-	u.deviceBadge = components.NewDeviceBadge(name, tag, accent)
-	u.deviceBadge.OnSettings(u.showDeviceSettings)
-	u.deviceBadge.OnToggle(u.toggleBackend)
 	toolbar := container.NewHBox(transport, widget.NewSeparator(),
-		u.tempo.Object(), widget.NewSeparator(), u.patternStep.Object(),
-		layout.NewSpacer(), u.deviceBadge)
+		u.tempo.Object(), widget.NewSeparator(), u.patternStep.Object())
 
 	fxRow := container.NewGridWithColumns(4,
 		u.fxSlider("Delay Time", p6.CCDelayTime),
@@ -344,10 +340,10 @@ func (u *ui) applyMeterOrientation(horizontal bool) {
 }
 
 // onCanvasResize is called by the content holder's layout on every window resize.
-// It classifies the window as compact (phone/portrait) by width, with hysteresis
-// to avoid flip-flopping at the boundary, and re-lays out on a change.
+// It classifies the window as compact (phone/portrait) by its aspect ratio, with
+// hysteresis to avoid flip-flopping at the boundary, and re-lays out on a change.
 func (u *ui) onCanvasResize(size fyne.Size) {
-	compact := classifyCompact(u.compact, size.Width)
+	compact := classifyCompact(u.compact, size.Width, size.Height)
 	if compact == u.compact {
 		return
 	}
@@ -356,18 +352,27 @@ func (u *ui) onCanvasResize(size fyne.Size) {
 	go fyne.Do(u.relayout)
 }
 
-// classifyCompact decides whether a window of the given width is the compact
-// (phone/portrait) form factor, with hysteresis around the threshold: it only
-// flips once clearly past either edge, otherwise it keeps the current state.
-func classifyCompact(current bool, width float32) bool {
+// classifyCompact decides whether a window is the compact (phone/portrait) form
+// factor from its aspect ratio (width/height): a clearly taller-than-wide window
+// docks the VU meter along the bottom. Hysteresis around the threshold means it
+// only flips once clearly past either edge, otherwise it holds the current state.
+//
+// The thresholds sit below 1.0 on purpose: the default desktop window is 858x900
+// (aspect ~0.95, already slightly portrait), so only a distinctly tall window —
+// like a phone held upright — counts as compact.
+func classifyCompact(current bool, width, height float32) bool {
 	const (
-		compactEnter = 500 // narrower than this -> compact
-		compactExit  = 560 // wider than this -> wide
+		compactEnter = 0.70 // aspect below this (clearly tall) -> compact
+		compactExit  = 0.80 // aspect above this -> wide
 	)
+	if height <= 0 {
+		return current
+	}
+	aspect := width / height
 	switch {
-	case width < compactEnter:
+	case aspect < compactEnter:
 		return true
-	case width > compactExit:
+	case aspect > compactExit:
 		return false
 	default:
 		return current
@@ -416,7 +421,7 @@ func (u *ui) buildPadRack() {
 	u.grid = newPadGrid(u.padLayout, u.onPadTrigger, u.padBadges)
 	u.padGridArea = container.NewStack(u.grid.Object())
 
-	// Slim left tool strip: backlit icon toggles (lit = active, faded = off).
+	// Tool strip across the top: backlit icon toggles (lit = active, faded = off).
 	tool := deviceHwAccent
 	u.padFloatBtn = components.NewRackToggleIcon(theme.ViewRestoreIcon(), tool, u.togglePadFloat)
 	u.padFloatBtn.SetOn(u.padFloating)
@@ -427,8 +432,18 @@ func (u *ui) buildPadRack() {
 	u.layoutBtn = components.NewRackCycle(layoutIcons, tool, func(s int) { u.setLayout(padLayout(s)) })
 	u.layoutBtn.SetState(int(u.padLayout))
 
-	padTools := container.NewVBox(u.padFloatBtn, u.midiInBtn, u.layoutBtn)
-	padBody := container.NewBorder(nil, nil, padTools, nil, u.padGridArea)
+	// Device nameplate at the right end of the tool row. It's rebuilt with the
+	// pad rack (each window owns its own object tree), so re-apply the current
+	// connection state and wire its actions here rather than in build().
+	name, tag, accent := u.deviceIdentity()
+	u.deviceBadge = components.NewDeviceBadge(name, tag, accent)
+	u.deviceBadge.OnSettings(u.showDeviceSettings)
+	u.deviceBadge.OnToggle(u.toggleBackend)
+	u.deviceBadge.SetState(u.deviceState)
+
+	padTools := container.NewHBox(u.padFloatBtn, u.midiInBtn, u.layoutBtn,
+		layout.NewSpacer(), u.deviceBadge)
+	padBody := container.NewBorder(padTools, nil, nil, nil, u.padGridArea)
 	u.padRackObj = components.NewRackPanel(padBody)
 
 	// Re-apply the selection highlight (no flash) to the fresh grid.
@@ -558,12 +573,12 @@ const prefKeyPadLayout = "pad.layout"
 // layout when nothing valid is saved (or no app is running, e.g. in tests).
 func loadPadLayout() padLayout {
 	if app := fyne.CurrentApp(); app != nil {
-		v := app.Preferences().IntWithFallback(prefKeyPadLayout, int(layoutTwoBank))
+		v := app.Preferences().IntWithFallback(prefKeyPadLayout, int(layoutPaged))
 		if v >= 0 && v < numLayouts {
 			return padLayout(v)
 		}
 	}
-	return layoutTwoBank
+	return layoutPaged
 }
 
 // rememberPadLayout persists the pad layout so the next launch restores it.
@@ -1464,7 +1479,7 @@ func (u *ui) connect() {
 	u.devLost.Store(false)
 
 	if u.deviceBadge != nil {
-		u.deviceBadge.SetState(components.DeviceSearching)
+		u.setDeviceState(components.DeviceSearching)
 	}
 
 	dev, err := u.openDevice()
@@ -1695,12 +1710,20 @@ func (u *ui) setConnected(ok bool) {
 			u.statusLED.SetColor(ledRed)
 		}
 	}
+	if ok {
+		u.setDeviceState(components.DeviceOnline)
+	} else {
+		u.setDeviceState(components.DeviceOffline)
+	}
+}
+
+// setDeviceState records the connection state and reflects it on the device
+// badge. The state is stored on the ui so it survives a pad-rack rebuild (the
+// badge lives in the pad rack and is recreated when it floats out / docks back).
+func (u *ui) setDeviceState(s components.DeviceState) {
+	u.deviceState = s
 	if u.deviceBadge != nil {
-		if ok {
-			u.deviceBadge.SetState(components.DeviceOnline)
-		} else {
-			u.deviceBadge.SetState(components.DeviceOffline)
-		}
+		u.deviceBadge.SetState(s)
 	}
 }
 

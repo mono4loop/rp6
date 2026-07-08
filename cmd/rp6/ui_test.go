@@ -198,17 +198,25 @@ func TestCompactMovesMeterToBottom(t *testing.T) {
 }
 
 func TestClassifyCompactHysteresis(t *testing.T) {
-	// Clearly narrow -> compact; clearly wide -> not compact.
-	assert.True(t, classifyCompact(false, 420))
-	assert.False(t, classifyCompact(true, 900))
+	// Clearly tall (portrait phone) -> compact; clearly square/wide -> not.
+	assert.True(t, classifyCompact(false, 400, 800), "tall portrait is compact")
+	assert.False(t, classifyCompact(true, 900, 600), "landscape is wide")
 
-	// Within the hysteresis band (500..560) the state is held, not flipped.
-	assert.False(t, classifyCompact(false, 530), "530px keeps a wide window wide")
-	assert.True(t, classifyCompact(true, 530), "530px keeps a compact window compact")
+	// The default desktop window (858x900, aspect ~0.95) must stay wide.
+	assert.False(t, classifyCompact(false, 858, 900), "near-square desktop stays wide")
 
-	// Edges: past 560 -> wide, below 500 -> compact.
-	assert.False(t, classifyCompact(true, 561))
-	assert.True(t, classifyCompact(false, 499))
+	// Within the hysteresis band (aspect 0.70..0.80) the state is held.
+	// 750/1000 = 0.75 sits inside the band.
+	assert.False(t, classifyCompact(false, 750, 1000), "0.75 aspect keeps a wide window wide")
+	assert.True(t, classifyCompact(true, 750, 1000), "0.75 aspect keeps a compact window compact")
+
+	// Edges: above 0.80 -> wide, below 0.70 -> compact.
+	assert.False(t, classifyCompact(true, 810, 1000), "0.81 aspect -> wide")
+	assert.True(t, classifyCompact(false, 690, 1000), "0.69 aspect -> compact")
+
+	// Degenerate height holds the current state (no divide-by-zero flip).
+	assert.True(t, classifyCompact(true, 400, 0))
+	assert.False(t, classifyCompact(false, 400, 0))
 }
 
 func TestSequencerRackDefaultsVisible(t *testing.T) {
@@ -423,37 +431,37 @@ func TestTogglePads(t *testing.T) {
 
 func TestLayoutCycle(t *testing.T) {
 	u := newTestUI(t)
-	assert.Equal(t, layoutTwoBank, u.padLayout, "two-bank by default")
-	assert.Len(t, u.grid.Pads(), 12, "2 banks x 6 pads per page")
-
-	u.setLayout(layoutPaged)
-	assert.Equal(t, layoutPaged, u.padLayout)
+	assert.Equal(t, layoutPaged, u.padLayout, "6x4 paged by default")
 	assert.Len(t, u.grid.Pads(), 24, "4 banks x 6 pads per page")
+
+	u.setLayout(layoutTwoBank)
+	assert.Equal(t, layoutTwoBank, u.padLayout)
+	assert.Len(t, u.grid.Pads(), 12, "2 banks x 6 pads per page")
 	assert.Same(t, u.grid.Object(), u.padGridArea.Objects[0], "grid swapped into the holder")
 
 	u.setLayout(layoutDense)
 	assert.Equal(t, layoutDense, u.padLayout)
 	assert.Len(t, u.grid.Pads(), 48, "all 8 banks x 6 pads on one page")
 
-	u.setLayout(layoutTwoBank)
-	assert.Equal(t, layoutTwoBank, u.padLayout)
-	assert.Len(t, u.grid.Pads(), 12)
+	u.setLayout(layoutPaged)
+	assert.Equal(t, layoutPaged, u.padLayout)
+	assert.Len(t, u.grid.Pads(), 24)
 }
 
 func TestLayoutButtonCycles(t *testing.T) {
 	u := newTestUI(t)
 	require.NotNil(t, u.layoutBtn)
+	assert.Equal(t, int(layoutPaged), u.layoutBtn.State())
+
+	u.layoutBtn.Tapped(nil)
+	assert.Equal(t, layoutTwoBank, u.padLayout, "tap advances the layout")
 	assert.Equal(t, int(layoutTwoBank), u.layoutBtn.State())
 
 	u.layoutBtn.Tapped(nil)
-	assert.Equal(t, layoutDense, u.padLayout, "tap advances the layout")
-	assert.Equal(t, int(layoutDense), u.layoutBtn.State())
+	assert.Equal(t, layoutDense, u.padLayout)
 
 	u.layoutBtn.Tapped(nil)
 	assert.Equal(t, layoutPaged, u.padLayout, "wraps back to paged")
-
-	u.layoutBtn.Tapped(nil)
-	assert.Equal(t, layoutTwoBank, u.padLayout)
 }
 
 func TestLayoutPersists(t *testing.T) {
