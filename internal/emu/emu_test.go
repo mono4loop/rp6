@@ -2,6 +2,9 @@ package emu
 
 import (
 	"bytes"
+	"errors"
+	"io/fs"
+	"log"
 	"math"
 	"os"
 	"path/filepath"
@@ -346,4 +349,74 @@ func TestScanFactoryPack(t *testing.T) {
 		assert.Contains(t, paths, id)
 		assert.True(t, isWAV(paths[id]), "pad %d should map to a WAV", id)
 	}
+}
+
+// fakeDirEntry is a minimal fs.DirEntry for the scan-error tests.
+type fakeDirEntry struct {
+	name string
+	dir  bool
+}
+
+func (d fakeDirEntry) Name() string { return d.name }
+func (d fakeDirEntry) IsDir() bool  { return d.dir }
+func (d fakeDirEntry) Type() os.FileMode {
+	if d.dir {
+		return os.ModeDir
+	}
+	return 0
+}
+func (d fakeDirEntry) Info() (os.FileInfo, error) { return nil, nil }
+
+// fakeFS is an fs.ReadDirFS whose ReadDir returns a configured error for chosen
+// directories, so sample-scan error paths can be exercised deterministically.
+type fakeFS struct {
+	root    []fakeDirEntry
+	errDirs map[string]error
+}
+
+func (f fakeFS) Open(string) (fs.File, error) { return nil, fs.ErrNotExist }
+
+func (f fakeFS) ReadDir(name string) ([]fs.DirEntry, error) {
+	if e, ok := f.errDirs[name]; ok {
+		return nil, e
+	}
+	if name == "." {
+		out := make([]fs.DirEntry, len(f.root))
+		for i, e := range f.root {
+			out[i] = e
+		}
+		return out, nil
+	}
+	return nil, fs.ErrNotExist
+}
+
+// TestScanSamplesLogsBankDirError verifies a bank-subdirectory read failure is
+// logged (like a bad WAV in load()) instead of being silently skipped (jaeb).
+func TestScanSamplesLogsBankDirError(t *testing.T) {
+	var buf bytes.Buffer
+	old := log.Writer()
+	log.SetOutput(&buf)
+	defer log.SetOutput(old)
+
+	fsys := fakeFS{
+		root:    []fakeDirEntry{{name: "A", dir: true}},
+		errDirs: map[string]error{"A": errors.New("perm-boom")},
+	}
+	_, err := scanSamples(fsys)
+	require.NoError(t, err) // the scan still succeeds, just with no pads
+	assert.Contains(t, buf.String(), "perm-boom", "the bank-dir read error should be logged")
+}
+
+// TestFirstWAVLogsReadError verifies a pad-folder read failure (P-6 layout) is
+// logged instead of silently returning no match (jaeb).
+func TestFirstWAVLogsReadError(t *testing.T) {
+	var buf bytes.Buffer
+	old := log.Writer()
+	log.SetOutput(&buf)
+	defer log.SetOutput(old)
+
+	fsys := fakeFS{errDirs: map[string]error{"BANK_A/PAD_1": errors.New("pad-boom")}}
+	_, ok := firstWAV(fsys, "BANK_A/PAD_1")
+	assert.False(t, ok)
+	assert.Contains(t, buf.String(), "pad-boom", "the pad-dir read error should be logged")
 }

@@ -168,6 +168,7 @@ func scanSamples(fsys fs.FS) (map[int]string, error) {
 			}
 			subEntries, err := fs.ReadDir(fsys, name)
 			if err != nil {
+				log.Printf("emu: skipping bank dir %s: %v", name, err)
 				continue
 			}
 			sortEntries(subEntries)
@@ -268,6 +269,7 @@ func parsePadDir(name string) (pad int, ok bool) {
 func firstWAV(fsys fs.FS, dir string) (string, bool) {
 	entries, err := fs.ReadDir(fsys, dir)
 	if err != nil {
+		log.Printf("emu: reading pad dir %s: %v", dir, err)
 		return "", false
 	}
 	sortEntries(entries)

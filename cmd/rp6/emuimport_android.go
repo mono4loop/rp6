@@ -4,7 +4,6 @@ package main
 
 import (
 	"fmt"
-	"io"
 	"log"
 	"net/url"
 	"os"
@@ -114,7 +113,7 @@ func copyEmuFile(src fyne.URI, destPath string) error {
 	if err != nil {
 		return err
 	}
-	defer f.Close()
-	_, err = io.Copy(f, r)
-	return err
+	// copyAndClose folds f.Close()'s error in, so a late write-flush failure
+	// (e.g. out of space mid-import) isn't mistaken for a successful copy.
+	return copyAndClose(f, r)
 }
