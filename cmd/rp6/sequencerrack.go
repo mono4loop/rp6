@@ -161,7 +161,7 @@ func newSequencerRack(seq *sequencer.Engine, onLayout func(), onDock func(bool),
 		// which it disarms, so an accidental pad hit can't change it).
 		// Touch-friendly: no modifier keys needed (works on web/Android).
 		tb := components.NewRackToggle(padLabelForID(t), bankNRGBAForID(t), func() { r.armTrack(track) })
-		tb.SetOn(true)
+		tb.SetOn(!seq.Muted(t)) // lit as a label; goes dark while the track is muted
 		r.trackBtns[t] = tb
 
 		headerCol := container.NewGridWrap(fyne.NewSize(64, 34), tb)
@@ -266,7 +266,7 @@ func (r *sequencerRack) syncFromEngine() {
 	for t := 0; t < r.seq.MaxTracks(); t++ {
 		r.trackBtns[t].SetLabel(padLabelForID(r.seq.Pad(t)))
 		r.trackBtns[t].SetAccent(bankNRGBAForID(r.seq.Pad(t)))
-		r.trackBtns[t].SetOn(true) // pad-label button stays lit as a label
+		r.trackBtns[t].SetOn(!r.seq.Muted(t)) // lit as a label; dark while muted
 		r.setTrackAccent(t)
 		r.applyBars(t, r.seq.Bars(t))
 	}
@@ -385,6 +385,7 @@ func (r *sequencerRack) toggleArmedMute() {
 		return
 	}
 	r.seq.ToggleMuted(r.armedTrack)
+	r.trackBtns[r.armedTrack].SetOn(!r.seq.Muted(r.armedTrack)) // dark while muted
 	r.updateArmedControls()
 }
 
