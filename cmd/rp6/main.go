@@ -196,17 +196,19 @@ type ui struct {
 	forced map[string]savedRack
 
 	// bottom-bar visibility toggles (backlit rack labels)
-	padBtn     *components.RackToggle
-	p6Btn      *components.RackToggle
-	fxBtn      *components.RackToggle
-	padFXBtn   *components.RackToggle
-	keysFXBtn  *components.RackToggle
-	fxChoices  *fyne.Container
-	seqBtn     *components.RackToggle
-	keysBtn    *components.RackToggle
-	paksBtn    *components.RackToggle
-	meterBtn   *components.RackToggle
-	consoleBtn *components.RackToggle
+	padBtn      *components.RackToggle
+	playMenuBtn *components.RackToggle
+	playMenu    *widget.PopUp
+	p6Btn       *components.RackToggle
+	fxBtn       *components.RackToggle
+	padFXBtn    *components.RackToggle
+	keysFXBtn   *components.RackToggle
+	fxChoices   *widget.PopUp
+	seqBtn      *components.RackToggle
+	keysBtn     *components.RackToggle
+	paksBtn     *components.RackToggle
+	meterBtn    *components.RackToggle
+	consoleBtn  *components.RackToggle
 
 	statusLED   *components.LED
 	p6LED       *components.LED // P-6 connection LED seated in the P-6 rack plate
@@ -380,22 +382,40 @@ func (u *ui) build(w fyne.Window) {
 	// Visibility toggles on the bottom bar: backlit rack labels (lit = shown,
 	// greyed = hidden), tinted in the P-6 amber accent.
 	acc := deviceHwAccent
-	u.padBtn = components.NewRackToggle("PADS", acc, u.togglePads)
+	u.padBtn = components.NewRackToggle("PADS", acc, func() {
+		u.hidePlayMenu()
+		u.togglePads()
+	})
 	u.p6Btn = components.NewRackToggle("P-6", acc, u.toggleP6Rack)
 	u.fxBtn = components.NewRackToggle("FX", acc, u.toggleFXChoices)
-	u.padFXBtn = components.NewRackToggle("PAD FX", acc, func() { u.toggleVisible(u.fxRack.Object(), u.padFXBtn) })
-	u.keysFXBtn = components.NewRackToggle("KEYS FX", deviceEmuAccent, u.toggleKeyboardFX)
-	u.fxChoices = container.NewHBox(u.padFXBtn, u.keysFXBtn)
+	u.padFXBtn = components.NewRackToggle("PAD FX", acc, func() {
+		u.hideFXChoices()
+		u.toggleVisible(u.fxRack.Object(), u.padFXBtn)
+	})
+	u.keysFXBtn = components.NewRackToggle("KEYS FX", deviceEmuAccent, func() {
+		u.hideFXChoices()
+		u.toggleKeyboardFX()
+	})
+	u.fxChoices = widget.NewPopUp(popupChoices(u.padFXBtn, u.keysFXBtn), w.Canvas())
 	u.fxChoices.Hide()
-	u.seqBtn = components.NewRackToggle("SEQ", acc, u.toggleSeqView)
-	u.keysBtn = components.NewRackToggle("KEYS", acc, func() { u.toggleVisible(u.keyboardRack.Object(), u.keysBtn) })
+	u.seqBtn = components.NewRackToggle("SEQ", acc, func() {
+		u.hidePlayMenu()
+		u.toggleSeqView()
+	})
+	u.keysBtn = components.NewRackToggle("KEYS", acc, func() {
+		u.hidePlayMenu()
+		u.toggleVisible(u.keyboardRack.Object(), u.keysBtn)
+	})
+	u.playMenuBtn = components.NewRackToggleIcon(theme.GridIcon(), acc, u.togglePlayMenu)
+	u.playMenu = widget.NewPopUp(popupChoices(u.padBtn, u.seqBtn, u.keysBtn), w.Canvas())
+	u.playMenu.Hide()
 	u.paksBtn = components.NewRackToggle("PAKS", acc, func() { u.toggleVisible(u.paksRack.Object(), u.paksBtn) })
 	u.meterBtn = components.NewRackToggle("VU", acc, func() { u.toggleVisible(u.meterArea, u.meterBtn) })
 	// CONSOLE switches to the "mixing console" layout: full screen on desktop,
 	// and the same wide layout on a large tablet.
 	u.consoleBtn = components.NewRackToggle("CONSOLE", acc, u.toggleConsole)
 	u.consoleBtn.SetOn(u.fullScreen)
-	toggleObjs := []fyne.CanvasObject{u.padBtn, u.p6Btn, u.fxBtn, u.fxChoices, u.seqBtn, u.keysBtn, u.paksBtn, u.meterBtn, u.consoleBtn}
+	toggleObjs := []fyne.CanvasObject{u.playMenuBtn, u.p6Btn, u.fxBtn, u.paksBtn, u.meterBtn, u.consoleBtn}
 	toggleObjs = append(toggleObjs, u.jamToggles()...) // JAM button (absent in -tags nojam / web / mobile builds)
 	toggles := container.NewHBox(toggleObjs...)
 
@@ -448,6 +468,7 @@ func (u *ui) build(w fyne.Window) {
 	u.setVisible(u.keyboardFXRack.Object(), u.keysFXBtn, false)
 	u.setVisible(u.seqRack.Object(), u.seqBtn, true)
 	u.setVisible(u.keyboardRack.Object(), u.keysBtn, false)
+	u.updatePlayMenuButton()
 	u.setVisible(u.paksRack.Object(), u.paksBtn, false)
 	u.setVisible(u.meterArea, u.meterBtn, true)
 
@@ -809,19 +830,62 @@ func (u *ui) toggleP6Rack() {
 	u.toggleVisible(u.p6Obj, u.p6Btn)
 }
 
-// toggleFXChoices expands/collapses the bottom-bar FX selector. The two child
-// buttons independently show the pad-trigger FX rack and emulator Keys FX rack.
+// popupChoices stacks backlit selectors vertically.
+func popupChoices(buttons ...fyne.CanvasObject) *fyne.Container {
+	return container.NewVBox(buttons...)
+}
+
+// togglePlayMenu floats the PADS/SEQ/KEYS rack selectors vertically above the
+// bottom bar. The popup is transient; the component-icon light reflects whether any of
+// those racks is visible, not whether the popup itself is open.
+func (u *ui) togglePlayMenu() {
+	if u.playMenu.Visible() {
+		u.hidePlayMenu()
+		return
+	}
+	u.hideFXChoices()
+	menuHeight := u.playMenu.MinSize().Height
+	u.playMenu.ShowAtRelativePosition(fyne.NewPos(0, -menuHeight), u.playMenuBtn)
+}
+
+func (u *ui) hidePlayMenu() {
+	if u.playMenu != nil {
+		u.playMenu.Hide()
+	}
+}
+
+func (u *ui) updatePlayMenuButton() {
+	if u.playMenuBtn == nil || u.padRackObj == nil || u.seqRack == nil || u.keyboardRack == nil {
+		return
+	}
+	u.playMenuBtn.SetOn(u.padRackObj.Visible() || u.seqRack.Object().Visible() || u.keyboardRack.Object().Visible())
+}
+
+// toggleFXChoices floats the PAD FX / KEYS FX selectors vertically above the
+// bottom bar. The child buttons independently show their corresponding racks.
 func (u *ui) toggleFXChoices() {
 	show := !u.fxChoices.Visible()
 	if show {
-		u.fxChoices.Show()
+		u.hidePlayMenu()
+		menuHeight := u.fxChoices.MinSize().Height
+		u.fxChoices.ShowAtRelativePosition(fyne.NewPos(0, -menuHeight), u.fxBtn)
 	} else {
+		u.hideFXChoices()
+	}
+	u.updateFXButton()
+}
+
+func (u *ui) hideFXChoices() {
+	if u.fxChoices != nil {
 		u.fxChoices.Hide()
 	}
-	u.fxBtn.SetOn(show)
-	if u.root != nil {
-		u.root.Refresh()
+}
+
+func (u *ui) updateFXButton() {
+	if u.fxBtn == nil || u.fxRack == nil || u.keyboardFXRack == nil {
+		return
 	}
+	u.fxBtn.SetOn(u.fxRack.Object().Visible() || u.keyboardFXRack.Object().Visible())
 }
 
 func (u *ui) toggleKeyboardFX() {
@@ -1588,6 +1652,12 @@ func (u *ui) setVisible(o fyne.CanvasObject, btn *components.RackToggle, visible
 		o.Hide()
 	}
 	btn.SetOn(visible)
+	if btn == u.padBtn || btn == u.seqBtn || btn == u.keysBtn {
+		u.updatePlayMenuButton()
+	}
+	if btn == u.padFXBtn || btn == u.keysFXBtn {
+		u.updateFXButton()
+	}
 	if u.keyboardFXRack != nil && o == u.keyboardFXRack.Object() {
 		u.applyKeyboardFXEnabled()
 	}

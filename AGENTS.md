@@ -76,10 +76,11 @@ class-compliant **USB MIDI** port:
 - The pad grid, delay/reverb, effects and sequencer are all **toggleable racks**
   (see the bottom-bar toggles below).
 - A **rack-framed bottom bar** that hosts the **visibility toggles** — backlit
-  rack-label `components.RackToggle`s (`PADS · DLY/REV · FX · SEQ · VU`, lit when
+  rack-label `components.RackToggle`s (component icon · `P-6` · `FX` · `PAKS` · `VU`, lit when
   shown / greyed when hidden, also **Ctrl+Shift+P/D/F/S/M**) — a red/green
   connection **LED** (breathing glow), status text, and an **ⓘ info** dialog
-  button. There is **no Reconnect button**: the app auto-connects/reconnects
+  button. The component icon floats a vertical `PADS` / `SEQ` / `KEYS` selector above the bar;
+  `FX` floats its own vertical `PAD FX` / `KEYS FX` selector. There is **no Reconnect button**: the app auto-connects/reconnects
   (see the device watcher in §4).
 - Amber/orange theme; **Ctrl+Q** quits.
 

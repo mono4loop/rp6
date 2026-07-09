@@ -118,17 +118,51 @@ func TestKeyboardRackHiddenByDefault(t *testing.T) {
 	assert.True(t, u.keysBtn.On())
 }
 
+func TestPlayButtonFloatsVerticalRackChoices(t *testing.T) {
+	u := newTestUI(t)
+	require.NotNil(t, u.playMenu)
+	require.False(t, u.playMenu.Visible())
+	choices, ok := u.playMenu.Content.(*fyne.Container)
+	require.True(t, ok)
+	assert.Equal(t, []fyne.CanvasObject{u.padBtn, u.seqBtn, u.keysBtn}, choices.Objects)
+	assert.True(t, u.playMenuBtn.On(), "pads and sequencer are visible by default")
+
+	u.togglePlayMenu()
+	assert.True(t, u.playMenu.Visible())
+	assert.NotNil(t, u.win.Canvas().Overlays().Top(), "choices float in a canvas overlay")
+
+	u.padBtn.Tapped(nil)
+	assert.False(t, u.playMenu.Visible(), "choosing a rack closes the floating menu")
+	assert.False(t, u.padRackObj.Visible())
+	assert.True(t, u.playMenuBtn.On(), "sequencer remains visible")
+
+	u.togglePlayMenu()
+	u.seqBtn.Tapped(nil)
+	assert.False(t, u.seqRack.Object().Visible())
+	assert.False(t, u.playMenuBtn.On(), "parent greys when all three racks are hidden")
+
+	u.togglePlayMenu()
+	u.keysBtn.Tapped(nil)
+	assert.True(t, u.keyboardRack.Object().Visible())
+	assert.True(t, u.playMenuBtn.On())
+}
+
 func TestFXButtonExpandsIndependentChoices(t *testing.T) {
 	u := newTestUI(t)
 	require.False(t, u.fxChoices.Visible())
+	choices, ok := u.fxChoices.Content.(*fyne.Container)
+	require.True(t, ok)
+	assert.Equal(t, []fyne.CanvasObject{u.padFXBtn, u.keysFXBtn}, choices.Objects)
 	require.False(t, u.fxRack.Object().Visible())
 	require.False(t, u.keyboardFXRack.Object().Visible())
 
 	u.toggleFXChoices()
 	assert.True(t, u.fxChoices.Visible())
-	assert.True(t, u.fxBtn.On())
+	assert.False(t, u.fxBtn.On(), "parent light reflects visible FX racks, not popup state")
+	assert.NotNil(t, u.win.Canvas().Overlays().Top(), "FX choices float in a canvas overlay")
 
 	u.padFXBtn.Tapped(nil)
+	assert.False(t, u.fxChoices.Visible(), "choosing a rack closes the floating menu")
 	assert.True(t, u.fxRack.Object().Visible())
 	assert.False(t, u.keyboardFXRack.Object().Visible())
 
@@ -136,13 +170,13 @@ func TestFXButtonExpandsIndependentChoices(t *testing.T) {
 	assert.True(t, u.keysFXBtn.Disabled())
 	u.useEmu = true
 	u.applyBackendGating()
+	u.toggleFXChoices()
 	u.keysFXBtn.Tapped(nil)
 	assert.True(t, u.keyboardFXRack.Object().Visible())
 	assert.True(t, u.keysFXBtn.On())
 	assert.True(t, u.fxRack.Object().Visible(), "both FX racks can be visible")
 
-	u.toggleFXChoices()
-	assert.False(t, u.fxChoices.Visible(), "collapsing the selector doesn't hide either rack")
+	assert.False(t, u.fxChoices.Visible())
 	assert.True(t, u.fxRack.Object().Visible())
 	assert.True(t, u.keyboardFXRack.Object().Visible())
 }
