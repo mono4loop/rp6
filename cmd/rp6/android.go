@@ -5,7 +5,6 @@ package main
 import (
 	"log"
 	"strings"
-	"time"
 
 	"fyne.io/fyne/v2"
 
@@ -20,7 +19,8 @@ import (
 // The app starts on the built-in emulator (like a desktop with no P-6), marked
 // as a fallback so the device watcher promotes to a P-6 if one is read. Because
 // USB devices appear asynchronously (the OS shows a permission dialog first),
-// the external-controller attach is retried until one shows up.
+// the external-controller attach is retried by the shared MIDI-input watcher
+// (which also handles hot-plugging/swapping a controller later).
 func (u *ui) startAndroidMIDI() {
 	if u.useEmu && strings.TrimSpace(u.emuDir) == "" {
 		u.emuFallback.Store(true)
@@ -32,24 +32,5 @@ func (u *ui) startAndroidMIDI() {
 	})
 
 	u.startDeviceWatch()
-
-	stop := u.watchStop
-	go func() {
-		t := time.NewTicker(2 * time.Second)
-		defer t.Stop()
-		for {
-			select {
-			case <-stop:
-				return
-			case <-t.C:
-				// Check + (re)attach on the UI thread so u.midiIn is only ever
-				// touched there (serialised with close() and the Run goroutine).
-				fyne.Do(func() {
-					if u.midiIn == nil {
-						u.startMIDIInput()
-					}
-				})
-			}
-		}
-	}()
+	u.startMIDIInputWatch()
 }

@@ -1283,6 +1283,37 @@ func (u *ui) stopDeviceWatch() {
 	}
 }
 
+// startMIDIInputWatch periodically re-detects an external MIDI input controller
+// and (re)attaches it whenever none is currently open — so hot-plugging,
+// swapping, or replugging a controller is picked up live, without restarting
+// rp6. It shares the device watcher's lifecycle (watchStop), so call it after
+// startDeviceWatch. startMIDIInput's own miss-logged guard keeps this from
+// spamming the log while nothing is plugged in.
+func (u *ui) startMIDIInputWatch() {
+	stop := u.watchStop
+	if stop == nil {
+		return
+	}
+	go func() {
+		t := time.NewTicker(2 * time.Second)
+		defer t.Stop()
+		for {
+			select {
+			case <-stop:
+				return
+			case <-t.C:
+				// Check + (re)attach on the UI thread so u.midiIn is only ever
+				// touched there (serialised with close() and the Run goroutine).
+				fyne.Do(func() {
+					if u.midiIn == nil {
+						u.startMIDIInput()
+					}
+				})
+			}
+		}
+	}()
+}
+
 // startMeter runs a lightweight animator that drives the meter from the current
 // level source each frame. It runs until stopMeter is closed (on shutdown) so
 // it can't keep posting UI updates once the Fyne run loop is tearing down — at
@@ -1786,8 +1817,10 @@ func (u *ui) startMIDIInput() {
 		if err := dev.Run(h); err != nil {
 			log.Printf("rp6: MIDI input (%s) stopped: %v", dev.Name(), err)
 		}
+		_ = dev.Close() // release the node so a replug/swap can reopen cleanly
 		// Clear the handle on the UI thread (serialised with close() and the
-		// Android re-attach poller) so a reconnect can pick a controller up again.
+		// MIDI-input re-attach poller) so a reconnect can pick a controller up
+		// again (see startMIDIInputWatch).
 		fyne.Do(func() {
 			if u.midiIn == dev {
 				u.midiIn = nil
@@ -2015,6 +2048,7 @@ func main() {
 	if !onMobile {
 		u.startMIDIInput()
 		u.startDeviceWatch()
+		u.startMIDIInputWatch() // re-attach a controller on hot-plug/swap
 	}
 	u.startAndroidMIDI() // no-op except on Android
 	u.startJam()         // join a shared jam session if RP6_JAM_CODE is set (no-op in -tags nojam / web / mobile builds)
