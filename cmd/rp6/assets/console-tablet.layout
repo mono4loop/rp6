@@ -3,55 +3,53 @@
 // mobile; it must be parsed BEFORE the desktop `console` variant so it wins
 // there (see layoutSource — this file is concatenated first).
 //
-// On a tablet the desktop console's three-rail split squeezes whatever sits in
-// the centre into an unreadable sliver, so this variant uses two wide panes
-// instead — the pads and the sequencer side by side, each about half the width —
-// with the transport + Delay/Reverb full width on top and the keyboard across
-// the bottom.
+// The pad-rack "store" selector needs room, so this variant gives the sample-pak
+// selector its own left rail beside a single centre column that stacks the
+// sequencer over the pads. The transport (TEMPO) carries the VU strip on its
+// right, and the FX rack is hidden (kept off unless the user turns it on).
 //
-//   ┌─────────────────────────────────────┐
-//   │ transport                           │
-//   │ dly/rev                             │
-//   ├──────────────────┬──────────────────┤
-//   │                  │                  │
-//   │      pads        │       seq        │
-//   │                  │                  │
-//   │   vu (strip)     │    fx (strip)    │
-//   ├──────────────────┴──────────────────┤
-//   │              keyboard               │
-//   │              status                 │
-//   └─────────────────────────────────────┘
+//   ┌───────┬─────────────────────────────┐
+//   │       │ transport | vu (strip)      │
+//   │       ├─────────────────────────────┤
+//   │ paks  │            seq              │
+//   │       │─────────────────────────────│
+//   │       │            pads             │
+//   │       ├─────────────────────────────┤
+//   │       │            keyboard         │
+//   │       │            status           │
+//   └───────┴─────────────────────────────┘
 
 layout consoletablet when fullscreen && mobile {
   Border {
     bottom: VBox {
-      paks(show: true)
+      fx(show: false)
       keys(show: true)
       toggles
       status
     }
 
-    // Full-width top: transport (TEMPO) and, when the P-6 is the active backend,
-    // its hardware rack (Play/Stop, pattern, Delay/Reverb) below it. On a tablet
-    // the backend is the emulator, so `p6` is normally absent here.
+    // Full-width top: the transport (TEMPO) with the VU meter as a horizontal
+    // strip filling the space to its right, and — when the P-6 is the active
+    // backend — its hardware rack below. On a tablet the backend is normally the
+    // emulator, so `p6` is usually absent here.
     top: VBox {
-      transport
+      Border {
+        left: transport
+        center: vu(orientation: horizontal)
+      }
       p6 if p6_active
     }
 
-    // Two wide panes side by side, so neither the pads nor the sequencer gets
-    // squeezed. The pads carry the VU strip; the sequencer carries the FX strip.
+    // Left rail: the sample-pak selector, filling the tall rail to the left of
+    // the pad/sequencer column (on by default in the console).
+    left: paks(show: true)
+
+    // Centre column: the sequencer on top, the pads stacked underneath it.
     center: Split {
-      horizontal: true
-      offset: 0.45
-      leading: Border {
-        center: pads if pads_visible
-        bottom: vu(orientation: horizontal)
-      }
-      trailing: Border {
-        center: seq if !seq_docked
-        bottom: fx(show: true)
-      }
+      horizontal: false
+      offset: 0.5
+      leading: seq if !seq_docked
+      trailing: pads if pads_visible
     }
   }
 }
