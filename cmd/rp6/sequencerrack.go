@@ -53,6 +53,13 @@ type sequencerRack struct {
 	cells     [][]*components.StepButton // [track][step]
 	lastStep  []int                      // per-track last playhead step
 
+	// Sub-section holders, exposed so the layout DSL can (re)compose the rack's
+	// internals: the transport/knob row, the armed-track control row, and the
+	// scrolling track grid (whose rows are generated in Go).
+	header   *fyne.Container
+	header2  *fyne.Container
+	trackBox *container.Scroll
+
 	armedTrack int // track waiting to adopt the next selected pad (-1 = none)
 
 	obj fyne.CanvasObject
@@ -136,6 +143,7 @@ func newSequencerRack(seq *sequencer.Engine, onLayout func(), onDock func(bool),
 		r.tracksStep.Object(), widget.NewSeparator(),
 		r.slotStep.Object(), r.copyBtn, r.clearBtn, r.saveBtn,
 		widget.NewSeparator(), r.dockBtn)
+	r.header = header
 
 	// Second row: mute + bar-length for the armed track. Tap a track's name to
 	// arm it (it lights hardest), then these act on it. Greyed when none armed.
@@ -145,10 +153,7 @@ func newSequencerRack(seq *sequencer.Engine, onLayout func(), onDock func(bool),
 		container.NewGridWrap(fyne.NewSize(44, 32), r.armMuteBtn),
 		container.NewGridWrap(fyne.NewSize(80, 32), r.armBarsBtn),
 	)
-
-	// A little breathing room between the controls and the grid.
-	gap := canvas.NewRectangle(color.Transparent)
-	gap.SetMinSize(fyne.NewSize(0, 12))
+	r.header2 = header2
 
 	trackObjs := make([]fyne.CanvasObject, 0, maxT+1)
 	for t := range maxT {
@@ -208,12 +213,25 @@ func newSequencerRack(seq *sequencer.Engine, onLayout func(), onDock func(bool),
 	tracks := container.NewVBox(trackObjs...)
 	scroll := container.NewVScroll(tracks)
 	scroll.SetMinSize(fyne.NewSize(tracks.MinSize().Width, 240))
+	r.trackBox = scroll
 
-	top := container.NewVBox(header, header2, gap)
-	r.obj = components.NewRackPanel(container.NewBorder(top, nil, nil, nil, scroll))
+	// The object is composed by the app (ui.composeRack): from the layout file's
+	// `rack seq` block if present, else r.defaultObject — so the sub-widgets are
+	// parented into exactly one tree (never a throwaway; matters on mobile).
 	r.applyTracks(defaultTracks)
 	r.updateArmedControls() // nothing armed yet -> greyed
 	return r
+}
+
+// defaultObject builds the rack's stock Go composition — the transport/knob row
+// and armed-track control row pinned above the scrolling track grid. Used only
+// when the layout file has no `rack seq` block (see ui.composeRack).
+func (r *sequencerRack) defaultObject() fyne.CanvasObject {
+	// A little breathing room between the controls and the grid.
+	gap := canvas.NewRectangle(color.Transparent)
+	gap.SetMinSize(fyne.NewSize(0, 12))
+	top := container.NewVBox(r.header, r.header2, gap)
+	return components.NewRackPanel(container.NewBorder(top, nil, nil, nil, r.trackBox))
 }
 
 func toObjs(rows []*fyne.Container) []fyne.CanvasObject {

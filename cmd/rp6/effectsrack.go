@@ -42,9 +42,16 @@ func newEffectsRack(fx *effects.Engine, onChange func()) *effectsRack {
 		},
 	})
 
-	row := container.NewHBox(e.roll, widget.NewSeparator(), e.rate.Object())
-	e.obj = components.NewRackPanel(row)
+	// The object is composed by the app (ui.composeRack): from the layout file's
+	// `rack fx` block if present, else e.defaultObject — so the sub-widgets are
+	// parented into exactly one tree (never a throwaway; matters on mobile).
 	return e
+}
+
+// defaultObject builds the rack's stock Go composition — used only when the
+// layout file has no `rack fx` block (see ui.composeRack).
+func (e *effectsRack) defaultObject() fyne.CanvasObject {
+	return components.NewRackPanel(container.NewHBox(e.roll, widget.NewSeparator(), e.rate.Object()))
 }
 
 // Object returns the CanvasObject to place in a layout.

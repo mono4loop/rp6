@@ -1,0 +1,50 @@
+// RP6 "mixing console" layout — used when the window is full screen (press F11
+// or Ctrl+Shift+Enter to toggle full screen).
+//
+// Compiled into the binary alongside default.layout; the loader concatenates the
+// two with this file FIRST, so this `when fullscreen` variant takes precedence
+// over the default/original variants. It shares the `rack …` blocks defined in
+// default.layout.
+//
+//   ┌───────┬───────────────────────┬───────┐
+//   │ trans │                        │  fx   │
+//   │       │                        │ dlyrev│
+//   │ (gap) │        pads            │  seq  │   right rail
+//   │  vu   │                        │       │
+//   ├───────┴───────────────────────┴───────┤
+//   │                status                 │
+//   └───────────────────────────────────────┘
+
+layout console when fullscreen {
+  Border {
+    // Bottom: full-width status bar (keeps the section toggles usable).
+    bottom: status
+
+    // Left rail: transport, then the VU meter as a horizontal strip right below
+    // it (not the wide vertical meter), with a spacer filling the rest.
+    left: VBox {
+      transport
+      vu(orientation: horizontal)
+      Spacer
+    }
+
+    // Right rail: the effect racks stacked. `show: true` turns them on when the
+    // console is entered (you can still toggle them off with the FX / DLY-REV
+    // buttons while it's showing). The sequencer joins them unless it's docked as
+    // the centre split pane.
+    right: VBox {
+      fx(show: true)
+      dlyrev(show: true)
+      seq if !seq_docked
+    }
+
+    // Centre: the pads fill the space; when the sequencer is docked it shares
+    // the centre as the right pane of a split.
+    center: Split {
+      horizontal: true
+      offset: 0.65
+      leading: pads if pads_visible
+      trailing: seq if seq_docked
+    }
+  }
+}

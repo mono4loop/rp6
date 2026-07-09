@@ -280,10 +280,23 @@ internal/ui/components/   GENERIC, reusable Fyne widgets (NO p6 import!)
                     Generic — the app supplies name/tag/accent (amber=P-6
                     hardware, cyan=emu) and the actions.
   rackpanel.go      RackPanel: gunmetal rack-unit frame with corner screws
+internal/ui/layoutspec/  layout builder IR (NO p6): a tree of Nodes (Ref/RefWith,
+                    VBox/HBox/Stack/Border/Split/Grid/RackPanel/Spacer/Separator)
+                    that Build/BuildConfig turn into Fyne containers by resolving
+                    Ref ids against a Registry; RefWith + a Configurator carry
+                    per-widget properties. Full design: docs/architecture/layouts.md
+internal/ui/layoutlang/  the text layout language (imports only layoutspec +
+                    stdlib): Parse -> Document; Select(env) picks a `layout … when
+                    …` variant and Rack(name,env) a `rack …` block, compiling to
+                    layoutspec Nodes; conditions evaluate over an Env of flags.
 internal/ui/theme/theme.go   Amber: dark Fyne theme with amber accent
 cmd/rp6/padgrid.go    P-6 grid config + padID<->(bank,number) mapping + colors
 cmd/rp6/effectsrack.go the "effects rack" for the selected pad (4 slots + Rate)
 cmd/rp6/sequencerrack.go the step-sequencer panel (tracks + step grid + transport)
+cmd/rp6/layout.go     loads the embedded UI layout, selects a variant per env,
+                    composes rack internals + applies component properties
+cmd/rp6/assets/*.layout  the compiled-in UI layouts (console + default/compact
+                    variants and the shared `rack` blocks) — see docs/architecture/layouts.md
 ```
 
 ### The one rule that matters
@@ -315,6 +328,14 @@ cmd/rp6/sequencerrack.go the step-sequencer panel (tracks + step grid + transpor
   *configuration* — push the data out to the caller (see how `PadGrid` takes
   `Cell(page,row,col)`, `Badges(page,row,col)` and `OnTrigger`, while
   `cmd/rp6/padgrid.go` supplies the bank math).
+- **The window layout is data, not imperative Go.** `internal/ui/layoutspec` +
+  `internal/ui/layoutlang` (both generic — no `p6`) describe the UI in a small
+  text language compiled into the binary (`cmd/rp6/assets/*.layout`); `relayout`
+  selects a variant per form factor and builds it. Rearranging the UI — even the
+  controls *inside* a rack — is a `.layout` edit + rebuild, not a Go change.
+  Widgets are still built/wired in Go and referenced by ID. **Read
+  `docs/architecture/layouts.md` before touching layout code** — it covers the
+  compose-once (object→canvas 1:1) rule and the Android full-screen gotcha.
 
 ### The emulator (use rp6 without the hardware)
 

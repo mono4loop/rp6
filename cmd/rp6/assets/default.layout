@@ -1,0 +1,94 @@
+// RP6 UI layout — compiled into the binary (edit and `make build` to change).
+//
+// This is the DEFAULT (original) top-bar arrangement: transport across the top,
+// pads in the centre, VU meter down the right (or along the bottom when the
+// window is narrow), status at the bottom. Press F11 or Ctrl+Shift+Enter to go
+// full screen, which switches to the "mixing console" layout in console.layout.
+//
+// The loader parses console.layout first, so its `when fullscreen` variant wins
+// when full screen; otherwise the first matching variant below is used (compact
+// on a narrow window, else the unguarded default).
+//
+// A widget reference may carry properties: `name(key: value, …)`. The app
+// applies them to the widget — currently `vu(orientation: horizontal|vertical)`
+// sets the VU meter's orientation.
+
+// Narrow / portrait window: the VU meter moves to a strip along the bottom.
+layout compact when compact {
+  Border {
+    top: VBox {
+      transport
+      dlyrev
+      fx
+      seq if !seq_docked
+    }
+    center: Split {
+      horizontal: true
+      offset: 0.5
+      leading: pads if pads_visible
+      trailing: seq if seq_docked
+    }
+    bottom: VBox {
+      vu(orientation: horizontal)
+      status
+    }
+  }
+}
+
+// Default (windowed): VU meter down the right-hand side.
+layout default {
+  Border {
+    top: VBox {
+      transport
+      dlyrev
+      fx
+      seq if !seq_docked
+    }
+    center: Split {
+      horizontal: true
+      offset: 0.5
+      leading: pads if pads_visible
+      trailing: seq if seq_docked
+    }
+    right: vu(orientation: vertical)
+    bottom: status
+  }
+}
+
+// ── Rack internals ──────────────────────────────────────────────────────────
+// `rack NAME { … }` blocks lay out the controls *inside* a rack, from the same
+// primitives as the top level. The IDs here are the rack's own sub-widgets; the
+// dynamically-generated parts (pad cells, sequencer track rows) are exposed as a
+// single holder ID (padGrid / seqGrid) that Go fills in. Omit a block and the
+// rack keeps its built-in Go arrangement. These apply to every layout variant,
+// including the console layout in console.layout.
+
+rack transport {
+  RackPanel { HBox { play; Separator; tempo; Separator; pattern } }
+}
+
+rack dlyrev {
+  RackPanel { Grid { cols: 4; delayTime; delayLevel; reverbTime; reverbLevel } }
+}
+
+rack fx {
+  RackPanel { HBox { fxRoll; Separator; fxRate } }
+}
+
+rack pads {
+  RackPanel {
+    Border {
+      top: HBox { padFloat; padListen; padDensity; Spacer; badge }
+      center: padGrid
+    }
+  }
+}
+
+rack seq {
+  RackPanel {
+    Border {
+      top: VBox { seqHeader; seqControls }
+      center: seqGrid
+    }
+  }
+}

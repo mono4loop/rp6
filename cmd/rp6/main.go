@@ -40,6 +40,8 @@ import (
 	"github.com/mono4loop/rp6/internal/sequencer"
 	"github.com/mono4loop/rp6/internal/store"
 	"github.com/mono4loop/rp6/internal/ui/components"
+	"github.com/mono4loop/rp6/internal/ui/layoutlang"
+	"github.com/mono4loop/rp6/internal/ui/layoutspec"
 	uitheme "github.com/mono4loop/rp6/internal/ui/theme"
 	"github.com/mono4loop/rp6/p6"
 )
@@ -109,6 +111,17 @@ type ui struct {
 	statusBar     fyne.CanvasObject
 	seqSide       bool // sequencer docked as a right-hand column
 
+	// Runtime UI layout (see internal/ui/layoutlang). layoutDoc is the parsed
+	// layout program, compiled into the binary from assets/default.layout; its
+	// variants are selected per environment (platform + form factor) at boot.
+	layoutDoc *layoutlang.Document
+	// activeVariant is the name of the layout variant currently shown;
+	// variantChanged is set for the one relayout where it changes, so a variant
+	// can set a rack's default visibility (`show:`) on entry without fighting the
+	// user's manual toggles afterwards.
+	activeVariant  string
+	variantChanged bool
+
 	// compact is the phone/portrait form factor (narrow window): the VU meter
 	// moves from the right-hand side to a horizontal strip along the bottom,
 	// between the pads and the status bar. contentHolder is a stable wrapper
@@ -116,6 +129,17 @@ type ui struct {
 	// app can flip between the wide and compact arrangements live.
 	compact       bool
 	contentHolder *fyne.Container
+
+	// Full-screen state. windowedSize remembers the pre-full-screen size so we
+	// can restore it on exit; lastFullScreen is the state we last laid out for,
+	// so onCanvasResize relays out when full screen is toggled (see
+	// toggleFullScreen). fullScreen is our own intent (set only by
+	// toggleFullScreen), NOT the window flag — mobile reports FullScreen()==true
+	// inherently, and the console layout is desktop-only. Full screen selects the
+	// "console" layout.
+	fullScreen     bool
+	windowedSize   fyne.Size
+	lastFullScreen bool
 
 	// bottom-bar visibility toggles (backlit rack labels)
 	padBtn    *components.RackToggle
@@ -125,7 +149,7 @@ type ui struct {
 	meterBtn  *components.RackToggle
 
 	statusLED   *components.LED
-	root        *fyne.Container
+	root        fyne.CanvasObject
 	status      *widget.Label
 	deviceBadge *components.DeviceBadge // pad rack tool row: backlit device nameplate
 	deviceState components.DeviceState  // last-known connection state, re-applied when the badge is rebuilt (float/dock)
@@ -157,17 +181,32 @@ func newUI() *ui {
 }
 
 func (u *ui) build(w fyne.Window) {
+	// Parse the embedded UI layout (compiled in; no I/O — safe in tests).
+	u.loadLayout()
+
 	// Pad area (P-6-specific grid + paging + selection), wrapped as a rack with
 	// a slim left column of tool buttons (first one floats the rack to its own
 	// window and docks it back).
 	u.buildPadRack()
 	u.fxRack = newEffectsRack(u.fx, func() { u.grid.RefreshBadges() })
+	// Let the layout file arrange this rack's internals; if there's no `rack fx`
+	// block, fall back to the rack's own Go composition (composeRack builds only
+	// one, never both — see its doc for why that matters on mobile).
+	u.fxRack.obj = u.composeRack("fx", layoutspec.Registry{
+		"fxRoll": u.fxRack.roll,
+		"fxRate": u.fxRack.rate.Object(),
+	}, u.fxRack.defaultObject)
 	u.seqRack = newSequencerRack(u.seq,
 		func() {
 			if u.root != nil {
 				u.root.Refresh()
 			}
 		}, u.onSeqDock, numSeqSlots, u.selectSlot, u.copyToSlot, u.deleteSlot, u.saveSeq)
+	u.seqRack.obj = u.composeRack("seq", layoutspec.Registry{
+		"seqHeader":   u.seqRack.header,
+		"seqControls": u.seqRack.header2,
+		"seqGrid":     u.seqRack.trackBox,
+	}, u.seqRack.defaultObject)
 	u.seqRack.onStop = u.applyPendingSlot
 	u.seq.OnStep = func(tick int) {
 		fyne.Do(func() {
@@ -199,19 +238,31 @@ func (u *ui) build(w fyne.Window) {
 		OnChange:  u.onPatternChange,
 	})
 
-	transport := container.NewHBox(u.playBtn)
-	toolbar := container.NewHBox(transport, widget.NewSeparator(),
-		u.tempo.Object(), widget.NewSeparator(), u.patternStep.Object())
+	// The transport and Delay/Reverb rack internals are laid out from the layout
+	// file too; the fallbacks below (built only when there's no `rack` block)
+	// reproduce the stock Go arrangement. composeRack never builds both trees.
+	u.transportRack = u.composeRack("transport", layoutspec.Registry{
+		"play":    u.playBtn,
+		"tempo":   u.tempo.Object(),
+		"pattern": u.patternStep.Object(),
+	}, func() fyne.CanvasObject {
+		toolbar := container.NewHBox(u.playBtn, widget.NewSeparator(),
+			u.tempo.Object(), widget.NewSeparator(), u.patternStep.Object())
+		return components.NewRackPanel(toolbar)
+	})
 
-	fxRow := container.NewGridWithColumns(4,
-		u.fxSlider("Delay Time", p6.CCDelayTime),
-		u.fxSlider("Delay Level", p6.CCDelayLevel),
-		u.fxSlider("Reverb Time", p6.CCReverbTime),
-		u.fxSlider("Reverb Level", p6.CCReverbLevel),
-	)
-	u.dlyRevObj = components.NewRackPanel(fxRow)
-
-	u.transportRack = components.NewRackPanel(toolbar)
+	delayTime := u.fxSlider("Delay Time", p6.CCDelayTime)
+	delayLevel := u.fxSlider("Delay Level", p6.CCDelayLevel)
+	reverbTime := u.fxSlider("Reverb Time", p6.CCReverbTime)
+	reverbLevel := u.fxSlider("Reverb Level", p6.CCReverbLevel)
+	u.dlyRevObj = u.composeRack("dlyrev", layoutspec.Registry{
+		"delayTime":   delayTime,
+		"delayLevel":  delayLevel,
+		"reverbTime":  reverbTime,
+		"reverbLevel": reverbLevel,
+	}, func() fyne.CanvasObject {
+		return components.NewRackPanel(container.NewGridWithColumns(4, delayTime, delayLevel, reverbTime, reverbLevel))
+	})
 
 	// Vertical master meter on the right, framed as a rack panel (toggleable).
 	// A short "VU" cap keeps the rack column narrow. In compact (phone) mode it
@@ -250,6 +301,20 @@ func (u *ui) build(w fyne.Window) {
 	u.addRackShortcut(w, fyne.KeyS, u.toggleSeqView)
 	u.addRackShortcut(w, fyne.KeyM, func() { u.toggleVisible(u.meterArea, u.meterBtn) })
 
+	// F11 toggles full screen, which switches to the "console" layout (Fyne has
+	// no built-in full-screen key, and a modifier-less key can't be an
+	// AddShortcut, so we handle it via the canvas typed-key hook).
+	w.Canvas().SetOnTypedKey(func(ev *fyne.KeyEvent) {
+		if ev.Name == fyne.KeyF11 {
+			u.toggleFullScreen()
+		}
+	})
+	// Ctrl+Shift+Enter is the always-works alternative (a modified shortcut fires
+	// regardless of keyboard focus, unlike the F11 typed-key above). Bind both the
+	// main Return and the numpad Enter.
+	u.addRackShortcut(w, fyne.KeyReturn, u.toggleFullScreen)
+	u.addRackShortcut(w, fyne.KeyEnter, u.toggleFullScreen)
+
 	// Default visibility: Pads + Sequencer + Meter on; Delay/Reverb, Effects off.
 	// The sequencer shows above the pads (undocked) by default.
 	u.setVisible(u.padRackObj, u.padBtn, true)
@@ -261,48 +326,28 @@ func (u *ui) build(w fyne.Window) {
 	u.relayout()
 }
 
-// relayout (re)assembles the window content, honoring which racks are visible,
-// the sequencer's docked (right-hand column) mode, and the compact (phone)
-// form factor (VU meter along the bottom instead of down the right side).
+// relayout (re)assembles the window content from the active layout document
+// (see internal/ui/layoutlang). The app registers its widgets by stable ID; the
+// layout file (embedded default, or the user's editable override) decides where
+// they go per form factor, and the current UI state (compact, docked sequencer,
+// floating pads, window size) is passed in as the condition environment. The
+// layout is data, so rearranging the UI is a file edit — no code change.
 func (u *ui) relayout() {
-	seqDocked := u.seqSide && u.seqRack.Object().Visible()
-
-	// Keep the meter's orientation in sync with the form factor.
-	u.applyMeterOrientation(u.compact)
-
-	topObjs := []fyne.CanvasObject{u.transportRack, u.dlyRevObj, u.fxRack.Object()}
-	if !seqDocked {
-		topObjs = append(topObjs, u.seqRack.Object())
-	}
-	top := container.NewVBox(topObjs...)
-
-	padsVisible := u.padRackObj.Visible() && !u.padFloating
-	var center fyne.CanvasObject
-	switch {
-	case padsVisible && seqDocked:
-		// Sequencer docked as a right-hand column; both sides adapt (the pads
-		// shrink) to fit — no scrollbars.
-		sp := container.NewHSplit(u.padRackObj, u.seqRack.Object())
-		sp.SetOffset(0.5)
-		center = sp
-	case padsVisible:
-		center = u.padRackObj
-	case seqDocked:
-		center = u.seqRack.Object()
+	reg := layoutspec.Registry{
+		"transport": u.transportRack,
+		"dlyrev":    u.dlyRevObj,
+		"fx":        u.fxRack.Object(),
+		"seq":       u.seqRack.Object(),
+		"pads":      u.padRackObj,
+		"vu":        u.meterArea,
+		"status":    u.statusBar,
 	}
 
-	var centerObjs []fyne.CanvasObject
-	if center != nil {
-		centerObjs = []fyne.CanvasObject{center}
-	}
-
-	if u.compact {
-		// Phone/portrait: VU strip stacks above the status bar at the bottom.
-		bottom := container.NewVBox(u.meterArea, u.statusBar)
-		u.root = container.NewBorder(top, bottom, nil, nil, centerObjs...)
-	} else {
-		// Wide: VU meter runs down the right-hand side.
-		u.root = container.NewBorder(top, u.statusBar, nil, u.meterArea, centerObjs...)
+	u.root = u.selectLayout(reg)
+	if u.root == nil {
+		// No document, or no variant matched: fall back to a minimal arrangement
+		// so the window is never blank.
+		u.root = container.NewBorder(u.transportRack, u.statusBar, nil, nil, u.padRackObj)
 	}
 
 	// A stable outer holder (created once) watches the window size so we can flip
@@ -315,6 +360,17 @@ func (u *ui) relayout() {
 		u.contentHolder.Objects = []fyne.CanvasObject{u.root}
 		u.contentHolder.Refresh()
 	}
+}
+
+// canvasSize reports the current window canvas size, or the zero size if there's
+// no window/canvas yet (e.g. very early startup). The wide/compact choice is
+// driven by u.compact (computed with hysteresis in onCanvasResize), so the exact
+// value only matters to size-based Variant predicates.
+func (u *ui) canvasSize() fyne.Size {
+	if u.win == nil || u.win.Canvas() == nil {
+		return fyne.Size{}
+	}
+	return u.win.Canvas().Size()
 }
 
 // applyMeterOrientation re-frames the VU meter for the current form factor: a
@@ -342,12 +398,19 @@ func (u *ui) applyMeterOrientation(horizontal bool) {
 // onCanvasResize is called by the content holder's layout on every window resize.
 // It classifies the window as compact (phone/portrait) by its aspect ratio, with
 // hysteresis to avoid flip-flopping at the boundary, and re-lays out on a change.
+// It also relays out when the full-screen state flips: entering/leaving full
+// screen resizes the window (which is where we reliably learn the settled size),
+// so this is the right place to rebuild the layout for the new form — see
+// toggleFullScreen, which can't rebuild correctly on its own because
+// SetFullScreen is applied asynchronously.
 func (u *ui) onCanvasResize(size fyne.Size) {
 	compact := classifyCompact(u.compact, size.Width, size.Height)
-	if compact == u.compact {
+	fs := u.isFullScreen()
+	if compact == u.compact && fs == u.lastFullScreen {
 		return
 	}
 	u.compact = compact
+	u.lastFullScreen = fs
 	// Defer off the current layout pass to avoid re-entrant relayout.
 	go fyne.Do(u.relayout)
 }
@@ -441,10 +504,21 @@ func (u *ui) buildPadRack() {
 	u.deviceBadge.OnToggle(u.toggleBackend)
 	u.deviceBadge.SetState(u.deviceState)
 
-	padTools := container.NewHBox(u.padFloatBtn, u.midiInBtn, u.layoutBtn,
-		layout.NewSpacer(), u.deviceBadge)
-	padBody := container.NewBorder(padTools, nil, nil, nil, u.padGridArea)
-	u.padRackObj = components.NewRackPanel(padBody)
+	// Lay out the pad rack internals from the layout file (`rack pads`), falling
+	// back to the stock Go arrangement if there's no block. composeRack builds
+	// only one tree, so the sub-widgets are never double-parented (which broke
+	// rendering on the Android driver — see composeRack).
+	u.padRackObj = u.composeRack("pads", layoutspec.Registry{
+		"padFloat":   u.padFloatBtn,
+		"padListen":  u.midiInBtn,
+		"padDensity": u.layoutBtn,
+		"badge":      u.deviceBadge,
+		"padGrid":    u.padGridArea,
+	}, func() fyne.CanvasObject {
+		padTools := container.NewHBox(u.padFloatBtn, u.midiInBtn, u.layoutBtn,
+			layout.NewSpacer(), u.deviceBadge)
+		return components.NewRackPanel(container.NewBorder(padTools, nil, nil, nil, u.padGridArea))
+	})
 
 	// Re-apply the selection highlight (no flash) to the fresh grid.
 	if u.selPad >= 0 {
@@ -519,6 +593,34 @@ func (u *ui) onSeqDock(docked bool) {
 func (u *ui) toggleSeqView() {
 	u.setVisible(u.seqRack.Object(), u.seqBtn, !u.seqRack.Object().Visible())
 	u.relayout()
+}
+
+// toggleFullScreen flips the main window between full screen and windowed, then
+// re-lays out — full screen selects the "console" layout (console.layout),
+// windowed uses the default/compact layout. Bound to F11 / Ctrl+Shift+Enter.
+//
+// SetFullScreen is applied asynchronously (Fyne queues it onto the main loop),
+// so we can't just relayout here and be done: the canvas is still the old size
+// at this point. The authoritative relayout happens from onCanvasResize once the
+// window settles at its new size. Leaving full screen, we also restore the saved
+// windowed size explicitly, because some drivers don't reliably resize the
+// canvas back down on their own (leaving the content laid out at full-screen
+// size and clipped by the smaller window).
+func (u *ui) toggleFullScreen() {
+	if u.win == nil {
+		return
+	}
+	u.fullScreen = !u.fullScreen
+	if u.fullScreen {
+		u.windowedSize = u.win.Canvas().Size() // remember, to restore on exit
+		u.win.SetFullScreen(true)
+	} else {
+		u.win.SetFullScreen(false)
+		if u.windowedSize.Width > 1 && u.windowedSize.Height > 1 {
+			u.win.Resize(u.windowedSize)
+		}
+	}
+	u.relayout() // immediate variant switch; onCanvasResize corrects the sizing
 }
 
 // addRackShortcut binds Ctrl+Shift+<key> to fn on the window canvas.
@@ -1016,6 +1118,19 @@ func (u *ui) setVisible(o fyne.CanvasObject, btn *components.RackToggle, visible
 		o.Hide()
 	}
 	btn.SetOn(visible)
+}
+
+// applyRackShow sets a toggle-able rack's visibility from a layout `show:`
+// property, but only when the layout variant was just entered (variantChanged) —
+// so a variant declares its default visible racks without overriding the user's
+// manual toggle while that variant stays on screen. Called from configureComponent.
+func (u *ui) applyRackShow(props map[string]string, o fyne.CanvasObject, btn *components.RackToggle) {
+	if !u.variantChanged {
+		return
+	}
+	if s, ok := props["show"]; ok {
+		u.setVisible(o, btn, s == "true")
+	}
 }
 
 // toggleVisible flips an object's visibility and re-lays out the window.
