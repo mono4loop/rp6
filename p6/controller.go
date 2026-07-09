@@ -18,6 +18,11 @@ type Controller interface {
 
 	// NoteOn sends a raw note-on on a 1-based channel.
 	NoteOn(channel int, note, velocity uint8) error
+	// PlayNote plays a chromatic note in "keyboard mode": on the hardware a
+	// Note On on the Auto channel, pitching the physically-selected pad; on the
+	// emulator it pitches the last-selected pad's sample by
+	// (note - KeyboardCenterNote) semitones.
+	PlayNote(note, velocity uint8) error
 	// ControlChange sends a control-change on a 1-based channel.
 	ControlChange(channel int, cc, value uint8) error
 	// ProgramChange selects a pattern (0..63).

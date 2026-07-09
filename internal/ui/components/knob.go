@@ -38,6 +38,11 @@ type KnobConfig struct {
 	Width  float32     // overall min width (default 156)
 	Accent color.NRGBA // lit-segment / focus color (default amber lcdText)
 
+	// Compact lays the indicator, caption and value out in a single row (instead
+	// of the caption-over-value stack), roughly halving the height — for narrow
+	// strips like the keyboard's OCT knob.
+	Compact bool
+
 	// Indicator overrides how the value is visualized (default: the LED
 	// segment ring). See BoltIndicator, LanesIndicator, GridIndicator.
 	Indicator KnobIndicator
@@ -293,7 +298,12 @@ type knobRenderer struct {
 
 func (r *knobRenderer) Destroy() { r.k.SetPending(false) }
 
-func (r *knobRenderer) MinSize() fyne.Size { return fyne.NewSize(r.k.cfg.Width, 58) }
+func (r *knobRenderer) MinSize() fyne.Size {
+	if r.k.cfg.Compact {
+		return fyne.NewSize(r.k.cfg.Width, 34)
+	}
+	return fyne.NewSize(r.k.cfg.Width, 58)
+}
 
 func (r *knobRenderer) Layout(size fyne.Size) { r.place(size) }
 
@@ -304,6 +314,21 @@ func (r *knobRenderer) place(size fyne.Size) {
 	inset := float32(2)
 	r.k.plate.Resize(fyne.NewSize(size.Width-2*inset, size.Height-2*inset))
 	r.k.plate.Move(fyne.NewPos(inset, inset))
+
+	// Compact: indicator, caption and value all in one horizontal row.
+	if r.k.cfg.Compact {
+		rs := size.Height - 10
+		r.k.ring.Resize(fyne.NewSize(rs, rs))
+		r.k.ring.Move(fyne.NewPos(6, (size.Height-rs)/2))
+		textX := 6 + rs + 8
+		ls := r.k.label.MinSize()
+		r.k.label.Resize(ls)
+		r.k.label.Move(fyne.NewPos(textX, (size.Height-ls.Height)/2))
+		vs := r.k.valTxt.MinSize()
+		r.k.valTxt.Resize(vs)
+		r.k.valTxt.Move(fyne.NewPos(textX+ls.Width+8, (size.Height-vs.Height)/2))
+		return
+	}
 
 	// LED ring on the left, square and vertically centered, with spacing.
 	rs := size.Height - 20

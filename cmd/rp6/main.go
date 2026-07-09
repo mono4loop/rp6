@@ -87,25 +87,26 @@ type ui struct {
 	audioDevice string
 	win         fyne.Window
 
-	grid        *components.PadGrid
-	padRackObj  fyne.CanvasObject // pad grid + tool column, wrapped as a toggleable rack
-	padGridArea *fyne.Container   // holds the current grid object (swapped on density toggle)
-	padFloatBtn *components.RackToggle
-	midiInBtn   *components.RackToggle
-	layoutBtn   *components.RackCycle
-	padLayout   padLayout   // how the 48 pads are paged across the grid
-	listenMIDI  atomic.Bool // reflect hardware pad presses in the UI
-	padWin      fyne.Window // non-nil while the pad rack floats in its own window
-	padFloating bool
-	playBtn     *components.TransportButton
-	tempo       *components.Knob
-	patternStep *components.Knob
-	fxRack      *effectsRack
-	seqRack     *sequencerRack
-	meter       *components.LevelMeter
-	meterArea   *fyne.Container   // stable holder; its child is the framed meter (V or H)
-	meterHoriz  bool              // meter currently laid out horizontally (compact mode)
-	dlyRevObj   fyne.CanvasObject // the Delay/Reverb rack panel (toggleable)
+	grid         *components.PadGrid
+	padRackObj   fyne.CanvasObject // pad grid + tool column, wrapped as a toggleable rack
+	padGridArea  *fyne.Container   // holds the current grid object (swapped on density toggle)
+	padFloatBtn  *components.RackToggle
+	midiInBtn    *components.RackToggle
+	layoutBtn    *components.RackCycle
+	padLayout    padLayout   // how the 48 pads are paged across the grid
+	listenMIDI   atomic.Bool // reflect hardware pad presses in the UI
+	padWin       fyne.Window // non-nil while the pad rack floats in its own window
+	padFloating  bool
+	playBtn      *components.TransportButton
+	tempo        *components.Knob
+	patternStep  *components.Knob
+	fxRack       *effectsRack
+	seqRack      *sequencerRack
+	keyboardRack *keyboardRack
+	meter        *components.LevelMeter
+	meterArea    *fyne.Container   // stable holder; its child is the framed meter (V or H)
+	meterHoriz   bool              // meter currently laid out horizontally (compact mode)
+	dlyRevObj    fyne.CanvasObject // the Delay/Reverb rack panel (toggleable)
 
 	transportRack fyne.CanvasObject
 	statusBar     fyne.CanvasObject
@@ -146,6 +147,7 @@ type ui struct {
 	dlyRevBtn *components.RackToggle
 	fxBtn     *components.RackToggle
 	seqBtn    *components.RackToggle
+	keysBtn   *components.RackToggle
 	meterBtn  *components.RackToggle
 
 	statusLED   *components.LED
@@ -215,6 +217,13 @@ func (u *ui) build(w fyne.Window) {
 		})
 	}
 
+	// Keyboard rack: a P-6-style chromatic keyboard for the selected sample.
+	u.keyboardRack = newKeyboardRack(func(note uint8) { u.playNote(note, p6.DefaultVelocity) })
+	u.keyboardRack.obj = u.composeRack("keys", layoutspec.Registry{
+		"keyboardOct":  u.keyboardRack.oct.Object(),
+		"keyboardKeys": u.keyboardRack.piano,
+	}, u.keyboardRack.defaultObject)
+
 	// Transport rack: a single Play/Stop toggle key, tempo, pattern.
 	u.playBtn = components.NewTransportToggle(func(running bool) {
 		if running {
@@ -278,8 +287,9 @@ func (u *ui) build(w fyne.Window) {
 	u.dlyRevBtn = components.NewRackToggle("DLY/REV", acc, func() { u.toggleVisible(u.dlyRevObj, u.dlyRevBtn) })
 	u.fxBtn = components.NewRackToggle("FX", acc, func() { u.toggleVisible(u.fxRack.Object(), u.fxBtn) })
 	u.seqBtn = components.NewRackToggle("SEQ", acc, u.toggleSeqView)
+	u.keysBtn = components.NewRackToggle("KEYS", acc, func() { u.toggleVisible(u.keyboardRack.Object(), u.keysBtn) })
 	u.meterBtn = components.NewRackToggle("VU", acc, func() { u.toggleVisible(u.meterArea, u.meterBtn) })
-	toggleObjs := []fyne.CanvasObject{u.padBtn, u.dlyRevBtn, u.fxBtn, u.seqBtn, u.meterBtn}
+	toggleObjs := []fyne.CanvasObject{u.padBtn, u.dlyRevBtn, u.fxBtn, u.seqBtn, u.keysBtn, u.meterBtn}
 	toggleObjs = append(toggleObjs, u.jamToggles()...) // JAM button (absent in -tags nojam / web / mobile builds)
 	toggles := container.NewHBox(toggleObjs...)
 
@@ -294,11 +304,12 @@ func (u *ui) build(w fyne.Window) {
 
 	u.win = w
 
-	// Ctrl+Shift+P/D/F/S/M toggle the Pads, Delay-Reverb, FX, Sequencer, Meter racks.
+	// Ctrl+Shift+P/D/F/S/K/M toggle the Pads, Delay-Reverb, FX, Sequencer, Keyboard, Meter racks.
 	u.addRackShortcut(w, fyne.KeyP, u.togglePads)
 	u.addRackShortcut(w, fyne.KeyD, func() { u.toggleVisible(u.dlyRevObj, u.dlyRevBtn) })
 	u.addRackShortcut(w, fyne.KeyF, func() { u.toggleVisible(u.fxRack.Object(), u.fxBtn) })
 	u.addRackShortcut(w, fyne.KeyS, u.toggleSeqView)
+	u.addRackShortcut(w, fyne.KeyK, func() { u.toggleVisible(u.keyboardRack.Object(), u.keysBtn) })
 	u.addRackShortcut(w, fyne.KeyM, func() { u.toggleVisible(u.meterArea, u.meterBtn) })
 
 	// F11 toggles full screen, which switches to the "console" layout (Fyne has
@@ -321,6 +332,7 @@ func (u *ui) build(w fyne.Window) {
 	u.setVisible(u.dlyRevObj, u.dlyRevBtn, false)
 	u.setVisible(u.fxRack.Object(), u.fxBtn, false)
 	u.setVisible(u.seqRack.Object(), u.seqBtn, true)
+	u.setVisible(u.keyboardRack.Object(), u.keysBtn, false)
 	u.setVisible(u.meterArea, u.meterBtn, true)
 
 	u.relayout()
@@ -333,11 +345,20 @@ func (u *ui) build(w fyne.Window) {
 // floating pads, window size) is passed in as the condition environment. The
 // layout is data, so rearranging the UI is a file edit — no code change.
 func (u *ui) relayout() {
+	// The keyboard's keys grow taller in the console (full-screen) layout, where
+	// there's vertical room; compact otherwise. Driven here (not from a layout
+	// `tall:` prop) so it resets when leaving full screen even though the
+	// windowed layout references the rack without properties.
+	if u.keyboardRack != nil {
+		u.keyboardRack.setTall(u.isFullScreen())
+	}
+
 	reg := layoutspec.Registry{
 		"transport": u.transportRack,
 		"dlyrev":    u.dlyRevObj,
 		"fx":        u.fxRack.Object(),
 		"seq":       u.seqRack.Object(),
+		"keys":      u.keyboardRack.Object(),
 		"pads":      u.padRackObj,
 		"vu":        u.meterArea,
 		"status":    u.statusBar,
@@ -1442,6 +1463,28 @@ func (u *ui) firePadVel(id int, velocity uint8) {
 		}
 	}
 	u.bumpMeter(velocity) // every fire (tap, roll, or sequencer step) drives the meter
+}
+
+// playNote plays a chromatic note (keyboard rack) via the device's Auto channel
+// (hardware pitches its selected pad; the emulator pitches the last pad played).
+// Safe to call from the UI thread; reads the device under devMu.
+func (u *ui) playNote(note, velocity uint8) {
+	u.devMu.Lock()
+	dev := u.dev
+	u.devMu.Unlock()
+	if dev != nil {
+		if err := dev.PlayNote(note, velocity); err != nil {
+			u.deviceFailed(u.devGen.Load(), err)
+		}
+	}
+	u.bumpMeter(velocity)
+}
+
+var noteNames = [12]string{"C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"}
+
+// noteName renders a MIDI note number as a pitch name (middle C = C4 = 60).
+func noteName(n uint8) string {
+	return fmt.Sprintf("%s%d", noteNames[n%12], int(n)/12-1)
 }
 
 // padBadges returns the effect icons for a pad (for the grid's badge row).

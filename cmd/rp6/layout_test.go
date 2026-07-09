@@ -18,7 +18,7 @@ import (
 // embedded layout can be built without a running UI.
 func rp6Registry() layoutspec.Registry {
 	r := layoutspec.Registry{}
-	for _, id := range []string{"transport", "dlyrev", "fx", "seq", "pads", "vu", "status"} {
+	for _, id := range []string{"transport", "dlyrev", "fx", "seq", "keys", "pads", "vu", "status"} {
 		r[id] = canvas.NewRectangle(color.White)
 	}
 	return r
@@ -91,7 +91,7 @@ func TestFullScreenSelectsConsole(t *testing.T) {
 func TestDefaultRackBlocks(t *testing.T) {
 	doc, err := layoutlang.Parse(layoutSource())
 	require.NoError(t, err)
-	assert.ElementsMatch(t, []string{"transport", "dlyrev", "fx", "pads", "seq"}, doc.RackNames())
+	assert.ElementsMatch(t, []string{"transport", "dlyrev", "fx", "pads", "seq", "keys"}, doc.RackNames())
 
 	racks := map[string][]string{
 		"transport": {"play", "tempo", "pattern"},
@@ -99,6 +99,7 @@ func TestDefaultRackBlocks(t *testing.T) {
 		"fx":        {"fxRoll", "fxRate"},
 		"pads":      {"padFloat", "padListen", "padDensity", "badge", "padGrid"},
 		"seq":       {"seqHeader", "seqControls", "seqGrid"},
+		"keys":      {"keyboardOct", "keyboardKeys"},
 	}
 	for name, ids := range racks {
 		t.Run(name, func(t *testing.T) {
@@ -181,6 +182,26 @@ func TestConsoleRevealsFxDlyRev(t *testing.T) {
 	u.setVisible(u.fxRack.Object(), u.fxBtn, false)
 	u.relayout()
 	assert.False(t, u.fxRack.Object().Visible(), "manual toggle respected within the console")
+}
+
+// TestConsoleRevealsKeyboard checks the keyboard is off by default (windowed),
+// turns on when the console (full screen) is entered, and stays on when leaving
+// full screen — so it adapts gracefully back into the windowed layout.
+func TestConsoleRevealsKeyboard(t *testing.T) {
+	u := newTestUI(t)
+	require.False(t, u.keyboardRack.Object().Visible(), "keyboard hidden by default (windowed)")
+	compactH := u.keyboardRack.piano.MinSize().Height
+
+	u.fullScreen = true
+	u.relayout()
+	assert.True(t, u.keyboardRack.Object().Visible(), "console reveals the keyboard on entry")
+	assert.True(t, u.keysBtn.On())
+	assert.Greater(t, u.keyboardRack.piano.MinSize().Height, compactH, "keyboard is taller in the console")
+
+	u.fullScreen = false
+	u.relayout()
+	assert.True(t, u.keyboardRack.Object().Visible(), "keyboard stays on after leaving full screen")
+	assert.Equal(t, compactH, u.keyboardRack.piano.MinSize().Height, "keyboard returns to compact height when windowed")
 }
 
 // TestToggleFullScreenRelayouts exercises the F11 path against the real widgets:

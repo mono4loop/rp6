@@ -80,6 +80,15 @@ func TestDeviceProgramChange(t *testing.T) {
 	assert.Equal(t, []byte{0xCF, 63}, buf.Bytes())
 }
 
+func TestDevicePlayNote(t *testing.T) {
+	var buf bytes.Buffer
+	d := New(&buf, DefaultConfig())
+
+	// Keyboard mode sends a Note On on the Auto channel (15 -> status 0x9E).
+	require.NoError(t, d.PlayNote(KeyboardCenterNote, 100))
+	assert.Equal(t, []byte{0x9E, KeyboardCenterNote, 100}, buf.Bytes())
+}
+
 func TestIsP6Line(t *testing.T) {
 	assert.True(t, isP6Line(" 3 [P6             ]: USB-Audio - P-6"))
 	assert.True(t, isP6Line("                      Roland P-6 at usb-0000:c5:00.3-1, full speed"))

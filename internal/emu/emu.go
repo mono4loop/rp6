@@ -31,11 +31,13 @@ import (
 	"fmt"
 	"io/fs"
 	"log"
+	"math"
 	"os"
 	"path"
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync/atomic"
 
 	"github.com/mono4loop/rp6/p6"
 )
@@ -57,6 +59,11 @@ type Emulator struct {
 	mix    *mixer
 	clips  [p6.NumPads][]float32 // per-pad samples, resampled to the sink format
 	loaded int
+
+	// selected is the pad id (0..47) that keyboard mode (PlayNote) pitches. It
+	// tracks the last pad triggered, mirroring the hardware's "select a pad,
+	// then play it chromatically" behavior. Accessed from multiple goroutines.
+	selected atomic.Int32
 }
 
 // Open loads the WAV samples under dir and starts audio output, returning an
@@ -324,7 +331,9 @@ func (e *Emulator) TriggerPadVelocity(bank, pad int, velocity uint8) error {
 	if _, err := p6.NoteFor(bank, pad); err != nil {
 		return err
 	}
-	data := e.clips[padID(bank, pad)]
+	id := padID(bank, pad)
+	e.selected.Store(int32(id)) // playing a pad selects it for keyboard mode
+	data := e.clips[id]
 	if data == nil {
 		return nil
 	}
@@ -343,6 +352,21 @@ func (e *Emulator) NoteOn(channel int, note, velocity uint8) error {
 		return nil
 	}
 	return e.TriggerPadVelocity(bank, pad, velocity)
+}
+
+// PlayNote pitches the currently-selected pad's sample by
+// (note - KeyboardCenterNote) semitones and plays it — the emulator's take on
+// the P-6's keyboard mode. The selected pad is the last one triggered (see
+// TriggerPadVelocity), mirroring the hardware ("select a pad, then play it
+// chromatically"). Pads with no assigned sample are silently ignored.
+func (e *Emulator) PlayNote(note, velocity uint8) error {
+	data := e.clips[e.selected.Load()]
+	if data == nil {
+		return nil
+	}
+	speed := math.Pow(2, float64(int(note)-p6.KeyboardCenterNote)/12.0)
+	e.mix.triggerSpeed(data, float32(velocity)/127, speed)
+	return nil
 }
 
 // ControlChange is accepted but has no effect (no emulated FX engine).

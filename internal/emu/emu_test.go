@@ -218,6 +218,28 @@ func TestMixerVoiceCap(t *testing.T) {
 	assert.Equal(t, maxVoices, m.active())
 }
 
+func TestMixerTriggerSpeedDoublePitch(t *testing.T) {
+	// A double-speed voice reads the clip twice as fast: a 4-frame mono clip is
+	// consumed in ~2 output frames, skipping every other frame at zero phase.
+	m := newMixer(1, 48000, false)
+	m.triggerSpeed([]float32{0, 0.1, 0.2, 0.3}, 1, 2)
+	out := make([]float32, 2)
+	m.render(out)
+	assert.InDeltaSlice(t, []float32{0, 0.2}, out, 1e-6)
+	assert.Equal(t, 0, m.active(), "the clip is fully consumed")
+}
+
+func TestMixerTriggerSpeedHalfPitchInterpolates(t *testing.T) {
+	// A half-speed voice reads the clip half as fast, linearly interpolating the
+	// in-between frames.
+	m := newMixer(1, 48000, false)
+	m.triggerSpeed([]float32{0, 0.4}, 1, 0.5)
+	out := make([]float32, 4)
+	m.render(out)
+	assert.InDeltaSlice(t, []float32{0, 0.2, 0.4, 0.4}, out, 1e-6)
+	assert.Equal(t, 0, m.active())
+}
+
 // firstNonZero returns the index of the first non-zero sample, or -1.
 func firstNonZero(out []float32) int {
 	for i, v := range out {
@@ -280,6 +302,26 @@ func TestEmulatorOpenAndTrigger(t *testing.T) {
 	assert.Equal(t, 2, e.mix.active())
 	require.NoError(t, e.NoteOn(e.Config().GranularChannel, note, 100))
 	assert.Equal(t, 2, e.mix.active())
+}
+
+func TestEmulatorPlayNote(t *testing.T) {
+	dir := t.TempDir()
+	writeWAV(t, filepath.Join(dir, "A1.wav"), sine(220, 8000, 200), 8000)
+	e, err := Open(dir, p6.DefaultConfig())
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = e.Close() })
+
+	// The default selection (A1, id 0) is loaded, so keyboard notes pitch it.
+	require.NoError(t, e.PlayNote(p6.KeyboardCenterNote, 100))
+	assert.Equal(t, 1, e.mix.active())
+	require.NoError(t, e.PlayNote(p6.KeyboardCenterNote+12, 100)) // an octave up
+	assert.Equal(t, 2, e.mix.active())
+
+	// Triggering a pad selects it: keyboard mode then pitches that pad's sample.
+	require.NoError(t, e.TriggerPad(7, 6)) // H6 (no sample) -> selects it
+	assert.Equal(t, 2, e.mix.active())
+	require.NoError(t, e.PlayNote(p6.KeyboardCenterNote, 100))
+	assert.Equal(t, 2, e.mix.active(), "no sample on the selected pad -> ignored")
 }
 
 func TestEmulatorControllerNoOps(t *testing.T) {

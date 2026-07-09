@@ -100,6 +100,8 @@ func (u *ui) configureComponent(id string, props map[string]string) {
 		u.applyRackShow(props, u.fxRack.Object(), u.fxBtn)
 	case "dlyrev":
 		u.applyRackShow(props, u.dlyRevObj, u.dlyRevBtn)
+	case "keys":
+		u.applyRackShow(props, u.keyboardRack.Object(), u.keysBtn)
 	}
 }
 

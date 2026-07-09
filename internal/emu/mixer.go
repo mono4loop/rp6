@@ -12,7 +12,8 @@ const maxVoices = 16
 // voice is one playing instance of a clip.
 type voice struct {
 	data  []float32 // interleaved at the mixer's output format
-	pos   int       // current interleaved read index
+	posf  float64   // current fractional frame index into data
+	speed float64   // frames advanced per output frame (1 = original pitch)
 	gain  float32
 	start int64 // absolute frame (mixer clock) at which this voice begins
 }
@@ -49,10 +50,21 @@ func newMixer(channels, rate int, accurate bool) *mixer {
 }
 
 // trigger starts playing data (interleaved, already in output format) at the
-// given gain (0..1). The newest voice replaces the oldest once maxVoices is hit.
+// given gain (0..1) and original pitch. The newest voice replaces the oldest
+// once maxVoices is hit.
 func (m *mixer) trigger(data []float32, gain float32) {
+	m.triggerSpeed(data, gain, 1)
+}
+
+// triggerSpeed is trigger with an explicit playback speed: speed>1 raises the
+// pitch (reads the clip faster), speed<1 lowers it. Used by keyboard mode to
+// transpose a pad's sample chromatically. speed<=0 is treated as 1.
+func (m *mixer) triggerSpeed(data []float32, gain float32, speed float64) {
 	if len(data) == 0 {
 		return
+	}
+	if speed <= 0 {
+		speed = 1
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -68,7 +80,7 @@ func (m *mixer) trigger(data []float32, gain float32) {
 	if len(m.voices) >= maxVoices {
 		m.voices = m.voices[1:]
 	}
-	m.voices = append(m.voices, &voice{data: data, gain: gain, start: start})
+	m.voices = append(m.voices, &voice{data: data, gain: gain, speed: speed, start: start})
 }
 
 // active reports the number of currently playing voices.
@@ -106,13 +118,26 @@ func (m *mixer) render(out []float32) {
 		if off < 0 {
 			off = 0 // already playing (or buffer-aligned)
 		}
-		outStart := off * m.channels
-		n := min(len(out)-outStart, len(v.data)-v.pos)
-		for i := range n {
-			out[outStart+i] += v.data[v.pos+i] * v.gain
+		tf := len(v.data) / m.channels // total source frames
+		for f := off; f < frames; f++ {
+			idx := int(v.posf)
+			if idx >= tf {
+				break
+			}
+			frac := float32(v.posf - float64(idx))
+			base := idx * m.channels
+			ob := f * m.channels
+			for c := range m.channels {
+				s0 := v.data[base+c]
+				s1 := s0
+				if idx+1 < tf { // linear interpolate toward the next frame
+					s1 = v.data[base+m.channels+c]
+				}
+				out[ob+c] += (s0 + (s1-s0)*frac) * v.gain
+			}
+			v.posf += v.speed
 		}
-		v.pos += n
-		if v.pos < len(v.data) {
+		if int(v.posf) < tf {
 			live = append(live, v)
 		}
 	}

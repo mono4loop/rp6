@@ -17,6 +17,12 @@ const (
 
 	// DefaultVelocity is the note-on velocity used when triggering a pad.
 	DefaultVelocity = 100
+
+	// KeyboardCenterNote is the MIDI note that plays the selected pad's sample
+	// at its original pitch when sent on the Auto channel ("keyboard mode").
+	// Notes above/below it transpose the sample chromatically. It matches the
+	// P-6's KYBD center (C4 = 60).
+	KeyboardCenterNote = 60
 )
 
 // Config holds the MIDI channel assignments and default velocity used when
@@ -115,6 +121,15 @@ func (d *Device) TriggerPadVelocity(bank, pad int, velocity uint8) error {
 // NoteOn sends a raw note-on message on the given 1-based channel.
 func (d *Device) NoteOn(channel int, note, velocity uint8) error {
 	return d.send(noteOnBytes(channel, note, velocity))
+}
+
+// PlayNote plays a chromatic note in "keyboard mode" by sending a Note On on the
+// Auto channel. The P-6 pitches its currently-selected pad's sample by
+// (note - KeyboardCenterNote) semitones. Which sample sounds is whatever pad is
+// physically selected on the hardware — there is no MIDI message to choose it
+// remotely (see the "P-6 MIDI reality" notes).
+func (d *Device) PlayNote(note, velocity uint8) error {
+	return d.send(noteOnBytes(d.cfg.AutoChannel, note, velocity))
 }
 
 // ControlChange sends a control-change message on the given 1-based channel.

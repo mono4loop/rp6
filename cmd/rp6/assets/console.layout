@@ -17,8 +17,12 @@
 
 layout console when fullscreen {
   Border {
-    // Bottom: full-width status bar (keeps the section toggles usable).
-    bottom: status
+    // Bottom: the keyboard (full width, on by default in the console, and twice
+    // as tall — the keys expand vertically) above a full-width status bar.
+    bottom: VBox {
+      keys(show: true)
+      status
+    }
 
     // Left rail: transport, then the VU meter as a horizontal strip right below
     // it (not the wide vertical meter), with a spacer filling the rest.

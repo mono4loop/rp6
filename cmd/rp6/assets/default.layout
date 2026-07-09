@@ -20,6 +20,7 @@ layout compact when compact {
       transport
       dlyrev
       fx
+      keys
       seq if !seq_docked
     }
     center: Split {
@@ -42,6 +43,7 @@ layout default {
       transport
       dlyrev
       fx
+      keys
       seq if !seq_docked
     }
     center: Split {
@@ -80,6 +82,15 @@ rack pads {
     Border {
       top: HBox { padFloat; padListen; padDensity; Spacer; badge }
       center: padGrid
+    }
+  }
+}
+
+rack keys {
+  RackPanel {
+    Border {
+      top: HBox { keyboardOct; Spacer }
+      center: keyboardKeys
     }
   }
 }

@@ -80,6 +80,37 @@ func TestPadTapSelectsAndTriggers(t *testing.T) {
 	assert.True(t, u.grid.Pads()[0].Selected(), "tapped pad becomes selected")
 }
 
+func TestKeyboardRackPlaysAutoChannel(t *testing.T) {
+	u := newTestUI(t)
+	var buf bytes.Buffer
+	u.dev = p6.New(&buf, p6.DefaultConfig())
+
+	// Tapping key 0 at octave 0 plays the sample at original pitch
+	// (KeyboardCenterNote) as a Note On on the Auto channel (15 -> 0x9E).
+	u.keyboardRack.play(0)
+	assert.Equal(t, []byte{0x9E, p6.KeyboardCenterNote, p6.DefaultVelocity}, buf.Bytes())
+}
+
+func TestKeyboardRackOctaveShift(t *testing.T) {
+	u := newTestUI(t)
+
+	// Key 0 = KeyboardCenterNote at octave 0; each octave step is 12 semitones.
+	assert.Equal(t, int(p6.KeyboardCenterNote), u.keyboardRack.note(0))
+	assert.Equal(t, int(p6.KeyboardCenterNote)+12, u.keyboardRack.note(12)) // one octave up on the keys
+	u.keyboardRack.oct.SetValue(1)
+	assert.Equal(t, int(p6.KeyboardCenterNote)+12, u.keyboardRack.note(0))
+	u.keyboardRack.oct.SetValue(-2)
+	assert.Equal(t, int(p6.KeyboardCenterNote)-24, u.keyboardRack.note(0))
+}
+
+func TestKeyboardRackHiddenByDefault(t *testing.T) {
+	u := newTestUI(t)
+	assert.False(t, u.keyboardRack.Object().Visible(), "keyboard rack hidden by default")
+	u.toggleVisible(u.keyboardRack.Object(), u.keysBtn)
+	assert.True(t, u.keyboardRack.Object().Visible())
+	assert.True(t, u.keysBtn.On())
+}
+
 func TestTriggerWithoutDeviceIsSafe(t *testing.T) {
 	u := newTestUI(t)
 	u.dev = nil
