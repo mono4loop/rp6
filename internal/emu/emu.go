@@ -37,8 +37,10 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -156,23 +158,43 @@ func (e *Emulator) load() (int, error) {
 	}
 	sort.Ints(ids)
 
-	count := 0
-	var decodeD, resampleD time.Duration
-	for _, id := range ids {
-		t := time.Now()
-		clip, err := decodeFile(e.fsys, paths[id])
-		if err != nil {
-			log.Printf("emu: skipping %s: %v", paths[id], err)
-			continue
-		}
-		decodeD += time.Since(t)
-		t = time.Now()
-		e.clips[id] = clip.Resample(e.sink.Channels(), e.sink.SampleRate())
-		resampleD += time.Since(t)
-		count++
+	// Decode + resample the pads in parallel. Each pad is independent — decoding
+	// allocates a fresh clip and each writes a distinct e.clips[id] — and the
+	// resampler's kernel cache is concurrency-safe, so this scales across cores
+	// and is the bulk of the kit-load time. wg.Wait establishes happens-before for
+	// the clips written by the workers.
+	workers := min(runtime.NumCPU(), len(ids))
+	if workers < 1 {
+		workers = 1
 	}
-	perf("decode %s / resample %s (%d files)", decodeD, resampleD, count)
-	return count, nil
+	dstCh, dstRate := e.sink.Channels(), e.sink.SampleRate()
+	var (
+		count atomic.Int64
+		wg    sync.WaitGroup
+		jobs  = make(chan int)
+	)
+	for range workers {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for id := range jobs {
+				clip, err := decodeFile(e.fsys, paths[id])
+				if err != nil {
+					log.Printf("emu: skipping %s: %v", paths[id], err)
+					continue
+				}
+				e.clips[id] = clip.Resample(dstCh, dstRate)
+				count.Add(1)
+			}
+		}()
+	}
+	for _, id := range ids {
+		jobs <- id
+	}
+	close(jobs)
+	wg.Wait()
+	perf("load: %d/%d files across %d workers", count.Load(), len(ids), workers)
+	return int(count.Load()), nil
 }
 
 // scanSamples maps pad ids to WAV file paths (relative to the fs root) found in

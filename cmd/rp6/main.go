@@ -795,11 +795,17 @@ func (u *ui) applyBackendGating() {
 	if u.p6Btn != nil {
 		u.p6Btn.SetDisabled(!onP6)
 	}
+	changed := false
 	if u.p6Obj != nil {
+		changed = u.p6Obj.Visible() != onP6
 		u.setVisible(u.p6Obj, u.p6Btn, onP6)
 	}
 	u.refreshPaksRack() // the loaded-pak highlight clears on the P-6, returns on the emulator
-	if u.root != nil {
+	// Relayout is the expensive part, so only do it when the P-6 rack's presence
+	// actually changed (P-6 <-> emulator). An emulator->emulator pak switch leaves
+	// the layout identical, so skip it there — that removes a chunk of the per-
+	// switch UI-thread hitch.
+	if changed && u.root != nil {
 		u.relayout()
 	}
 }
