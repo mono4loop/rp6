@@ -29,7 +29,7 @@ func rp6Registry() layoutspec.Registry {
 func TestDefaultLayoutParses(t *testing.T) {
 	doc, err := layoutlang.Parse(layoutSource())
 	require.NoError(t, err, "embedded layout must parse")
-	assert.Equal(t, []string{"console", "compact", "default"}, doc.Names())
+	assert.Equal(t, []string{"consoletablet", "console", "compact", "default"}, doc.Names())
 }
 
 // TestDefaultLayoutBuilds checks the embedded layout builds a non-empty tree in
@@ -45,6 +45,7 @@ func TestDefaultLayoutBuilds(t *testing.T) {
 	}{
 		{"default windowed", layoutlang.Env{Bools: map[string]bool{"pads_visible": true}, Nums: map[string]float64{"width": 900}}},
 		{"fullscreen console", layoutlang.Env{Bools: map[string]bool{"fullscreen": true, "pads_visible": true}, Nums: map[string]float64{"width": 1920}}},
+		{"tablet console", layoutlang.Env{Bools: map[string]bool{"fullscreen": true, "mobile": true, "pads_visible": true}, Nums: map[string]float64{"width": 1600}}},
 		{"compact", layoutlang.Env{Bools: map[string]bool{"compact": true, "pads_visible": true}, Nums: map[string]float64{"width": 400}}},
 		{"seq docked", layoutlang.Env{Bools: map[string]bool{"pads_visible": true, "seq_docked": true}}},
 		{"pads hidden", layoutlang.Env{Bools: map[string]bool{"seq_docked": true}}},
@@ -74,6 +75,8 @@ func TestFullScreenSelectsConsole(t *testing.T) {
 		{"windowed", layoutlang.Env{Bools: map[string]bool{"fullscreen": false}}, "default"},
 		{"narrow windowed", layoutlang.Env{Bools: map[string]bool{"compact": true}}, "compact"},
 		{"fullscreen beats compact", layoutlang.Env{Bools: map[string]bool{"fullscreen": true, "compact": true}}, "console"},
+		{"mobile fullscreen picks tablet console", layoutlang.Env{Bools: map[string]bool{"fullscreen": true, "mobile": true}}, "consoletablet"},
+		{"desktop fullscreen stays console", layoutlang.Env{Bools: map[string]bool{"fullscreen": true, "mobile": false}}, "console"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -212,6 +215,26 @@ func TestToggleFullScreenRelayouts(t *testing.T) {
 	require.NotNil(t, u.root, "content after entering full screen")
 	require.NotPanics(t, u.toggleFullScreen)
 	require.NotNil(t, u.root, "content after leaving full screen")
+}
+
+// TestConsoleButtonTogglesLayout checks the bottom-bar CONSOLE button switches
+// the console layout on and off and keeps its lit state in sync.
+func TestConsoleButtonTogglesLayout(t *testing.T) {
+	u := newTestUI(t)
+	require.False(t, u.isFullScreen(), "console off by default")
+	require.False(t, u.consoleBtn.On())
+
+	u.toggleConsole()
+	assert.True(t, u.isFullScreen(), "CONSOLE turns the console layout on")
+	assert.True(t, u.consoleBtn.On(), "button lights when console is active")
+
+	u.toggleConsole()
+	assert.False(t, u.isFullScreen(), "CONSOLE turns it back off")
+	assert.False(t, u.consoleBtn.On())
+
+	// Entering via the F11 path also lights the button (synced in relayout).
+	u.toggleFullScreen()
+	assert.True(t, u.consoleBtn.On(), "F11 also lights the CONSOLE button")
 }
 
 // TestConsoleLayoutSmoke drives the real widgets through the state transitions

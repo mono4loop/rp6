@@ -1,0 +1,54 @@
+// RP6 "tablet console" layout — the console variant for large touch screens
+// (Android tablets). Selected when the CONSOLE button is on AND the platform is
+// mobile; it must be parsed BEFORE the desktop `console` variant so it wins
+// there (see layoutSource — this file is concatenated first).
+//
+// On a tablet the desktop console's three-rail split squeezes whatever sits in
+// the centre into an unreadable sliver, so this variant uses two wide panes
+// instead — the pads and the sequencer side by side, each about half the width —
+// with the transport + Delay/Reverb full width on top and the keyboard across
+// the bottom.
+//
+//   ┌─────────────────────────────────────┐
+//   │ transport                           │
+//   │ dly/rev                             │
+//   ├──────────────────┬──────────────────┤
+//   │                  │                  │
+//   │      pads        │       seq        │
+//   │                  │                  │
+//   │   vu (strip)     │    fx (strip)    │
+//   ├──────────────────┴──────────────────┤
+//   │              keyboard               │
+//   │              status                 │
+//   └─────────────────────────────────────┘
+
+layout consoletablet when fullscreen && mobile {
+  Border {
+    bottom: VBox {
+      keys(show: true)
+      status
+    }
+
+    // Full-width top: transport and the Delay/Reverb rack (its four knobs get
+    // the whole width rather than being crammed into a rail).
+    top: VBox {
+      transport
+      dlyrev(show: true)
+    }
+
+    // Two wide panes side by side, so neither the pads nor the sequencer gets
+    // squeezed. The pads carry the VU strip; the sequencer carries the FX strip.
+    center: Split {
+      horizontal: true
+      offset: 0.45
+      leading: Border {
+        center: pads if pads_visible
+        bottom: vu(orientation: horizontal)
+      }
+      trailing: Border {
+        center: seq if !seq_docked
+        bottom: fx(show: true)
+      }
+    }
+  }
+}

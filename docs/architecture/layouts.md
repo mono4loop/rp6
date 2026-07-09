@@ -111,16 +111,18 @@ environment is built in `cmd/rp6/layout.go` `selectLayout` each relayout:
 | `pads_visible` | pad grid shown and not floating |
 | `width` / `height` | live canvas size (numeric) |
 
-The shipped variants: **`console`** (`when fullscreen`), **`compact`**
-(`when compact`), **`default`** (windowed, unguarded). See §9 for the files.
+The shipped variants: **`consoletablet`** (`when fullscreen && mobile`),
+**`console`** (`when fullscreen`), **`compact`** (`when compact`), **`default`**
+(windowed, unguarded). Order matters — the tablet console is listed first so its
+more-specific guard wins on a mobile device (see §9). See §9 for the files.
 
 ## 5. Widget IDs
 
-Top-level racks: `transport` · `dlyrev` · `fx` · `seq` · `pads` · `vu` ·
+Top-level racks: `transport` · `dlyrev` · `fx` · `seq` · `keys` · `pads` · `vu` ·
 `status`. Rack-internal sub-widgets (see §6): `play`/`tempo`/`pattern` (transport);
 `delayTime`/`delayLevel`/`reverbTime`/`reverbLevel` (dlyrev); `fxRoll`/`fxRate`
-(fx); `padFloat`/`padListen`/`padDensity`/`badge`/`padGrid` (pads);
-`seqHeader`/`seqControls`/`seqGrid` (seq).
+(fx); `keyboardOct`/`keyboardKeys` (keys); `padFloat`/`padListen`/`padDensity`/`badge`/`padGrid`
+(pads); `seqHeader`/`seqControls`/`seqGrid` (seq).
 
 ## 6. Rack internals (`rack` blocks) + the holder pattern
 
@@ -166,14 +168,21 @@ what they mean:
   a variant sets its default visible racks without fighting the user's FX/DLY-REV
   toggles while that variant stays on screen (`applyRackShow`).
 
-## 8. The full-screen gotcha
+## 8. The full-screen / console gotcha
 
 `console` is chosen `when fullscreen`. **Do not** read `Window.FullScreen()` for
 this: Android apps report `FullScreen() == true` inherently, which would force
-the wide desktop console layout onto a phone (its min width dwarfs the screen →
-everything overflows / mis-renders). Instead the app tracks its **own**
-`fullScreen` intent bool, flipped only by `toggleFullScreen` (F11 /
-Ctrl+Shift+Enter). Mobile never toggles it, so phones fall through to `compact`.
+the console layout on unbidden. Instead the app tracks its **own** `fullScreen`
+intent bool, flipped by `toggleFullScreen` (F11 / Ctrl+Shift+Enter on desktop)
+and by the bottom-bar **CONSOLE** toggle (`toggleConsole`) on any platform. On
+desktop CONSOLE also drives the OS window full screen; on mobile there's no
+window to toggle (it's already full screen), so it just flips the layout intent.
+
+Because the desktop console's three-rail split squeezes its centre into an
+unreadable sliver on a ~4:3 tablet, mobile gets its **own** console variant
+(`consoletablet`, `when fullscreen && mobile`) with two wide panes (pads | seq)
+instead — see §9. A phone that turns CONSOLE on still gets this tablet variant;
+it suits large screens best, so it's an opt-in (off by default on mobile).
 
 `SetFullScreen` is applied asynchronously by Fyne, so `toggleFullScreen` also
 restores the saved windowed size on exit and lets `onCanvasResize` re-lay out
@@ -181,12 +190,15 @@ once the size settles (some drivers don't shrink the canvas back on their own).
 
 ## 9. Files & app wiring
 
-- **`cmd/rp6/assets/console.layout`** — the `console` (full-screen) variant.
+- **`cmd/rp6/assets/console-tablet.layout`** — the `consoletablet` variant (the
+  console layout for large touch screens; `when fullscreen && mobile`).
+- **`cmd/rp6/assets/console.layout`** — the `console` (desktop full-screen) variant.
 - **`cmd/rp6/assets/default.layout`** — the `compact` + `default` variants **and
   the shared `rack` blocks**.
 
-`layoutSource()` concatenates them **console-first**, so `console when
-fullscreen` takes precedence (a document is just a sequence of blocks, so
+`layoutSource()` concatenates them **tablet-console-first, then desktop console,
+then default**, so the more specific `when fullscreen && mobile` guard is matched
+before the plain `when fullscreen` (a document is just a sequence of blocks, so
 concatenation is valid). `loadLayout()` parses it in `build()` — pure, no I/O,
 safe in tests.
 

@@ -12,8 +12,9 @@ import (
 
 // defaultLayoutSrc holds the DEFAULT (original top-bar) layout variants plus the
 // shared `rack …` blocks. consoleLayoutSrc holds the full-screen "mixing
-// console" variant. Both are compiled into the binary (edit the files and
-// rebuild to change the UI); see layoutSource for how they combine.
+// console" variant; consoleTabletLayoutSrc the tablet console variant. All are
+// compiled into the binary (edit the files and rebuild to change the UI); see
+// layoutSource for how they combine.
 //
 //go:embed assets/default.layout
 var defaultLayoutSrc string
@@ -21,12 +22,16 @@ var defaultLayoutSrc string
 //go:embed assets/console.layout
 var consoleLayoutSrc string
 
-// layoutSource is the full layout program: the console file FIRST (so its
-// `when fullscreen` variant takes precedence), then the default file's variants
-// and the shared rack blocks. Concatenation is valid because a document is just
-// a sequence of `layout`/`rack` blocks.
+//go:embed assets/console-tablet.layout
+var consoleTabletLayoutSrc string
+
+// layoutSource is the full layout program: the tablet console FIRST (its
+// `when fullscreen && mobile` guard is more specific than the desktop console's
+// `when fullscreen`, and Select takes the first match), then the desktop console,
+// then the default file's variants and the shared rack blocks. Concatenation is
+// valid because a document is just a sequence of `layout`/`rack` blocks.
 func layoutSource() string {
-	return consoleLayoutSrc + "\n" + defaultLayoutSrc
+	return consoleTabletLayoutSrc + "\n" + consoleLayoutSrc + "\n" + defaultLayoutSrc
 }
 
 // loadLayout parses the embedded layout into u.layoutDoc. It does no I/O, so it's
@@ -105,11 +110,11 @@ func (u *ui) configureComponent(id string, props map[string]string) {
 	}
 }
 
-// isFullScreen reports whether the user has switched the app to full screen
-// (via toggleFullScreen — F11 / Ctrl+Shift+Enter), which selects the "console"
-// layout. This tracks our own intent, NOT the window's FullScreen() flag: mobile
-// apps report FullScreen()==true inherently, and we must not force the desktop
-// console layout onto a phone (it doesn't fit — see the compact/default layouts).
+// isFullScreen reports whether the "mixing console" layout is active — our own
+// intent (set by toggleFullScreen on desktop via F11 / Ctrl+Shift+Enter, or by
+// the CONSOLE button on any platform), NOT the window's FullScreen() flag. On
+// mobile it's off by default (the console is a wide layout that doesn't suit a
+// phone), but a user on a large tablet can turn it on with the CONSOLE button.
 func (u *ui) isFullScreen() bool {
 	return u.fullScreen
 }

@@ -147,12 +147,13 @@ type ui struct {
 	lastFullScreen bool
 
 	// bottom-bar visibility toggles (backlit rack labels)
-	padBtn    *components.RackToggle
-	dlyRevBtn *components.RackToggle
-	fxBtn     *components.RackToggle
-	seqBtn    *components.RackToggle
-	keysBtn   *components.RackToggle
-	meterBtn  *components.RackToggle
+	padBtn     *components.RackToggle
+	dlyRevBtn  *components.RackToggle
+	fxBtn      *components.RackToggle
+	seqBtn     *components.RackToggle
+	keysBtn    *components.RackToggle
+	meterBtn   *components.RackToggle
+	consoleBtn *components.RackToggle
 
 	statusLED   *components.LED
 	root        fyne.CanvasObject
@@ -293,7 +294,11 @@ func (u *ui) build(w fyne.Window) {
 	u.seqBtn = components.NewRackToggle("SEQ", acc, u.toggleSeqView)
 	u.keysBtn = components.NewRackToggle("KEYS", acc, func() { u.toggleVisible(u.keyboardRack.Object(), u.keysBtn) })
 	u.meterBtn = components.NewRackToggle("VU", acc, func() { u.toggleVisible(u.meterArea, u.meterBtn) })
-	toggleObjs := []fyne.CanvasObject{u.padBtn, u.dlyRevBtn, u.fxBtn, u.seqBtn, u.keysBtn, u.meterBtn}
+	// CONSOLE switches to the "mixing console" layout: full screen on desktop,
+	// and the same wide layout on a large tablet.
+	u.consoleBtn = components.NewRackToggle("CONSOLE", acc, u.toggleConsole)
+	u.consoleBtn.SetOn(u.fullScreen)
+	toggleObjs := []fyne.CanvasObject{u.padBtn, u.dlyRevBtn, u.fxBtn, u.seqBtn, u.keysBtn, u.meterBtn, u.consoleBtn}
 	toggleObjs = append(toggleObjs, u.jamToggles()...) // JAM button (absent in -tags nojam / web / mobile builds)
 	toggles := container.NewHBox(toggleObjs...)
 
@@ -355,6 +360,11 @@ func (u *ui) relayout() {
 	// windowed layout references the rack without properties.
 	if u.keyboardRack != nil {
 		u.keyboardRack.setTall(u.isFullScreen())
+	}
+	// Keep the CONSOLE toggle lit whenever the console layout is active, however
+	// it was entered (button, F11, or Ctrl+Shift+Enter).
+	if u.consoleBtn != nil {
+		u.consoleBtn.SetOn(u.isFullScreen())
 	}
 
 	reg := layoutspec.Registry{
@@ -646,6 +656,20 @@ func (u *ui) toggleFullScreen() {
 		}
 	}
 	u.relayout() // immediate variant switch; onCanvasResize corrects the sizing
+}
+
+// toggleConsole switches to/from the "mixing console" layout via the bottom-bar
+// CONSOLE button. On desktop it goes full screen (which selects the console
+// layout); on a tablet there's no OS window to toggle (it's already full screen),
+// so it just switches the layout variant — useful on large screens where the
+// wide console arrangement fits.
+func (u *ui) toggleConsole() {
+	if onMobile {
+		u.fullScreen = !u.fullScreen
+		u.relayout()
+		return
+	}
+	u.toggleFullScreen()
 }
 
 // addRackShortcut binds Ctrl+Shift+<key> to fn on the window canvas.
