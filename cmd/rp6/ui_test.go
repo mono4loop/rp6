@@ -302,6 +302,48 @@ func TestClassifyCompactHysteresis(t *testing.T) {
 	assert.False(t, classifyCompact(false, 400, 0))
 }
 
+func TestIsTabletSize(t *testing.T) {
+	// Smallest side >= 600dp is a tablet (Android sw600dp), regardless of orientation.
+	assert.True(t, isTabletSize(fyne.NewSize(1292, 914)), "landscape tablet")
+	assert.True(t, isTabletSize(fyne.NewSize(768, 1024)), "portrait tablet")
+	assert.True(t, isTabletSize(fyne.NewSize(600, 600)), "exactly at the threshold")
+	assert.False(t, isTabletSize(fyne.NewSize(393, 851)), "portrait phone")
+	assert.False(t, isTabletSize(fyne.NewSize(851, 393)), "landscape phone")
+}
+
+func TestConsoleAutoTabletOnFirstResize(t *testing.T) {
+	u := newTestUI(t)
+	require.False(t, u.fullScreen, "windowed by default")
+
+	// Simulate a fresh mobile install with no saved preference.
+	u.consoleAutoTablet = true
+	u.onCanvasResize(fyne.NewSize(1292, 914)) // tablet-class size
+	assert.True(t, u.fullScreen, "a tablet-class screen defaults to the console")
+	assert.False(t, u.consoleAutoTablet, "the decision runs only once")
+
+	// A phone-class first size must not turn the console on.
+	u2 := newTestUI(t)
+	u2.consoleAutoTablet = true
+	u2.onCanvasResize(fyne.NewSize(393, 851))
+	assert.False(t, u2.fullScreen, "a phone-class screen stays windowed")
+}
+
+func TestConsoleChoicePersisted(t *testing.T) {
+	u := newTestUI(t)
+	_, saved := loadConsolePref()
+	require.False(t, saved, "no console preference on a fresh app")
+
+	u.setConsole(true)
+	on, saved := loadConsolePref()
+	assert.True(t, saved, "console choice is saved")
+	assert.True(t, on, "saved as on")
+
+	u.setConsole(false)
+	on, saved = loadConsolePref()
+	assert.True(t, saved)
+	assert.False(t, on, "saved as off")
+}
+
 func TestSequencerRackDefaultsVisible(t *testing.T) {
 	u := newTestUI(t)
 	assert.True(t, u.seqRack.Object().Visible(), "sequencer shown by default")

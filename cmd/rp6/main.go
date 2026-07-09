@@ -154,6 +154,11 @@ type ui struct {
 	fullScreen     bool
 	windowedSize   fyne.Size
 	lastFullScreen bool
+	// consoleAutoTablet requests that the first laid-out canvas size decide the
+	// console default (on for a tablet-class screen). Set at launch only when no
+	// console preference was saved and we're on mobile — the size isn't known
+	// until the first onCanvasResize.
+	consoleAutoTablet bool
 	// forced tracks the racks the active layout variant force-shows/hides via a
 	// `show:` property, keyed by rack id, each remembering the visibility the
 	// rack had *before* the variant forced it. On a variant switch these are
@@ -462,6 +467,14 @@ func (u *ui) applyMeterOrientation(horizontal bool) {
 // toggleFullScreen, which can't rebuild correctly on its own because
 // SetFullScreen is applied asynchronously.
 func (u *ui) onCanvasResize(size fyne.Size) {
+	// First real size on a fresh install (no saved console pref) on mobile:
+	// default a tablet-class screen to the wide console layout.
+	if u.consoleAutoTablet && size.Width > 1 && size.Height > 1 {
+		u.consoleAutoTablet = false
+		if isTabletSize(size) {
+			u.fullScreen = true // onCanvasResize's fs-change check below fires the relayout
+		}
+	}
 	compact := classifyCompact(u.compact, size.Width, size.Height)
 	fs := u.isFullScreen()
 	if compact == u.compact && fs == u.lastFullScreen {
@@ -715,6 +728,7 @@ func (u *ui) setConsole(on bool) {
 		u.forced = nil // the entering variant's applyRackShow repopulates it
 	}
 	u.fullScreen = on
+	rememberConsole(on) // persist the choice so it's restored next launch
 	// We relayout synchronously below (the variant keys off the fullscreen flag,
 	// not pixel size), so record the state here and let onCanvasResize skip a
 	// redundant relayout for this flip — it still fires for a real compact change.
@@ -821,6 +835,46 @@ func rememberPadLayout(l padLayout) {
 	if app := fyne.CurrentApp(); app != nil {
 		app.Preferences().SetInt(prefKeyPadLayout, int(l))
 	}
+}
+
+// prefKeyConsole holds the console-layout on/off choice (a global UI preference,
+// not tied to a device profile), stored as 1/0 with -1 meaning "never set".
+const prefKeyConsole = "console.on"
+
+// tabletMinDP is the smallest-side threshold (in Fyne's density-independent
+// units) at/above which a touch screen counts as a tablet — the standard Android
+// "sw600dp" tablet breakpoint. Tablets default to the wide console layout.
+const tabletMinDP = 600
+
+// loadConsolePref returns the remembered console-layout state and whether one was
+// ever saved (so first launch can pick a device-appropriate default instead).
+func loadConsolePref() (on, saved bool) {
+	if app := fyne.CurrentApp(); app != nil {
+		switch app.Preferences().IntWithFallback(prefKeyConsole, -1) {
+		case 0:
+			return false, true
+		case 1:
+			return true, true
+		}
+	}
+	return false, false
+}
+
+// rememberConsole persists an explicit console-layout choice (see setConsole).
+func rememberConsole(on bool) {
+	if app := fyne.CurrentApp(); app != nil {
+		v := 0
+		if on {
+			v = 1
+		}
+		app.Preferences().SetInt(prefKeyConsole, v)
+	}
+}
+
+// isTabletSize reports whether a canvas size (in density-independent units) is a
+// tablet-class screen (smallest side ≥ tabletMinDP).
+func isTabletSize(size fyne.Size) bool {
+	return min(size.Width, size.Height) >= tabletMinDP
 }
 
 // storeProfile returns the persistence profile for the active backend, so
@@ -2146,6 +2200,18 @@ func main() {
 		u.emuDir = u.savedEmuDir()
 	}
 	w.Resize(fyne.NewSize(858, 900))
+	// Restore the remembered console-layout choice; on a fresh install default a
+	// tablet to the console (decided from the first laid-out size — see
+	// onCanvasResize). On desktop, restoring console means going full screen.
+	if on, saved := loadConsolePref(); saved {
+		u.fullScreen = on
+		u.lastFullScreen = on
+		if on && !onMobile {
+			w.SetFullScreen(true)
+		}
+	} else if onMobile {
+		u.consoleAutoTablet = true
+	}
 	u.build(w)
 	u.connect()
 	if !u.useEmu && u.dev == nil {
