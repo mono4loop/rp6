@@ -18,7 +18,7 @@ layout compact when compact {
   Border {
     top: VBox {
       transport
-      dlyrev
+      p6 if p6_active
       fx
       keys
       seq if !seq_docked
@@ -37,12 +37,17 @@ layout compact when compact {
   }
 }
 
-// Default (windowed): VU meter down the right-hand side.
+// Default (windowed): TEMPO and the VU meter share a strip along the top (the
+// meter fills the width beside the small TEMPO rack), saving the right-hand
+// column for the pads.
 layout default {
   Border {
     top: VBox {
-      transport
-      dlyrev
+      Border {
+        left: transport
+        center: vu(orientation: horizontal)
+      }
+      p6 if p6_active
       fx
       keys
       seq if !seq_docked
@@ -53,7 +58,6 @@ layout default {
       leading: pads if pads_visible
       trailing: seq if seq_docked
     }
-    right: vu(orientation: vertical)
     bottom: VBox {
       toggles
       status
@@ -70,11 +74,25 @@ layout default {
 // including the console layout in console.layout.
 
 rack transport {
-  RackPanel { HBox { play; Separator; tempo; Separator; pattern } }
+  RackPanel { HBox { tempo } }
 }
 
-rack dlyrev {
-  RackPanel { Grid { cols: 4; delayTime; delayLevel; reverbTime; reverbLevel } }
+// The P-6-only rack's controls: transport (Play/Stop), pattern select, and the
+// four Delay/Reverb amount knobs. All talk to the hardware over MIDI, so this
+// rack is hidden and its toggle disabled on the emulator (see applyBackendGating);
+// the layout only places it `if p6_active`. Note there's no RackPanel here — Go
+// wraps these controls in the P-6's yellow tinted plate (device-specific styling).
+rack p6 {
+  HBox {
+    play
+    Separator
+    pattern
+    Separator
+    delayTime
+    delayLevel
+    reverbTime
+    reverbLevel
+  }
 }
 
 rack fx {

@@ -70,6 +70,10 @@ func (u *ui) selectLayout(reg layoutspec.Registry) fyne.CanvasObject {
 			"compact":      u.compact,
 			"seq_docked":   u.seqSide && u.seqRack.Object().Visible(),
 			"pads_visible": u.padRackObj.Visible() && !u.padFloating,
+			// The P-6-only rack (transport + PATTERN + Delay/Reverb) is laid out
+			// only when the P-6 is the active backend; its controls are no-ops on
+			// the emulator (see applyBackendGating).
+			"p6_active": !u.useEmu,
 		},
 		Nums: map[string]float64{
 			"width":  float64(size.Width),
@@ -92,9 +96,9 @@ func (u *ui) selectLayout(reg layoutspec.Registry) fyne.CanvasObject {
 // app knows what they mean.
 //
 //   - vu(orientation: horizontal|vertical) — the VU meter's orientation (always).
-//   - fx/dlyrev(show: true|false)          — the rack's default visibility, set
+//   - fx/keys(show: true|false)            — the rack's default visibility, set
 //     only when the layout variant is entered (u.variantChanged), so the user's
-//     FX/DLY-REV toggles still work while that variant is showing.
+//     FX/KEYS toggles still work while that variant is showing.
 func (u *ui) configureComponent(id string, props map[string]string) {
 	switch id {
 	case "vu":
@@ -103,8 +107,6 @@ func (u *ui) configureComponent(id string, props map[string]string) {
 		}
 	case "fx":
 		u.applyRackShow("fx", props, u.fxRack.Object(), u.fxBtn)
-	case "dlyrev":
-		u.applyRackShow("dlyrev", props, u.dlyRevObj, u.dlyRevBtn)
 	case "keys":
 		u.applyRackShow("keys", props, u.keyboardRack.Object(), u.keysBtn)
 	}

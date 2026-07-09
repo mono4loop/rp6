@@ -14,6 +14,7 @@ import (
 	"fyne.io/fyne/v2/test"
 	"fyne.io/fyne/v2/theme"
 	"github.com/mono4loop/rp6/internal/effects"
+	"github.com/mono4loop/rp6/internal/midiin"
 	"github.com/mono4loop/rp6/internal/sequencer"
 	"github.com/mono4loop/rp6/internal/store"
 	"github.com/mono4loop/rp6/internal/ui/components"
@@ -120,6 +121,7 @@ func TestExternalKeyboardPlaysAndReveals(t *testing.T) {
 	u := newTestUI(t)
 	var buf bytes.Buffer
 	u.dev = p6.New(&buf, p6.DefaultConfig())
+	u.listenMIDI.Store(true) // external input is gated by the listen (eye) toggle
 	require.False(t, u.keyboardRack.Object().Visible(), "keyboard hidden before any external note")
 
 	u.playExternalNote(p6.KeyboardCenterNote+2, 90) // a note from an Arturia key
@@ -134,6 +136,7 @@ func TestExternalKeyboardReflectsOctave(t *testing.T) {
 	u := newTestUI(t)
 	var buf bytes.Buffer
 	u.dev = p6.New(&buf, p6.DefaultConfig())
+	u.listenMIDI.Store(true) // external input is gated by the listen (eye) toggle
 	require.Equal(t, 0, u.keyboardRack.oct.Value())
 
 	// The controller's default octave (C3 = keyboardBaseNote for its lowest key)
@@ -261,23 +264,23 @@ func TestToggleMeter(t *testing.T) {
 	assert.True(t, u.meterArea.Visible())
 }
 
-func TestCompactMovesMeterToBottom(t *testing.T) {
+func TestMeterHorizontalStrip(t *testing.T) {
 	u := newTestUI(t)
 	require.False(t, u.compact, "wide by default")
-	require.False(t, u.meterHoriz, "meter vertical when wide")
+	require.True(t, u.meterHoriz, "meter is a horizontal strip beside TEMPO in the default layout")
 
-	// Compact form factor -> horizontal meter along the bottom. Drive the state
-	// directly + relayout synchronously (production defers relayout via fyne.Do;
-	// calling it here concurrently would race the headless text shaper).
+	// Compact form factor keeps it a horizontal strip (moved to the bottom). Drive
+	// the state directly + relayout synchronously (production defers relayout via
+	// fyne.Do; calling it here concurrently would race the headless text shaper).
 	u.compact = true
 	u.relayout()
-	assert.True(t, u.meterHoriz, "meter goes horizontal in compact mode")
+	assert.True(t, u.meterHoriz, "meter stays horizontal in compact mode")
 	assert.True(t, u.meterArea.Visible(), "meter still shown after reflow")
 
-	// Back to wide -> vertical side meter.
+	// Back to wide -> still a horizontal strip (now up top beside TEMPO).
 	u.compact = false
 	u.relayout()
-	assert.False(t, u.meterHoriz, "meter back to vertical when wide")
+	assert.True(t, u.meterHoriz, "meter still horizontal when wide")
 }
 
 func TestClassifyCompactHysteresis(t *testing.T) {
@@ -348,7 +351,7 @@ func TestSequencerRackDefaultsVisible(t *testing.T) {
 	u := newTestUI(t)
 	assert.True(t, u.seqRack.Object().Visible(), "sequencer shown by default")
 	assert.False(t, u.fxRack.Object().Visible(), "effects hidden by default")
-	assert.False(t, u.dlyRevObj.Visible(), "delay/reverb hidden by default")
+	assert.True(t, u.p6Obj.Visible(), "P-6 rack shown by default on the hardware backend")
 
 	u.toggleVisible(u.seqRack.Object(), u.seqBtn)
 	assert.False(t, u.seqRack.Object().Visible(), "toggles off")
@@ -432,9 +435,11 @@ func TestSetConnectedTogglesLED(t *testing.T) {
 	u := newTestUI(t)
 	u.setConnected(true)
 	assert.Equal(t, ledGreen, u.statusLED.Color())
+	assert.Equal(t, ledGreen, u.p6LED.Color(), "P-6 rack LED tracks connection")
 	assert.Equal(t, components.DeviceOnline, u.deviceBadge.State())
 	u.setConnected(false)
 	assert.Equal(t, ledRed, u.statusLED.Color())
+	assert.Equal(t, ledRed, u.p6LED.Color(), "P-6 rack LED tracks disconnection")
 	assert.Equal(t, components.DeviceOffline, u.deviceBadge.State())
 }
 
@@ -620,11 +625,75 @@ func TestListenDefaultFollowsBackend(t *testing.T) {
 	assert.True(t, u.listenMIDI.Load(), "listening enabled for the P-6")
 	assert.True(t, u.midiInBtn.On(), "eye toggle lit for the P-6")
 
-	// The emulator has no MIDI input, so listening is off.
+	// The emulator with no external controller has no MIDI input, so off.
 	u.useEmu = true
+	u.midiIn = nil
 	u.setListenDefault()
-	assert.False(t, u.listenMIDI.Load(), "listening disabled for the emulator")
-	assert.False(t, u.midiInBtn.On(), "eye toggle off for the emulator")
+	assert.False(t, u.listenMIDI.Load(), "listening disabled for the bare emulator")
+	assert.False(t, u.midiInBtn.On(), "eye toggle off for the bare emulator")
+
+	// But an external controller is an input source even on the emulator, so
+	// listening defaults back on once one is attached.
+	u.midiIn = fakeMIDIIn{}
+	u.setListenDefault()
+	assert.True(t, u.listenMIDI.Load(), "listening enabled once a controller is attached")
+	assert.True(t, u.midiInBtn.On(), "eye toggle lit with a controller on the emulator")
+}
+
+// fakeMIDIIn is a no-op midiin.Device for exercising the "controller attached"
+// code paths without real hardware.
+type fakeMIDIIn struct{}
+
+func (fakeMIDIIn) Name() string              { return "fake" }
+func (fakeMIDIIn) Path() string              { return "fake:0" }
+func (fakeMIDIIn) Run(midiin.Handlers) error { return nil }
+func (fakeMIDIIn) Close() error              { return nil }
+
+// TestExternalInputGatedByListen checks the listen (eye) toggle silences an
+// external controller: with it off, a pad hit from the controller neither plays
+// nor changes the selection.
+func TestExternalInputGatedByListen(t *testing.T) {
+	u := newTestUI(t)
+	var buf bytes.Buffer
+	u.dev = p6.New(&buf, p6.DefaultConfig())
+
+	// Listening off: the external pad hit is ignored (no MIDI sent, no select).
+	u.listenMIDI.Store(false)
+	u.fireExternalPad(padID(0, 1), 100)
+	assert.Empty(t, buf.Bytes(), "no note sent while ignoring MIDI input")
+	assert.Equal(t, -1, u.selPad, "selection unchanged while ignoring MIDI input")
+
+	// Listening on: the hit plays (Note On, ch11 -> 0x9A, note 48 = A1) and selects.
+	u.listenMIDI.Store(true)
+	u.fireExternalPad(padID(0, 1), 100)
+	assert.Equal(t, []byte{0x9A, 48, 100}, buf.Bytes(), "note sent while listening")
+	assert.Equal(t, padID(0, 1), u.selPad, "pad selected while listening")
+}
+
+// TestP6RackGatedByBackend checks the P-6-only rack (transport + PATTERN +
+// Delay/Reverb) is available on the hardware backend and hidden + disabled on the
+// emulator, where its controls are no-ops.
+func TestP6RackGatedByBackend(t *testing.T) {
+	u := newTestUI(t) // starts on the P-6 backend (useEmu=false)
+	assert.True(t, u.p6Obj.Visible(), "P-6 rack shown on the hardware backend")
+	assert.False(t, u.p6Btn.Disabled(), "P-6 toggle enabled on the hardware backend")
+
+	// Switch to the emulator: the rack hides and its toggle greys out.
+	u.useEmu = true
+	u.applyBackendGating()
+	assert.False(t, u.p6Obj.Visible(), "P-6 rack hidden on the emulator")
+	assert.True(t, u.p6Btn.Disabled(), "P-6 toggle disabled on the emulator")
+	assert.False(t, u.p6Btn.On(), "P-6 toggle untoggled on the emulator")
+
+	// A disabled toggle is inert — tapping it doesn't reveal the rack.
+	u.toggleP6Rack()
+	assert.False(t, u.p6Obj.Visible(), "disabled P-6 toggle can't reveal the rack")
+
+	// Back to the P-6: available again.
+	u.useEmu = false
+	u.applyBackendGating()
+	assert.True(t, u.p6Obj.Visible(), "P-6 rack restored on the hardware backend")
+	assert.False(t, u.p6Btn.Disabled(), "P-6 toggle re-enabled on the hardware backend")
 }
 
 // TestHardwareReflectWhileFloated guards that incoming pad presses are reflected

@@ -17,9 +17,11 @@
 
 layout console when fullscreen {
   Border {
-    // Bottom: the keyboard (full width, on by default in the console, and twice
-    // as tall — the keys expand vertically) above a full-width status bar.
+    // Bottom: the P-6-only rack (full width, only when the P-6 is active) above
+    // the keyboard (full width, on by default in the console, and twice as tall
+    // — the keys expand vertically) and a full-width status bar.
     bottom: VBox {
+      p6 if p6_active
       keys(show: true)
       toggles
       status
@@ -33,13 +35,12 @@ layout console when fullscreen {
       Spacer
     }
 
-    // Right rail: the effect racks stacked. `show: true` turns them on when the
-    // console is entered (you can still toggle them off with the FX / DLY-REV
-    // buttons while it's showing). The sequencer joins them unless it's docked as
-    // the centre split pane.
+    // Right rail: the effect rack(s) stacked. `show: true` turns FX on when the
+    // console is entered (you can still toggle it off with the FX button while
+    // it's showing). The sequencer joins it unless it's docked as the centre
+    // split pane.
     right: VBox {
       fx(show: true)
-      dlyrev(show: true)
       seq if !seq_docked
     }
 

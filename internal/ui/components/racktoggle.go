@@ -34,6 +34,7 @@ type RackToggle struct {
 	ctrl      bool // modifier captured at the last MouseDown
 	hovered   bool // pointer is over the toggle (for the hover-glow affordance)
 	armed     bool // lit hardest — an explicit "waiting for input" state
+	disabled  bool // greyed and inert (e.g. a P-6-only rack with no P-6 connected)
 
 	flashing bool // momentary confirmation blink (see Flash)
 	flashOn  bool
@@ -125,6 +126,26 @@ func (t *RackToggle) SetArmed(on bool) {
 // Armed reports whether the toggle is in the armed state.
 func (t *RackToggle) Armed() bool { return t.armed }
 
+// SetDisabled greys the toggle out and makes it inert (taps and hover glow are
+// ignored) — used when the control it toggles isn't available, e.g. a P-6-only
+// rack while the emulator backend is active. A disabled toggle also drops its
+// hover state so it doesn't linger lit.
+func (t *RackToggle) SetDisabled(on bool) {
+	if t.disabled == on {
+		return
+	}
+	t.disabled = on
+	if on {
+		t.hovered = false
+	}
+	if t.bg != nil {
+		t.Refresh()
+	}
+}
+
+// Disabled reports whether the toggle is inert.
+func (t *RackToggle) Disabled() bool { return t.disabled }
+
 // SetLabel updates the caption (text mode).
 func (t *RackToggle) SetLabel(s string) {
 	t.label = s
@@ -162,6 +183,9 @@ func (t *RackToggle) MouseUp(*desktop.MouseEvent) {}
 // over an inactive toggle it glows faintly in its accent color, hinting that it
 // can be activated.
 func (t *RackToggle) MouseIn(*desktop.MouseEvent) {
+	if t.disabled {
+		return
+	}
 	t.hovered = true
 	if t.bg != nil {
 		t.Refresh()
@@ -179,6 +203,9 @@ func (t *RackToggle) MouseOut() {
 
 // Tapped fires OnCtrlTap on a Ctrl+click (if set), else OnTap.
 func (t *RackToggle) Tapped(*fyne.PointEvent) {
+	if t.disabled {
+		return
+	}
 	ctrl := t.ctrl
 	t.ctrl = false
 	if ctrl && t.onCtrlTap != nil {
@@ -255,6 +282,18 @@ func (r *rackToggleRenderer) apply() {
 		lit = t.flashOn
 	}
 	switch {
+	case t.disabled:
+		// Inert: greyed harder than the plain "off" state, no glow, so it
+		// visibly reads as unavailable rather than merely toggled off.
+		t.glow.FillColor = color.Transparent
+		t.bg.FillColor = badgeBg
+		t.bg.StrokeColor = badgeStroke
+		if t.txt != nil {
+			t.txt.Color = withAlpha(badgeNameDim, 0x55)
+		}
+		if t.img != nil {
+			t.img.Translucency = 0.75
+		}
 	case t.armed:
 		// Armed: the whole plate floods with the accent color (an inverted,
 		// solid look) plus a strong halo — unmistakably different from the

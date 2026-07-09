@@ -34,31 +34,66 @@ type RackPanel struct {
 	widget.BaseWidget
 	content fyne.CanvasObject
 	padY    float32 // vertical padding (see NewRackPanelThin)
+
+	// Face palette (top→bottom gradient + bevel highlight). Defaults to gunmetal;
+	// NewRackPanelTinted derives them from a base color (e.g. the P-6 yellow).
+	top, bottom, hi color.NRGBA
+
+	// nameplate, if non-empty, is silkscreened bold on the right of the plate in
+	// the ink color — a device brand mark (e.g. "P-6"). nameLead, if set, is a
+	// small accessory (e.g. a status LED) placed immediately to its left.
+	nameplate string
+	ink       color.NRGBA
+	nameLead  fyne.CanvasObject
 }
 
 // NewRackPanel wraps content in a rack panel.
 func NewRackPanel(content fyne.CanvasObject) *RackPanel {
-	p := &RackPanel{content: content, padY: rackPadY}
-	p.ExtendBaseWidget(p)
-	return p
+	return newRackPanel(content, rackPadY)
 }
 
 // NewRackPanelThin wraps content in a rack panel with reduced vertical padding —
 // for slim single-row strips (e.g. the status bar) where minimizing height
 // matters. The frame/screws are unchanged; only the top/bottom padding shrinks.
 func NewRackPanelThin(content fyne.CanvasObject) *RackPanel {
-	p := &RackPanel{content: content, padY: rackPadYThin}
+	return newRackPanel(content, rackPadYThin)
+}
+
+func newRackPanel(content fyne.CanvasObject, padY float32) *RackPanel {
+	p := &RackPanel{content: content, padY: padY, top: rackTop, bottom: rackBottom, hi: rackHi}
+	p.ExtendBaseWidget(p)
+	return p
+}
+
+// NewRackPanelTinted wraps content in a rack panel whose brushed face is tinted
+// from base — a lit top→darker bottom gradient — instead of gunmetal (e.g. the
+// P-6's yellow chassis), while keeping the beveled frame, highlight and corner
+// screws so it still reads as a rack unit. If nameplate is non-empty it's
+// silkscreened bold on the right in a dark ink derived from base; lead (optional,
+// may be nil) is a small accessory shown just to the left of that mark — e.g. a
+// status LED, so it reads as part of the nameplate cluster.
+func NewRackPanelTinted(content fyne.CanvasObject, base color.NRGBA, nameplate string, lead fyne.CanvasObject) *RackPanel {
+	p := &RackPanel{
+		content:   content,
+		padY:      rackPadY,
+		top:       lightenColor(base, 0.12),
+		bottom:    darkenTo(base, 0.42),
+		hi:        lightenColor(base, 0.55),
+		nameplate: nameplate,
+		ink:       darkenTo(base, 0.16),
+		nameLead:  lead,
+	}
 	p.ExtendBaseWidget(p)
 	return p
 }
 
 func (p *RackPanel) CreateRenderer() fyne.WidgetRenderer {
-	bg := canvas.NewVerticalGradient(rackTop, rackBottom)
+	bg := canvas.NewVerticalGradient(p.top, p.bottom)
 	frame := canvas.NewRectangle(color.Transparent)
 	frame.CornerRadius = 6
 	frame.StrokeColor = rackFrame
 	frame.StrokeWidth = 2
-	hi := canvas.NewLine(rackHi)
+	hi := canvas.NewLine(p.hi)
 	hi.StrokeWidth = 1
 
 	r := &rackRenderer{p: p, bg: bg, frame: frame, hi: hi}
@@ -74,8 +109,37 @@ func (p *RackPanel) CreateRenderer() fyne.WidgetRenderer {
 		objs = append(objs, c, slot)
 	}
 	objs = append(objs, p.content)
+	if p.nameplate != "" {
+		if p.nameLead != nil {
+			objs = append(objs, p.nameLead)
+		}
+		// Faux-bold: Fyne's Bold is binary, so layer the text at sub-pixel
+		// offsets to thicken the strokes into a chunky silkscreen mark.
+		for _, off := range nameplateOffsets {
+			t := canvas.NewText(p.nameplate, p.ink)
+			t.TextStyle = fyne.TextStyle{Bold: true}
+			t.TextSize = 30
+			r.name = append(r.name, textLayer{t: t, off: off})
+			objs = append(objs, t)
+		}
+	}
 	r.objects = objs
 	return r
+}
+
+// nameplateOffsets thicken the nameplate: the base glyph plus copies nudged by a
+// fraction of a pixel in each direction (a lightweight faux-bold).
+var nameplateOffsets = []fyne.Position{
+	{X: 0, Y: 0},
+	{X: 0.7, Y: 0},
+	{X: 0, Y: 0.7},
+	{X: 0.7, Y: 0.7},
+}
+
+// textLayer is one nudged copy of the nameplate text (for faux-bold layering).
+type textLayer struct {
+	t   *canvas.Text
+	off fyne.Position
 }
 
 type rackRenderer struct {
@@ -83,6 +147,7 @@ type rackRenderer struct {
 	bg      *canvas.LinearGradient
 	frame   *canvas.Rectangle
 	hi      *canvas.Line
+	name    []textLayer // optional nameplate (right side), layered for faux-bold
 	screws  [4]*canvas.Circle
 	slots   [4]*canvas.Line
 	objects []fyne.CanvasObject
@@ -90,9 +155,25 @@ type rackRenderer struct {
 
 func (r *rackRenderer) Destroy() {}
 
+// nameplateWidth is the horizontal space (lead + label + margins) the nameplate
+// reserves on the right of the plate, or 0 when there's no nameplate.
+func (r *rackRenderer) nameplateWidth() float32 {
+	if len(r.name) == 0 {
+		return 0
+	}
+	w := r.name[0].t.MinSize().Width + 20
+	if r.p.nameLead != nil {
+		w += r.p.nameLead.MinSize().Width + nameLeadGap
+	}
+	return w
+}
+
+// nameLeadGap is the space between the nameplate lead (e.g. an LED) and the mark.
+const nameLeadGap = 8
+
 func (r *rackRenderer) MinSize() fyne.Size {
 	cs := r.p.content.MinSize()
-	return fyne.NewSize(cs.Width+2*rackPadX, cs.Height+2*r.p.padY)
+	return fyne.NewSize(cs.Width+2*rackPadX+r.nameplateWidth(), cs.Height+2*r.p.padY)
 }
 
 func (r *rackRenderer) Layout(size fyne.Size) {
@@ -103,8 +184,25 @@ func (r *rackRenderer) Layout(size fyne.Size) {
 	r.hi.Position1 = fyne.NewPos(3, 1.5)
 	r.hi.Position2 = fyne.NewPos(size.Width-3, 1.5)
 
+	nameW := r.nameplateWidth()
 	r.p.content.Move(fyne.NewPos(rackPadX, r.p.padY))
-	r.p.content.Resize(fyne.NewSize(size.Width-2*rackPadX, size.Height-2*r.p.padY))
+	r.p.content.Resize(fyne.NewSize(size.Width-2*rackPadX-nameW, size.Height-2*r.p.padY))
+	if len(r.name) > 0 {
+		ns := r.name[0].t.MinSize()
+		// Right-aligned (just inside the right padding) and vertically centered,
+		// clear of the corner screws.
+		base := fyne.NewPos(size.Width-rackPadX-ns.Width, (size.Height-ns.Height)/2)
+		for _, l := range r.name {
+			l.t.Resize(ns)
+			l.t.Move(base.Add(l.off))
+		}
+		// The lead accessory (LED) hugs the left of the mark, vertically centered.
+		if r.p.nameLead != nil {
+			ls := r.p.nameLead.MinSize()
+			r.p.nameLead.Resize(ls)
+			r.p.nameLead.Move(fyne.NewPos(base.X-nameLeadGap-ls.Width, (size.Height-ls.Height)/2))
+		}
+	}
 
 	centers := [4]fyne.Position{
 		{X: screwInset, Y: screwInset},

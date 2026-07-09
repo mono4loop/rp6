@@ -16,9 +16,10 @@ import (
 // optionally "breathe" (slowly pulse its glow) via StartPulse.
 type LED struct {
 	widget.BaseWidget
-	col   color.NRGBA
-	lit   bool
-	pulse float64 // glow intensity 0..1 (1 = full)
+	col    color.NRGBA
+	lit    bool
+	pulse  float64 // glow intensity 0..1 (1 = full)
+	border bool    // draw an opaque black outer bezel ring around the body
 
 	mu      sync.Mutex
 	pulsing bool
@@ -26,6 +27,7 @@ type LED struct {
 
 	glow1 *canvas.Circle // outer, faintest
 	glow2 *canvas.Circle // inner halo
+	bezel *canvas.Circle // optional black outer border ring
 	body  *canvas.Circle
 	gloss *canvas.Circle
 }
@@ -33,6 +35,14 @@ type LED struct {
 // NewLED returns a lit LED of color c.
 func NewLED(c color.NRGBA) *LED {
 	l := &LED{col: c, lit: true, pulse: 1}
+	l.ExtendBaseWidget(l)
+	return l
+}
+
+// NewLEDBordered returns a lit LED of color c ringed by an opaque black bezel —
+// a mounted-in-the-panel look (e.g. seated in the P-6's yellow plate).
+func NewLEDBordered(c color.NRGBA) *LED {
+	l := &LED{col: c, lit: true, pulse: 1, border: true}
 	l.ExtendBaseWidget(l)
 	return l
 }
@@ -104,7 +114,18 @@ func (l *LED) CreateRenderer() fyne.WidgetRenderer {
 	l.body.StrokeColor = color.NRGBA{A: 0x99}
 	l.body.StrokeWidth = 1
 	l.gloss = canvas.NewCircle(color.Transparent)
-	r := &ledRenderer{l: l, objects: []fyne.CanvasObject{l.glow1, l.glow2, l.body, l.gloss}}
+	objs := []fyne.CanvasObject{l.glow1, l.glow2}
+	if l.border {
+		// A dark bezel behind the body with a faintly lit rim stroke, so it reads
+		// as a molded ring the LED is seated in rather than a flat black disc. The
+		// body sits inset inside it, showing a solid rim around the lit dot.
+		l.bezel = canvas.NewCircle(color.NRGBA{R: 0x0A, G: 0x0A, B: 0x0C, A: 0xFF})
+		l.bezel.StrokeColor = color.NRGBA{R: 0x55, G: 0x55, B: 0x5E, A: 0xFF}
+		l.bezel.StrokeWidth = 1
+		objs = append(objs, l.bezel)
+	}
+	objs = append(objs, l.body, l.gloss)
+	r := &ledRenderer{l: l, objects: objs}
 	r.apply()
 	return r
 }
@@ -128,6 +149,9 @@ func (r *ledRenderer) Layout(size fyne.Size) {
 	bodyR := d * 0.28
 	place(r.l.glow1, d*0.50) // soft outer halo
 	place(r.l.glow2, d*0.38) // brighter inner halo
+	if r.l.bezel != nil {
+		place(r.l.bezel, bodyR+d*0.05) // thin dark rim, seated just outside the body
+	}
 	place(r.l.body, bodyR)
 
 	glossR := bodyR * 0.4

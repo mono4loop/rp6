@@ -119,7 +119,7 @@ type ui struct {
 	meter        *components.LevelMeter
 	meterArea    *fyne.Container   // stable holder; its child is the framed meter (V or H)
 	meterHoriz   bool              // meter currently laid out horizontally (compact mode)
-	dlyRevObj    fyne.CanvasObject // the Delay/Reverb rack panel (toggleable)
+	p6Obj        fyne.CanvasObject // the P-6-only rack (transport + PATTERN + Delay/Reverb); hidden on the emulator
 
 	transportRack fyne.CanvasObject
 	statusBar     fyne.CanvasObject
@@ -169,7 +169,7 @@ type ui struct {
 
 	// bottom-bar visibility toggles (backlit rack labels)
 	padBtn     *components.RackToggle
-	dlyRevBtn  *components.RackToggle
+	p6Btn      *components.RackToggle
 	fxBtn      *components.RackToggle
 	seqBtn     *components.RackToggle
 	keysBtn    *components.RackToggle
@@ -177,6 +177,7 @@ type ui struct {
 	consoleBtn *components.RackToggle
 
 	statusLED   *components.LED
+	p6LED       *components.LED // P-6 connection LED seated in the P-6 rack plate
 	root        fyne.CanvasObject
 	status      *widget.Label
 	controlBar  fyne.CanvasObject       // bottom control bar: section toggles + info button
@@ -253,7 +254,9 @@ func (u *ui) build(w fyne.Window) {
 		"keyboardKeys": u.keyboardRack.piano,
 	}, u.keyboardRack.defaultObject)
 
-	// Transport rack: a single Play/Stop toggle key, tempo, pattern.
+	// Transport rack: just the TEMPO knob. Play/Stop and PATTERN moved into the
+	// P-6-only rack (see below) — TEMPO stays here because it also drives the
+	// host-side sequencer/effects clocks, so it's useful on the emulator too.
 	u.playBtn = components.NewTransportToggle(func(running bool) {
 		if running {
 			u.play()
@@ -276,35 +279,49 @@ func (u *ui) build(w fyne.Window) {
 		OnChange:  u.onPatternChange,
 	})
 
-	// The transport and Delay/Reverb rack internals are laid out from the layout
-	// file too; the fallbacks below (built only when there's no `rack` block)
-	// reproduce the stock Go arrangement. composeRack never builds both trees.
+	// The transport rack internals are laid out from the layout file too; the
+	// fallback below (built only when there's no `rack` block) reproduces the
+	// stock Go arrangement. composeRack never builds both trees.
 	u.transportRack = u.composeRack("transport", layoutspec.Registry{
-		"play":    u.playBtn,
-		"tempo":   u.tempo.Object(),
-		"pattern": u.patternStep.Object(),
+		"tempo": u.tempo.Object(),
 	}, func() fyne.CanvasObject {
-		toolbar := container.NewHBox(u.playBtn, widget.NewSeparator(),
-			u.tempo.Object(), widget.NewSeparator(), u.patternStep.Object())
-		return components.NewRackPanel(toolbar)
+		return components.NewRackPanel(container.NewHBox(u.tempo.Object()))
 	})
 
-	delayTime := u.fxSlider("Delay Time", p6.CCDelayTime)
-	delayLevel := u.fxSlider("Delay Level", p6.CCDelayLevel)
-	reverbTime := u.fxSlider("Reverb Time", p6.CCReverbTime)
-	reverbLevel := u.fxSlider("Reverb Level", p6.CCReverbLevel)
-	u.dlyRevObj = u.composeRack("dlyrev", layoutspec.Registry{
-		"delayTime":   delayTime,
-		"delayLevel":  delayLevel,
-		"reverbTime":  reverbTime,
-		"reverbLevel": reverbLevel,
-	}, func() fyne.CanvasObject {
-		return components.NewRackPanel(container.NewGridWithColumns(4, delayTime, delayLevel, reverbTime, reverbLevel))
+	// The P-6-only rack: Play/Stop, PATTERN and the four Delay/Reverb knobs.
+	// Everything here talks to the hardware over MIDI (transport clock, Program
+	// Change, global-FX CC) and is a no-op on the emulator, so the whole rack is
+	// hidden and its toggle disabled unless the P-6 is the active backend (see
+	// applyBackendGating). Delay/Reverb are amount knobs (0..127), so they use
+	// the default LED ring indicator like TEMPO. The plate is tinted the P-6's
+	// yellow (with a bold "P-6" nameplate) so it echoes the physical unit; the
+	// layout `rack p6` block only arranges the controls, and Go wraps them in the
+	// tinted plate (device-specific styling stays out of the layout file).
+	delayTime := u.fxKnob("DLY TIME", p6.CCDelayTime)
+	delayLevel := u.fxKnob("DLY LVL", p6.CCDelayLevel)
+	reverbTime := u.fxKnob("REV TIME", p6.CCReverbTime)
+	reverbLevel := u.fxKnob("REV LVL", p6.CCReverbLevel)
+	// Connection LED seated in the plate (black-bezel, like a mounted indicator),
+	// paired with the "P-6" nameplate as its lead; setConnected drives its color.
+	u.p6LED = components.NewLEDBordered(ledRed)
+	p6Inner := u.recomposeRack("p6", layoutspec.Registry{
+		"play":        u.playBtn,
+		"pattern":     u.patternStep.Object(),
+		"delayTime":   delayTime.Object(),
+		"delayLevel":  delayLevel.Object(),
+		"reverbTime":  reverbTime.Object(),
+		"reverbLevel": reverbLevel.Object(),
 	})
+	if p6Inner == nil {
+		p6Inner = container.NewHBox(
+			u.playBtn, widget.NewSeparator(), u.patternStep.Object(), widget.NewSeparator(),
+			delayTime.Object(), delayLevel.Object(), reverbTime.Object(), reverbLevel.Object())
+	}
+	u.p6Obj = components.NewRackPanelTinted(p6Inner, p6PlateColor, "P-6", u.p6LED)
 
-	// Vertical master meter on the right, framed as a rack panel (toggleable).
-	// A short "VU" cap keeps the rack column narrow. In compact (phone) mode it
-	// re-frames horizontally and moves to the bottom — see applyMeterOrientation.
+	// Master meter, framed as a rack panel (toggleable). A short "VU" cap keeps
+	// it compact. It rides at the top beside TEMPO (default) or along the bottom
+	// (compact), always as a horizontal strip — see applyMeterOrientation.
 	u.meter = components.NewLevelMeter()
 	u.meterArea = container.NewStack()
 	u.applyMeterOrientation(false)
@@ -313,7 +330,7 @@ func (u *ui) build(w fyne.Window) {
 	// greyed = hidden), tinted in the P-6 amber accent.
 	acc := deviceHwAccent
 	u.padBtn = components.NewRackToggle("PADS", acc, u.togglePads)
-	u.dlyRevBtn = components.NewRackToggle("DLY/REV", acc, func() { u.toggleVisible(u.dlyRevObj, u.dlyRevBtn) })
+	u.p6Btn = components.NewRackToggle("P-6", acc, u.toggleP6Rack)
 	u.fxBtn = components.NewRackToggle("FX", acc, func() { u.toggleVisible(u.fxRack.Object(), u.fxBtn) })
 	u.seqBtn = components.NewRackToggle("SEQ", acc, u.toggleSeqView)
 	u.keysBtn = components.NewRackToggle("KEYS", acc, func() { u.toggleVisible(u.keyboardRack.Object(), u.keysBtn) })
@@ -322,7 +339,7 @@ func (u *ui) build(w fyne.Window) {
 	// and the same wide layout on a large tablet.
 	u.consoleBtn = components.NewRackToggle("CONSOLE", acc, u.toggleConsole)
 	u.consoleBtn.SetOn(u.fullScreen)
-	toggleObjs := []fyne.CanvasObject{u.padBtn, u.dlyRevBtn, u.fxBtn, u.seqBtn, u.keysBtn, u.meterBtn, u.consoleBtn}
+	toggleObjs := []fyne.CanvasObject{u.padBtn, u.p6Btn, u.fxBtn, u.seqBtn, u.keysBtn, u.meterBtn, u.consoleBtn}
 	toggleObjs = append(toggleObjs, u.jamToggles()...) // JAM button (absent in -tags nojam / web / mobile builds)
 	toggles := container.NewHBox(toggleObjs...)
 
@@ -341,9 +358,9 @@ func (u *ui) build(w fyne.Window) {
 
 	u.win = w
 
-	// Ctrl+Shift+P/D/F/S/K/M toggle the Pads, Delay-Reverb, FX, Sequencer, Keyboard, Meter racks.
+	// Ctrl+Shift+P/D/F/S/K/M toggle the Pads, P-6, FX, Sequencer, Keyboard, Meter racks.
 	u.addRackShortcut(w, fyne.KeyP, u.togglePads)
-	u.addRackShortcut(w, fyne.KeyD, func() { u.toggleVisible(u.dlyRevObj, u.dlyRevBtn) })
+	u.addRackShortcut(w, fyne.KeyD, u.toggleP6Rack)
 	u.addRackShortcut(w, fyne.KeyF, func() { u.toggleVisible(u.fxRack.Object(), u.fxBtn) })
 	u.addRackShortcut(w, fyne.KeyS, u.toggleSeqView)
 	u.addRackShortcut(w, fyne.KeyK, func() { u.toggleVisible(u.keyboardRack.Object(), u.keysBtn) })
@@ -363,14 +380,21 @@ func (u *ui) build(w fyne.Window) {
 	u.addRackShortcut(w, fyne.KeyReturn, u.toggleFullScreen)
 	u.addRackShortcut(w, fyne.KeyEnter, u.toggleFullScreen)
 
-	// Default visibility: Pads + Sequencer + Meter on; Delay/Reverb, Effects off.
-	// The sequencer shows above the pads (undocked) by default.
+	// Default visibility: Pads + Sequencer + Meter on; FX + Keyboard off. The P-6
+	// rack (transport + PATTERN + Delay/Reverb) is on by default too — it holds
+	// Play/Stop — but applyBackendGating below hides it and disables its toggle
+	// when the emulator is the active backend. The sequencer shows above the pads
+	// (undocked) by default.
 	u.setVisible(u.padRackObj, u.padBtn, true)
-	u.setVisible(u.dlyRevObj, u.dlyRevBtn, false)
+	u.setVisible(u.p6Obj, u.p6Btn, true)
 	u.setVisible(u.fxRack.Object(), u.fxBtn, false)
 	u.setVisible(u.seqRack.Object(), u.seqBtn, true)
 	u.setVisible(u.keyboardRack.Object(), u.keysBtn, false)
 	u.setVisible(u.meterArea, u.meterBtn, true)
+
+	// Gate the P-6-only rack for the current backend (hidden + disabled on the
+	// emulator). No relayout here — the build's own relayout() below covers it.
+	u.applyBackendGating()
 
 	u.relayout()
 }
@@ -397,7 +421,7 @@ func (u *ui) relayout() {
 
 	reg := layoutspec.Registry{
 		"transport": u.transportRack,
-		"dlyrev":    u.dlyRevObj,
+		"p6":        u.p6Obj,
 		"fx":        u.fxRack.Object(),
 		"seq":       u.seqRack.Object(),
 		"keys":      u.keyboardRack.Object(),
@@ -437,11 +461,13 @@ func (u *ui) canvasSize() fyne.Size {
 	return u.win.Canvas().Size()
 }
 
-// applyMeterOrientation re-frames the VU meter for the current form factor: a
-// tall vertical column (wide layout, "VU" cap on top) or a horizontal strip
-// (compact layout, "VU" cap on the left). The meter widget itself is reused; only
-// its framing is rebuilt, and meterArea is a stable holder so its visibility
-// (the VU toggle) is preserved across the swap.
+// applyMeterOrientation re-frames the VU meter for the current form factor. It's
+// always a horizontal strip now (a "VU" cap on the left), but the framing differs
+// by placement: beside the TEMPO knob (default top) or along the bottom (compact)
+// it must NOT stretch the LEDs to the full rack height — that reads as a giant
+// meter — so the strip is pinned to its natural height and centered vertically
+// within whatever space it's given. The meter widget itself is reused, and
+// meterArea is a stable holder so its visibility (the VU toggle) survives the swap.
 func (u *ui) applyMeterOrientation(horizontal bool) {
 	if u.meterArea != nil && len(u.meterArea.Objects) > 0 && u.meterHoriz == horizontal {
 		return
@@ -451,7 +477,10 @@ func (u *ui) applyMeterOrientation(horizontal bool) {
 	capLabel := widget.NewLabelWithStyle("VU", fyne.TextAlignCenter, fyne.TextStyle{Bold: true})
 	var inner fyne.CanvasObject
 	if horizontal {
-		inner = container.NewBorder(nil, nil, capLabel, nil, u.meter)
+		// cap + LED strip on one row, kept at its natural height and centered so
+		// the LEDs don't balloon to fill a tall rack row beside the TEMPO knob.
+		strip := container.NewBorder(nil, nil, capLabel, nil, u.meter)
+		inner = container.NewVBox(layout.NewSpacer(), strip, layout.NewSpacer())
 	} else {
 		inner = container.NewBorder(capLabel, nil, nil, nil, u.meter)
 	}
@@ -707,6 +736,35 @@ func (u *ui) onSeqDock(docked bool) {
 func (u *ui) toggleSeqView() {
 	u.setVisible(u.seqRack.Object(), u.seqBtn, !u.seqRack.Object().Visible())
 	u.relayout()
+}
+
+// toggleP6Rack shows/hides the P-6-only rack (transport + PATTERN + Delay/Reverb).
+// It's inert while gated off (the toggle is disabled on the emulator), so the
+// disabled guard mirrors what the greyed toggle already signals.
+func (u *ui) toggleP6Rack() {
+	if u.p6Btn.Disabled() {
+		return
+	}
+	u.toggleVisible(u.p6Obj, u.p6Btn)
+}
+
+// applyBackendGating reveals or hides the P-6-only rack for the active backend.
+// Its controls (transport clock, Program Change, global-FX CC) are no-ops on the
+// emulator, so on the emulator the rack is hidden and its bottom-bar toggle is
+// disabled (greyed, non-clickable); on the P-6 it's shown by default (it holds
+// Play/Stop) and the toggle is enabled. Safe to call before the first relayout
+// (build()) — it only relays out when there's already content.
+func (u *ui) applyBackendGating() {
+	onP6 := !u.useEmu
+	if u.p6Btn != nil {
+		u.p6Btn.SetDisabled(!onP6)
+	}
+	if u.p6Obj != nil {
+		u.setVisible(u.p6Obj, u.p6Btn, onP6)
+	}
+	if u.root != nil {
+		u.relayout()
+	}
 }
 
 // toggleFullScreen toggles the "mixing console" layout (F11 / Ctrl+Shift+Enter).
@@ -1035,12 +1093,13 @@ func (u *ui) switchBackend(useEmu bool) {
 	u.setStatus(fmt.Sprintf("switched to %s", name))
 }
 
-// setListenDefault turns hardware-input reflection on when the active backend is
-// the P-6 (so its pad presses show in the UI without having to tap the eye
-// toggle) and off for the emulator, which has no MIDI input. Called from connect
-// on every (re)connection, so a connected P-6 always listens by default.
+// setListenDefault turns MIDI-input reflection on by default whenever there's
+// input to react to: the P-6's own pad presses (hardware backend), or an
+// external MIDI controller (which drives the emulator host-side too). The
+// emulator with no controller has no input, so it defaults off. Called from
+// connect on every (re)connection and when a controller attaches.
 func (u *ui) setListenDefault() {
-	u.listenMIDI.Store(!u.useEmu)
+	u.listenMIDI.Store(!u.useEmu || u.midiIn != nil)
 	u.updateMIDIInBtn()
 }
 
@@ -1081,6 +1140,7 @@ func (u *ui) reconnectProfile() {
 	u.connect()             // open the new backend (also updates badge state)
 	u.openStore()           // re-scope persistence to the new profile
 	u.loadInitialSequence() // load that profile's last sequence
+	u.applyBackendGating()  // show/hide the P-6-only rack for the new backend
 }
 
 func (u *ui) openStore() {
@@ -1786,19 +1846,16 @@ func patternName(idx int) string {
 	return fmt.Sprintf("%d-%02d", idx/16+1, idx%16+1)
 }
 
-// fxSlider builds a labeled 0-127 slider with a red 7-segment readout that
-// sends cc on the Auto channel as it moves.
-func (u *ui) fxSlider(name string, cc uint8) fyne.CanvasObject {
-	seg := components.NewSevenSeg(3)
-	s := widget.NewSlider(0, 127)
-	s.Step = 1
-	s.OnChanged = func(v float64) {
-		seg.SetValue(int(v))
-		u.sendFX(name, cc, uint8(v))
-	}
-	label := widget.NewLabel(name)
-	// Label on top; slider fills the width; 7-seg readout on the right.
-	return container.NewBorder(label, nil, nil, seg, s)
+// fxKnob builds a 0..127 rotary knob (LED-ring indicator, like TEMPO) that sends
+// cc on the Auto channel as it turns. Used for the global Delay/Reverb amounts —
+// continuous magnitudes, so the ring fills with the value.
+func (u *ui) fxKnob(name string, cc uint8) *components.Knob {
+	return components.NewKnob(components.KnobConfig{
+		Label: name, Value: 0, Min: 0, Max: 127, Step: 1,
+		Width:    132, // a touch narrower than TEMPO/PATTERN: four of them share the P-6 rack row
+		Accent:   deviceHwAccent,
+		OnChange: func(v int) { u.sendFX(name, cc, uint8(v)) },
+	})
 }
 
 // sendFX transmits a global-FX control change on the Auto channel.
@@ -1987,6 +2044,10 @@ func (u *ui) startMIDIInput() {
 	u.midiIn = dev
 	log.Printf("rp6: MIDI input controller: %s (%s)", dev.Name(), dev.Path())
 	u.setStatus(fmt.Sprintf("%s connected (%s)", dev.Name(), dev.Path()))
+	// A controller is an input source even on the emulator, so default to
+	// listening (the eye toggle) now that one is attached; the user can still
+	// switch it off to stop the pads reacting.
+	u.setListenDefault()
 
 	h := midiin.Handlers{
 		TriggerPad: u.fireExternalPad,
@@ -2023,7 +2084,14 @@ func (u *ui) startMIDIInput() {
 // hit in the UI (select + flash). Unlike onMIDIIn — which mirrors the P-6's own
 // pad presses without re-triggering — the controller produces no sound itself,
 // so here we DO fire the note. Runs on the controller's read goroutine.
+//
+// The MIDI-input "listen" toggle (the eye) gates this too: switch it off and the
+// pads stop reacting to the external controller (e.g. when you'd rather play the
+// controller into something else without RP6 chiming in).
 func (u *ui) fireExternalPad(id int, velocity uint8) {
+	if !u.listenMIDI.Load() {
+		return
+	}
 	u.firePadVel(id, velocity)      // sound (also bumps the meter); concurrency-safe
 	u.jamBroadcastPad(id, velocity) // share this live hit with jam peers (no-op in -tags nojam / web / mobile builds)
 	bank, number := padBankNumber(id)
@@ -2039,8 +2107,12 @@ func (u *ui) fireExternalPad(id int, velocity uint8) {
 // Arturia KeyStep/MicroLab): it plays the note through rp6's keyboard path (the
 // selected sample, pitched — same as the on-screen keys) and reflects it on the
 // on-screen keyboard, revealing that rack the first time so the controller
-// visibly drives it. Runs on the controller's read goroutine.
+// visibly drives it. Runs on the controller's read goroutine. Gated by the
+// listen (eye) toggle, like fireExternalPad.
 func (u *ui) playExternalNote(note, velocity uint8) {
+	if !u.listenMIDI.Load() {
+		return
+	}
 	u.playNote(note, velocity) // sound (Auto channel on hardware; pitched on the emulator); concurrency-safe
 	fyne.Do(func() {
 		if u.keyboardRack == nil {
@@ -2082,15 +2154,16 @@ func (u *ui) setLayout(l padLayout) {
 	}
 }
 
-// toggleMIDIListen enables/disables reflecting hardware pad presses in the UI.
+// toggleMIDIListen enables/disables reacting to MIDI input — the P-6's own pad
+// presses (reflected in the UI) and external controllers (which trigger pads).
 func (u *ui) toggleMIDIListen() {
 	on := !u.listenMIDI.Load()
 	u.listenMIDI.Store(on)
 	u.updateMIDIInBtn()
 	if on {
-		u.setStatus("listening to P-6 input")
+		u.setStatus("listening to MIDI input")
 	} else {
-		u.setStatus("ignoring P-6 input")
+		u.setStatus("ignoring MIDI input")
 	}
 }
 
@@ -2109,12 +2182,15 @@ func (u *ui) updateMIDIInBtn() {
 // setConnected updates the status LED and device badge: green/online when
 // connected, red/offline otherwise.
 func (u *ui) setConnected(ok bool) {
+	col := ledRed
+	if ok {
+		col = ledGreen
+	}
 	if u.statusLED != nil {
-		if ok {
-			u.statusLED.SetColor(ledGreen)
-		} else {
-			u.statusLED.SetColor(ledRed)
-		}
+		u.statusLED.SetColor(col)
+	}
+	if u.p6LED != nil {
+		u.p6LED.SetColor(col)
 	}
 	if ok {
 		u.setDeviceState(components.DeviceOnline)

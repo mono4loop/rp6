@@ -30,11 +30,12 @@ layout consoletablet when fullscreen && mobile {
       status
     }
 
-    // Full-width top: transport and the Delay/Reverb rack (its four knobs get
-    // the whole width rather than being crammed into a rail).
+    // Full-width top: transport (TEMPO) and, when the P-6 is the active backend,
+    // its hardware rack (Play/Stop, pattern, Delay/Reverb) below it. On a tablet
+    // the backend is the emulator, so `p6` is normally absent here.
     top: VBox {
       transport
-      dlyrev(show: true)
+      p6 if p6_active
     }
 
     // Two wide panes side by side, so neither the pads nor the sequencer gets

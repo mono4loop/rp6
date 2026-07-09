@@ -54,6 +54,9 @@ var (
 	// storeAccent tints the pad-rack store toggle — a cool blue, kin to the
 	// emulator badge's cyan, marking the "download more packs" action.
 	storeAccent = color.NRGBA{R: 0x3B, G: 0x82, B: 0xE1, A: 0xFF}
+	// p6PlateColor is the P-6's yellow chassis color, used to tint the P-6-only
+	// rack plate so it echoes the physical unit (black controls on yellow).
+	p6PlateColor = color.NRGBA{R: 0xE0, G: 0xB0, B: 0x2C, A: 0xFF}
 )
 
 // bankColors gives each bank (A-H) a distinct, high-contrast color.

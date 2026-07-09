@@ -18,7 +18,7 @@ import (
 // embedded layout can be built without a running UI.
 func rp6Registry() layoutspec.Registry {
 	r := layoutspec.Registry{}
-	for _, id := range []string{"transport", "dlyrev", "fx", "seq", "keys", "pads", "vu", "toggles", "status"} {
+	for _, id := range []string{"transport", "p6", "fx", "seq", "keys", "pads", "vu", "toggles", "status"} {
 		r[id] = canvas.NewRectangle(color.White)
 	}
 	return r
@@ -44,7 +44,9 @@ func TestDefaultLayoutBuilds(t *testing.T) {
 		env  layoutlang.Env
 	}{
 		{"default windowed", layoutlang.Env{Bools: map[string]bool{"pads_visible": true}, Nums: map[string]float64{"width": 900}}},
+		{"default with p6 rack", layoutlang.Env{Bools: map[string]bool{"pads_visible": true, "p6_active": true}, Nums: map[string]float64{"width": 900}}},
 		{"fullscreen console", layoutlang.Env{Bools: map[string]bool{"fullscreen": true, "pads_visible": true}, Nums: map[string]float64{"width": 1920}}},
+		{"fullscreen console with p6", layoutlang.Env{Bools: map[string]bool{"fullscreen": true, "pads_visible": true, "p6_active": true}, Nums: map[string]float64{"width": 1920}}},
 		{"tablet console", layoutlang.Env{Bools: map[string]bool{"fullscreen": true, "mobile": true, "pads_visible": true}, Nums: map[string]float64{"width": 1600}}},
 		{"compact", layoutlang.Env{Bools: map[string]bool{"compact": true, "pads_visible": true}, Nums: map[string]float64{"width": 400}}},
 		{"seq docked", layoutlang.Env{Bools: map[string]bool{"pads_visible": true, "seq_docked": true}}},
@@ -94,11 +96,11 @@ func TestFullScreenSelectsConsole(t *testing.T) {
 func TestDefaultRackBlocks(t *testing.T) {
 	doc, err := layoutlang.Parse(layoutSource())
 	require.NoError(t, err)
-	assert.ElementsMatch(t, []string{"transport", "dlyrev", "fx", "pads", "seq", "keys"}, doc.RackNames())
+	assert.ElementsMatch(t, []string{"transport", "p6", "fx", "pads", "seq", "keys"}, doc.RackNames())
 
 	racks := map[string][]string{
-		"transport": {"play", "tempo", "pattern"},
-		"dlyrev":    {"delayTime", "delayLevel", "reverbTime", "reverbLevel"},
+		"transport": {"tempo"},
+		"p6":        {"play", "pattern", "delayTime", "delayLevel", "reverbTime", "reverbLevel"},
 		"fx":        {"fxRoll", "fxRate"},
 		"pads":      {"padFloat", "padListen", "padDensity", "badge", "padGrid"},
 		"seq":       {"seqHeader", "seqControls", "seqGrid"},
@@ -155,7 +157,7 @@ func TestVUOrientationPerVariant(t *testing.T) {
 	}{
 		{"console", layoutlang.Env{Bools: map[string]bool{"fullscreen": true, "pads_visible": true}}, "horizontal"},
 		{"compact", layoutlang.Env{Bools: map[string]bool{"compact": true, "pads_visible": true}}, "horizontal"},
-		{"default", layoutlang.Env{Bools: map[string]bool{"pads_visible": true}}, "vertical"},
+		{"default", layoutlang.Env{Bools: map[string]bool{"pads_visible": true}}, "horizontal"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -166,18 +168,16 @@ func TestVUOrientationPerVariant(t *testing.T) {
 	}
 }
 
-// TestConsoleRevealsFxDlyRev checks the `show: true` properties in the console
-// layout reveal the FX and Delay/Reverb racks on entry, and that a manual toggle
-// while the console stays shown is respected (not clobbered on the next relayout).
-func TestConsoleRevealsFxDlyRev(t *testing.T) {
-	u := newTestUI(t) // starts windowed; fx/dlyrev hidden by default
+// TestConsoleRevealsFx checks the `show: true` property in the console layout
+// reveals the FX rack on entry, and that a manual toggle while the console stays
+// shown is respected (not clobbered on the next relayout).
+func TestConsoleRevealsFx(t *testing.T) {
+	u := newTestUI(t) // starts windowed; fx hidden by default
 	require.False(t, u.fxRack.Object().Visible(), "fx hidden by default")
-	require.False(t, u.dlyRevObj.Visible(), "dlyrev hidden by default")
 
 	// Enter the console layout (full screen), via the real toggle path.
 	u.setConsole(true)
 	assert.True(t, u.fxRack.Object().Visible(), "console reveals fx on entry")
-	assert.True(t, u.dlyRevObj.Visible(), "console reveals dlyrev on entry")
 
 	// Toggling FX off while still in the console must stick (same variant, so the
 	// `show:` default is not re-applied on relayout).
@@ -207,27 +207,23 @@ func TestConsoleRevealsKeyboard(t *testing.T) {
 }
 
 // TestConsolePreservesRackState reproduces the round-trip bug: the console
-// force-shows DLY/REV, FX and KEYS; leaving it must restore the racks the user
-// had before (here: all three off), not leave them stuck on (which crammed the
-// normal layout and pushed the pads off-screen).
+// force-shows FX and KEYS; leaving it must restore the racks the user had before
+// (here: both off), not leave them stuck on (which crammed the normal layout and
+// pushed the pads off-screen).
 func TestConsolePreservesRackState(t *testing.T) {
 	u := newTestUI(t)
-	// Default state: dlyrev / fx / keys are off; pads on.
-	require.False(t, u.dlyRevObj.Visible())
+	// Default state: fx / keys are off; pads on.
 	require.False(t, u.fxRack.Object().Visible())
 	require.False(t, u.keyboardRack.Object().Visible())
 	require.True(t, u.padRackObj.Visible())
 
-	u.toggleConsole() // enter console — force-shows the three racks
-	assert.True(t, u.dlyRevObj.Visible())
+	u.toggleConsole() // enter console — force-shows the two racks
 	assert.True(t, u.fxRack.Object().Visible())
 	assert.True(t, u.keyboardRack.Object().Visible())
 
 	u.toggleConsole() // back to normal — must restore the prior (off) state
-	assert.False(t, u.dlyRevObj.Visible(), "DLY/REV restored to off")
 	assert.False(t, u.fxRack.Object().Visible(), "FX restored to off")
 	assert.False(t, u.keyboardRack.Object().Visible(), "KEYS restored to off")
-	assert.False(t, u.dlyRevBtn.On())
 	assert.False(t, u.fxBtn.On())
 	assert.False(t, u.keysBtn.On())
 	assert.True(t, u.padRackObj.Visible(), "pads still visible")
@@ -289,7 +285,7 @@ func TestConsoleLayoutSmoke(t *testing.T) {
 		name string
 		do   func()
 	}{
-		{"show delay/reverb", func() { u.toggleVisible(u.dlyRevObj, u.dlyRevBtn) }},
+		{"show p6 rack", func() { u.toggleP6Rack() }},
 		{"show fx", func() { u.toggleVisible(u.fxRack.Object(), u.fxBtn) }},
 		{"dock sequencer", func() { u.onSeqDock(true) }},
 		{"undock sequencer", func() { u.onSeqDock(false) }},
