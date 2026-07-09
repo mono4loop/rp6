@@ -51,6 +51,9 @@ var (
 var (
 	deviceHwAccent  = color.NRGBA{R: 0xE1, G: 0x87, B: 0x3B, A: 0xFF}
 	deviceEmuAccent = color.NRGBA{R: 0x3B, G: 0xC9, B: 0xE1, A: 0xFF}
+	// storeAccent tints the pad-rack store toggle — a cool blue, kin to the
+	// emulator badge's cyan, marking the "download more packs" action.
+	storeAccent = color.NRGBA{R: 0x3B, G: 0x82, B: 0xE1, A: 0xFF}
 )
 
 // bankColors gives each bank (A-H) a distinct, high-contrast color.

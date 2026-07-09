@@ -84,7 +84,7 @@ rack fx {
 rack pads {
   RackPanel {
     Border {
-      top: HBox { padFloat; padListen; padDensity; Spacer; badge }
+      top: HBox { padFloat; padListen; padDensity; Spacer; store; badge }
       center: padGrid
     }
   }

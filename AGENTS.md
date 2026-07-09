@@ -65,6 +65,14 @@ class-compliant **USB MIDI** port:
   disturbing your selection/UI. **Desktop-only**, built by default (disable with
   `-tags nojam`; excluded on web + mobile). Needs a small signaling server
   (`cmd/rp6-signal`). Design + setup: `docs/architecture/jams.md`, `docs/jams.md`.
+- A **sample-pak store** (pad-rack blue store toggle, left of the device badge):
+  browses an online catalog and installs **`.rp6sp`** sample paks (ZIP kits of
+  P-6-style samples + metadata + optional cover) into the emulator; already-
+  installed packs offer **Select** (load) instead of **Install**. Runs on
+  **desktop + Android/iOS** (the web build stubs it out); pak *authoring*
+  (`rp6 pak create|install|list`, `-pak file.rp6sp`) is desktop-only. Where paks
+  install is the one platform difference, behind the `paksSamplesDir()` seam.
+  Full design: `docs/architecture/store.md`.
 - The pad grid, delay/reverb, effects and sequencer are all **toggleable racks**
   (see the bottom-bar toggles below).
 - A **rack-framed bottom bar** that hosts the **visibility toggles** — backlit
@@ -160,14 +168,18 @@ p6/                 dependency-free MIDI client for the P-6 (NO Fyne, NO cgo)
   clock.go          Clocker: MIDI Start/Stop + timing-clock generator
   controller.go     Controller interface (pad/CC/PC/transport/Listen) — the
                     swap point: *Device and *emu.Emulator both implement it
-internal/emu/       software P-6 emulator: plays WAV samples (NO Fyne)
+internal/emu/       software P-6 emulator: plays WAV/FLAC samples (NO Fyne)
   emu.go            Emulator: implements p6.Controller; loads a P-6-style
-                    sample set (A1..H6) from an fs.FS (os.DirFS or the embedded
-                    kit), fires pads into a mixer
+                    sample set (A1..H6, .wav or .flac) from an fs.FS (os.DirFS,
+                    the embedded kit, or a .rp6sp zip via OpenFS), fires pads
+                    into a mixer
   kit.go            //go:embed of the built-in "modular-hits" kit + credits;
                     OpenDefault() loads it (48 pads, playable out of the box)
   assets/modular-hits/  the embedded default kit: A1.wav..H6.wav + CREDITS.txt
-  wav.go            dependency-free WAV decode/encode + channel/rate resample
+  wav.go            dependency-free WAV decode/encode + channel remix + a
+                    band-limited (windowed-sinc) rate resampler on load
+  flac.go           FLAC decode (mewkiz/flac, pure Go) -> Clip; emulator-only
+                    (the P-6 hardware imports WAV, not FLAC)
   mixer.go          voice mixer (16-voice cap, sums+clamps) — pure, testable
   sink.go           sink interface (audio output the mixer renders into)
   sink_stub.go      default (no tag): silent sink (loads+mixes, no sound)
@@ -221,6 +233,14 @@ internal/store/     sequence persistence (NO Fyne, NO p6); (profile,slot) ->
                     trips Android's seccomp filter); store_js.go (js) a localStorage
                     JSON blob (no fs / no sqlite on wasm) — both mirror the SQLite
                     store's API + profile scoping exactly
+                    (also: SamplesDir() -> XDG_DATA_HOME/rp6/samples, where paks install)
+internal/samplepak/ sample paks (.rp6sp) — pure logic (NO Fyne, NO p6): ZIP +
+                    JSON + a stdlib http catalog client. Full design:
+                    docs/architecture/store.md
+  samplepak.go      Manifest, Create, Install (zip-slip-guarded, atomic swap into
+                    samples/<id>), List, ReadManifest
+  catalog.go        Catalog/CatalogEntry, FetchCatalog (resolves relative
+                    cover/download URLs), DownloadTemp, FetchBytes, ReadCover
 internal/audio/     reusable audio capture (NO Fyne, NO p6)
   audio.go          Capturer interface, Peak/RMS, NormDB, Meter (smoothed VU)
   capture_stub.go   default (no tag): OpenCapture -> ErrUnavailable
@@ -297,6 +317,12 @@ cmd/rp6/layout.go     loads the embedded UI layout, selects a variant per env,
                     composes rack internals + applies component properties
 cmd/rp6/assets/*.layout  the compiled-in UI layouts (console + default/compact
                     variants and the shared `rack` blocks) — see docs/architecture/layouts.md
+cmd/rp6/pak.go        (desktop) sample-pak CLI (pak create/install/list), the -pak
+                    launch flag, the emu-settings install button; cmd/rp6/store.go
+                    is the in-app store dialog (desktop + Android/iOS); the
+                    paksSamplesDir() seam (paksdir_desktop.go / paksdir_mobile.go)
+                    is the one platform difference; pak_stub.go (web) / pak_mobile_stub.go
+                    are the no-ops. Full design: docs/architecture/store.md
 ```
 
 ### The one rule that matters
@@ -368,8 +394,16 @@ cmd/rp6/assets/*.layout  the compiled-in UI layouts (console + default/compact
   case-insensitively — flat `A1.wav`..`H6.wav` in one dir, per-bank subdirs
   `A/1.wav`..`H/6.wav`, or the P-6's own export/import layout
   `BANK_A/PAD_1/*.wav`..`BANK_H/PAD_6/*.wav` (any WAV inside the pad dir); a
-  trailing description is allowed (`A1 kick.wav`). First match per pad wins. So
+  trailing description is allowed (`A1 kick.wav`). Samples may be **WAV or FLAC**
+  (`.flac` is emulator-only — the P-6 imports WAV). First match per pad wins. So
   one directory feeds both the emulator and the P-6 SampleTool.
+- **Sample paks & the store.** A directory of samples + metadata can be packed
+  into a single **`.rp6sp`** file (a ZIP: `manifest.json` + samples + optional
+  cover/credits) and installed into `XDG_DATA_HOME/rp6/samples/<id>/`, which the
+  emulator loads like any other samples dir. The pad rack's blue **store** toggle
+  browses an online **catalog** and installs packs; `rp6 pak create|install|list`
+  and `-pak file.rp6sp` do it from the CLI. Desktop-only (web/mobile get stubs).
+  Full design: `docs/architecture/store.md`.
 - The emulator **only plays pad triggers** — it has no internal
   sequencer/patterns/granular/FX, so `Start/Stop/Clock/ProgramChange/*CC` are
   accepted **no-ops** and `Listen` returns `p6.ErrNoInput` (the connect

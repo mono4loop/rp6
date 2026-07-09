@@ -14,13 +14,12 @@ import (
 	"fyne.io/fyne/v2/widget"
 
 	"github.com/mono4loop/rp6/internal/samplepak"
-	"github.com/mono4loop/rp6/internal/store"
 )
 
 // maybeRunPakCLI intercepts the `rp6 pak …` subcommand family before the GUI
 // starts, running an offline command (create/install/list) and exiting. It
 // returns without doing anything when the first argument isn't "pak", so normal
-// GUI launch proceeds. Desktop-only (the samples directory is a real path).
+// GUI launch proceeds. Desktop-only (no argv on mobile/web).
 func maybeRunPakCLI() {
 	if len(os.Args) < 2 || os.Args[1] != "pak" {
 		return
@@ -96,7 +95,7 @@ func pakInstall(args []string) error {
 	if fs.NArg() != 1 {
 		return fmt.Errorf("usage: rp6 pak install <pak.rp6sp>")
 	}
-	dir, err := store.SamplesDir()
+	dir, err := paksSamplesDir()
 	if err != nil {
 		return err
 	}
@@ -114,7 +113,7 @@ func pakList(args []string) error {
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
-	dir, err := store.SamplesDir()
+	dir, err := paksSamplesDir()
 	if err != nil {
 		return err
 	}
@@ -136,7 +135,7 @@ func pakList(args []string) error {
 // so `rp6 -pak foo.rp6sp` launches straight into that kit. On failure it logs
 // and leaves emuDir/useEmu untouched (launch falls back to the built-in kit).
 func (u *ui) installAndSelectPak(path string) {
-	dir, err := store.SamplesDir()
+	dir, err := paksSamplesDir()
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "rp6: -pak:", err)
 		return
@@ -175,7 +174,7 @@ func (u *ui) emuSettingsExtra(onInstalled func()) []fyne.CanvasObject {
 
 // installPakFile installs a .rp6sp at path and switches the emulator to it.
 func (u *ui) installPakFile(path string) {
-	dir, err := store.SamplesDir()
+	dir, err := paksSamplesDir()
 	if err != nil {
 		u.setStatus("couldn't locate samples dir: " + err.Error())
 		return

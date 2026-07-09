@@ -182,6 +182,7 @@ type ui struct {
 	controlBar  fyne.CanvasObject       // bottom control bar: section toggles + info button
 	deviceBadge *components.DeviceBadge // pad rack tool row: backlit device nameplate
 	deviceState components.DeviceState  // last-known connection state, re-applied when the badge is rebuilt (float/dock)
+	storeToggle *components.RackToggle  // pad rack tool row: opens the sample-pak store
 
 	// connecting guards connect() against re-entrant / overlapping calls.
 	// devGen tags the live connection so a background failure (mid-session
@@ -608,6 +609,14 @@ func (u *ui) buildPadRack() {
 	u.deviceBadge.OnToggle(u.toggleBackend)
 	u.deviceBadge.SetState(u.deviceState)
 
+	// Store toggle, just left of the device badge: opens the sample-pak store
+	// (blue accent, kin to the badge). It's an action, not a stateful toggle, so
+	// keep it lit (glowing blue border + icon) rather than greyed — tapping fires
+	// openSampleStore without changing the lit state. Desktop/mobile open the
+	// catalog; the web build is a no-op with a status message (see openSampleStore).
+	u.storeToggle = components.NewRackToggleIcon(theme.DownloadIcon(), storeAccent, u.openSampleStore)
+	u.storeToggle.SetOn(true)
+
 	// Lay out the pad rack internals from the layout file (`rack pads`), falling
 	// back to the stock Go arrangement if there's no block. composeRack builds
 	// only one tree, so the sub-widgets are never double-parented (which broke
@@ -616,11 +625,12 @@ func (u *ui) buildPadRack() {
 		"padFloat":   u.padFloatBtn,
 		"padListen":  u.midiInBtn,
 		"padDensity": u.layoutBtn,
+		"store":      u.storeToggle,
 		"badge":      u.deviceBadge,
 		"padGrid":    u.padGridArea,
 	}, func() fyne.CanvasObject {
 		padTools := container.NewHBox(u.padFloatBtn, u.midiInBtn, u.layoutBtn,
-			layout.NewSpacer(), u.deviceBadge)
+			layout.NewSpacer(), u.storeToggle, u.deviceBadge)
 		return components.NewRackPanel(container.NewBorder(padTools, nil, nil, nil, u.padGridArea))
 	})
 

@@ -50,6 +50,9 @@ type Manifest struct {
 	License     string `json:"license,omitempty"`
 	// Credits is optional long-form attribution text (shown in the info dialog).
 	Credits string `json:"credits,omitempty"`
+	// Cover is the optional filename (within the pak) of a cover image
+	// (PNG/JPEG), shown in the store. Empty when the pak has no cover.
+	Cover string `json:"cover,omitempty"`
 }
 
 var (
@@ -293,12 +296,13 @@ func readDirManifest(dir string) (*Manifest, error) {
 // Create builds a .rp6sp archive at outPath from the sample files in srcDir
 // (recursively, WAV/FLAC only) plus the given manifest. The manifest's Format
 // is set to FormatVersion. srcDir must contain at least one pad sample. A
-// CREDITS.txt in srcDir, if present, is included.
+// CREDITS.txt and a cover image (cover.png/.jpg) in srcDir, if present, are
+// included; the cover's name is recorded in the manifest unless m.Cover is set.
 func Create(srcDir, outPath string, m Manifest) error {
 	if !validID(m.ID) {
 		return fmt.Errorf("%w: %q", ErrBadID, m.ID)
 	}
-	samples, extras, err := collectFiles(srcDir)
+	samples, extras, cover, err := collectFiles(srcDir)
 	if err != nil {
 		return err
 	}
@@ -314,6 +318,9 @@ func Create(srcDir, outPath string, m Manifest) error {
 	zw := zip.NewWriter(out)
 
 	m.Format = FormatVersion
+	if m.Cover == "" && cover != "" {
+		m.Cover = filepath.ToSlash(cover)
+	}
 	manifestJSON, err := json.MarshalIndent(m, "", "  ")
 	if err != nil {
 		return err
@@ -333,9 +340,10 @@ func Create(srcDir, outPath string, m Manifest) error {
 	return zw.Close()
 }
 
-// collectFiles walks srcDir returning relative paths of sample files and of
-// extra bundled files (currently CREDITS.txt), each sorted.
-func collectFiles(srcDir string) (samples, extras []string, err error) {
+// collectFiles walks srcDir returning relative paths of sample files, of extra
+// bundled files (CREDITS.txt and a cover image), and the cover's relative path
+// (if any). Samples and extras are sorted.
+func collectFiles(srcDir string) (samples, extras []string, cover string, err error) {
 	err = filepath.WalkDir(srcDir, func(p string, d os.DirEntry, err error) error {
 		if err != nil {
 			return err
@@ -352,15 +360,30 @@ func collectFiles(srcDir string) (samples, extras []string, err error) {
 			samples = append(samples, rel)
 		case strings.EqualFold(d.Name(), "CREDITS.txt"):
 			extras = append(extras, rel)
+		case isCover(d.Name()):
+			extras = append(extras, rel)
+			if cover == "" {
+				cover = rel
+			}
 		}
 		return nil
 	})
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, "", err
 	}
 	sort.Strings(samples)
 	sort.Strings(extras)
-	return samples, extras, nil
+	return samples, extras, cover, nil
+}
+
+// isCover reports whether name is a recognized cover-image filename
+// ("cover" with a .png/.jpg/.jpeg extension, case-insensitive).
+func isCover(name string) bool {
+	ext := strings.ToLower(filepath.Ext(name))
+	if ext != ".png" && ext != ".jpg" && ext != ".jpeg" {
+		return false
+	}
+	return strings.EqualFold(strings.TrimSuffix(name, filepath.Ext(name)), "cover")
 }
 
 // writeZipEntry writes a single file entry into zw.
