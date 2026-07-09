@@ -627,14 +627,14 @@ func TestListenDefaultFollowsBackend(t *testing.T) {
 
 	// The emulator with no external controller has no MIDI input, so off.
 	u.useEmu = true
-	u.midiIn = nil
+	u.midiIns = nil
 	u.setListenDefault()
 	assert.False(t, u.listenMIDI.Load(), "listening disabled for the bare emulator")
 	assert.False(t, u.midiInBtn.On(), "eye toggle off for the bare emulator")
 
 	// But an external controller is an input source even on the emulator, so
 	// listening defaults back on once one is attached.
-	u.midiIn = fakeMIDIIn{}
+	u.midiIns = map[string]midiin.Device{"/dev/x": fakeMIDIIn{}}
 	u.setListenDefault()
 	assert.True(t, u.listenMIDI.Load(), "listening enabled once a controller is attached")
 	assert.True(t, u.midiInBtn.On(), "eye toggle lit with a controller on the emulator")

@@ -104,3 +104,35 @@ func Detect() (Device, error) {
 	}
 	return nil, ErrNotFound
 }
+
+// Found is a present-but-not-yet-opened controller reported by Present.
+type Found struct {
+	// Name is the controller model (the driver's Name).
+	Name string
+	// Path is the device node it would open.
+	Path string
+	open func(string) (Device, error)
+}
+
+// Open opens the found controller.
+func (f Found) Open() (Device, error) { return f.open(f.Path) }
+
+// Present probes every registered driver and returns *all* controllers currently
+// plugged in (each not yet opened). Unlike Detect it doesn't stop at the first,
+// so several different controllers — e.g. a macropad and a MIDI keyboard — can be
+// opened and used at the same time. Drivers with a nil Detect/Open are skipped.
+func Present() []Found {
+	mu.Lock()
+	ds := append([]Driver(nil), drivers...)
+	mu.Unlock()
+	var out []Found
+	for _, d := range ds {
+		if d.Detect == nil || d.Open == nil {
+			continue
+		}
+		if path, ok := d.Detect(); ok {
+			out = append(out, Found{Name: d.Name, Path: path, open: d.Open})
+		}
+	}
+	return out
+}

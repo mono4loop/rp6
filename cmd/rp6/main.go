@@ -69,11 +69,14 @@ type ui struct {
 	dev   p6.Controller
 	devMu sync.Mutex // guards dev for the off-main roll/fire path
 
-	// midiIn is an optional external MIDI input controller (e.g. an Adafruit
-	// MacroPad) that drives the pads/transport host-side; nil when none is found.
-	midiIn midiin.Device
+	// midiIns holds the open external MIDI input controllers (e.g. an Adafruit
+	// MacroPad and/or an Arturia keyboard), keyed by device node path so several
+	// can be used at once and each is opened only once. Touched only on the UI
+	// thread (startMIDIInput, the attach poller, close, and the per-device Run
+	// goroutine's fyne.Do teardown).
+	midiIns map[string]midiin.Device
 	// midiInMissLogged suppresses repeating the "no controller" log line on the
-	// Android attach poller (which retries every 2s); reset once one connects.
+	// attach poller (which retries every 2s); reset once one connects.
 	midiInMissLogged bool
 	// keyboardAutoShown records that an external melodic keyboard's first note
 	// already revealed the keyboard rack, so we don't re-show it after a manual hide.
@@ -1155,7 +1158,7 @@ func (u *ui) switchBackend(useEmu bool) {
 // emulator with no controller has no input, so it defaults off. Called from
 // connect on every (re)connection and when a controller attaches.
 func (u *ui) setListenDefault() {
-	u.listenMIDI.Store(!u.useEmu || u.midiIn != nil)
+	u.listenMIDI.Store(!u.useEmu || len(u.midiIns) > 0)
 	u.updateMIDIInBtn()
 }
 
@@ -1623,12 +1626,12 @@ func (u *ui) stopDeviceWatch() {
 	}
 }
 
-// startMIDIInputWatch periodically re-detects an external MIDI input controller
-// and (re)attaches it whenever none is currently open — so hot-plugging,
-// swapping, or replugging a controller is picked up live, without restarting
-// rp6. It shares the device watcher's lifecycle (watchStop), so call it after
-// startDeviceWatch. startMIDIInput's own miss-logged guard keeps this from
-// spamming the log while nothing is plugged in.
+// startMIDIInputWatch periodically (re)attaches external MIDI input controllers —
+// so hot-plugging, swapping, or adding a second controller (e.g. a keyboard
+// alongside a macropad) is picked up live, without restarting rp6. It shares the
+// device watcher's lifecycle (watchStop), so call it after startDeviceWatch.
+// startMIDIInput is idempotent per node path (and keeps its own miss-logged guard
+// so it doesn't spam the log while nothing is plugged in).
 func (u *ui) startMIDIInputWatch() {
 	stop := u.watchStop
 	if stop == nil {
@@ -1642,12 +1645,11 @@ func (u *ui) startMIDIInputWatch() {
 			case <-stop:
 				return
 			case <-t.C:
-				// Check + (re)attach on the UI thread so u.midiIn is only ever
-				// touched there (serialised with close() and the Run goroutine).
+				// Attach any newly-plugged controllers on the UI thread (where
+				// u.midiIns is only ever touched). startMIDIInput is idempotent
+				// per node path, so already-open controllers are left running.
 				fyne.Do(func() {
-					if u.midiIn == nil {
-						u.startMIDIInput()
-					}
+					u.startMIDIInput()
 				})
 			}
 		}
@@ -2128,29 +2130,64 @@ func (u *ui) onMIDIIn(dev p6.Controller, ev p6.Event) {
 	})
 }
 
-// startMIDIInput detects a supported external MIDI input controller (e.g. an
-// Adafruit MacroPad) and, if found, runs it: pad hits are fired into the active
-// P-6/emulator and reflected in the UI, and its transport control drives Play/
-// Stop. It is best-effort — absence of a controller is not an error.
+// startMIDIInput opens every supported external MIDI input controller that's
+// plugged in (e.g. an Adafruit MacroPad *and* an Arturia keyboard together) and
+// runs each: pad hits are fired into the active P-6/emulator and reflected in the
+// UI, and transport control drives Play/Stop. It's idempotent — a controller
+// already open (tracked by its node path) is left alone — so the attach poller
+// can call it repeatedly to pick up newly-plugged devices. Best-effort: the
+// absence of any controller is not an error. Call on the UI thread.
 func (u *ui) startMIDIInput() {
-	dev, err := midiin.Detect()
-	if err != nil {
-		if !u.midiInMissLogged {
-			log.Printf("rp6: no MIDI input controller: %v", err)
-			u.midiInMissLogged = true // don't spam the Android 2s retry poller
+	if u.midiIns == nil {
+		u.midiIns = map[string]midiin.Device{}
+	}
+	found := midiin.Present()
+	if len(found) == 0 {
+		if len(u.midiIns) == 0 && !u.midiInMissLogged {
+			log.Printf("rp6: no MIDI input controller: %v", midiin.ErrNotFound)
+			u.midiInMissLogged = true // don't spam the 2s retry poller
 		}
 		return
 	}
-	u.midiInMissLogged = false
-	u.midiIn = dev
-	log.Printf("rp6: MIDI input controller: %s (%s)", dev.Name(), dev.Path())
-	u.setStatus(fmt.Sprintf("%s connected (%s)", dev.Name(), dev.Path()))
-	// A controller is an input source even on the emulator, so default to
-	// listening (the eye toggle) now that one is attached; the user can still
-	// switch it off to stop the pads reacting.
-	u.setListenDefault()
+	for _, f := range found {
+		if _, running := u.midiIns[f.Path]; running {
+			continue // already open — don't reopen the exclusive node
+		}
+		dev, err := f.Open()
+		if err != nil {
+			log.Printf("rp6: opening MIDI input %s (%s): %v", f.Name, f.Path, err)
+			continue
+		}
+		u.midiInMissLogged = false
+		u.midiIns[f.Path] = dev
+		log.Printf("rp6: MIDI input controller: %s (%s)", dev.Name(), dev.Path())
+		u.setStatus(fmt.Sprintf("%s connected (%s)", dev.Name(), dev.Path()))
+		// A controller is an input source even on the emulator, so default to
+		// listening (the eye toggle) now that one is attached; the user can still
+		// switch it off to stop the pads reacting.
+		u.setListenDefault()
 
-	h := midiin.Handlers{
+		path := f.Path
+		go func() {
+			if err := dev.Run(u.midiInHandlers()); err != nil {
+				log.Printf("rp6: MIDI input (%s) stopped: %v", dev.Name(), err)
+			}
+			_ = dev.Close() // release the node so a replug/swap can reopen cleanly
+			// Drop the handle on the UI thread (serialised with close() and the
+			// attach poller) so a reconnect can pick it up again.
+			fyne.Do(func() {
+				if u.midiIns[path] == dev {
+					delete(u.midiIns, path)
+				}
+			})
+		}()
+	}
+}
+
+// midiInHandlers builds the callback surface external controllers drive. The same
+// handlers are shared by every open controller (they act on shared app state).
+func (u *ui) midiInHandlers() midiin.Handlers {
+	return midiin.Handlers{
 		TriggerPad: u.fireExternalPad,
 		PlayNote:   u.playExternalNote,
 		Transport: func(playing bool) {
@@ -2164,20 +2201,6 @@ func (u *ui) startMIDIInput() {
 			})
 		},
 	}
-	go func() {
-		if err := dev.Run(h); err != nil {
-			log.Printf("rp6: MIDI input (%s) stopped: %v", dev.Name(), err)
-		}
-		_ = dev.Close() // release the node so a replug/swap can reopen cleanly
-		// Clear the handle on the UI thread (serialised with close() and the
-		// MIDI-input re-attach poller) so a reconnect can pick a controller up
-		// again (see startMIDIInputWatch).
-		fyne.Do(func() {
-			if u.midiIn == dev {
-				u.midiIn = nil
-			}
-		})
-	}()
 }
 
 // fireExternalPad handles a pad trigger from an external controller: it plays
@@ -2346,9 +2369,9 @@ func (u *ui) close() {
 		_ = u.dev.Close()
 	}
 	u.devMu.Unlock()
-	if u.midiIn != nil {
-		_ = u.midiIn.Close() // unblocks the input Run goroutine
-		u.midiIn = nil
+	for path, dev := range u.midiIns {
+		_ = dev.Close() // unblocks each input Run goroutine
+		delete(u.midiIns, path)
 	}
 	if u.padWin != nil {
 		w := u.padWin
