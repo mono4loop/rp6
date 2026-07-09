@@ -22,6 +22,12 @@ import (
 // the external-controller attach is retried by the shared MIDI-input watcher
 // (which also handles hot-plugging/swapping a controller later).
 func (u *ui) startAndroidMIDI() {
+	// RP6 is a performance surface: keep the display available while the app is
+	// in the foreground instead of letting Android's normal screen timeout blank it.
+	if app := fyne.CurrentApp(); app != nil {
+		app.Driver().SetDisableScreenBlanking(true)
+	}
+
 	if u.useEmu && strings.TrimSpace(u.emuDir) == "" {
 		u.emuFallback.Store(true)
 	}
