@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"fyne.io/fyne/v2"
+	"fyne.io/fyne/v2/driver/mobile"
 	"fyne.io/fyne/v2/test"
 	"fyne.io/fyne/v2/theme"
 	"github.com/stretchr/testify/assert"
@@ -74,18 +75,122 @@ func TestKnobDragAndScroll(t *testing.T) {
 }
 
 func TestKnobDoubleTapResetsToZero(t *testing.T) {
-	test.NewApp()
+	a := test.NewApp()
+	a.Settings().SetTheme(theme.DefaultTheme())
 	got := -1
 	k := NewKnob(KnobConfig{Value: 65, Min: 0, Max: 100, OnChange: func(v int) { got = v }})
+	w := test.NewWindow(k)
+	defer w.Close()
+	w.Resize(fyne.NewSize(160, 70))
 
-	k.DoubleTapped(nil)
+	k.DoubleTapped(&fyne.PointEvent{Position: fyne.NewPos(10, 20)})
 	assert.Zero(t, k.Value())
 	assert.Zero(t, got, "reset fires OnChange")
+	assert.False(t, k.editing)
+	assert.NotEqual(t, k, w.Canvas().Focused(), "left-half reset does not open edit mode")
 
 	// Knobs whose range excludes zero reset to the closest valid edge.
 	tempo := newTestKnob(nil)
-	tempo.DoubleTapped(nil)
+	tempo.Resize(fyne.NewSize(160, 70))
+	tempo.DoubleTapped(&fyne.PointEvent{Position: fyne.NewPos(10, 20)})
 	assert.Equal(t, 40, tempo.Value())
+}
+
+func TestKnobRightDoubleTapEditsValue(t *testing.T) {
+	a := test.NewApp()
+	a.Settings().SetTheme(theme.DefaultTheme())
+	got := -1
+	k := NewKnob(KnobConfig{Value: 65, Min: 0, Max: 100, OnChange: func(v int) { got = v }})
+	w := test.NewWindow(k)
+	defer w.Close()
+	w.Resize(fyne.NewSize(160, 70))
+
+	k.DoubleTapped(&fyne.PointEvent{Position: fyne.NewPos(150, 20)})
+	require.True(t, k.editing)
+	assert.Equal(t, k, w.Canvas().Focused())
+	assert.Equal(t, mobile.NumberKeyboard, k.Keyboard())
+
+	k.TypedRune('8')
+	k.TypedRune('5')
+	assert.Equal(t, "85", k.editText)
+	assert.Equal(t, 65, k.Value(), "typing does not commit early")
+	k.TypedKey(&fyne.KeyEvent{Name: fyne.KeyReturn})
+	assert.Equal(t, 85, k.Value())
+	assert.Equal(t, 85, got)
+	assert.False(t, k.editing)
+	assert.Equal(t, k, w.Canvas().Focused(), "Done ends editing; the next tap dismisses keyboard focus")
+	k.Tapped(nil)
+	assert.NotEqual(t, k, w.Canvas().Focused())
+}
+
+func TestKnobNumericEditClampBackspaceAndCancel(t *testing.T) {
+	a := test.NewApp()
+	a.Settings().SetTheme(theme.DefaultTheme())
+	k := NewKnob(KnobConfig{Value: -20, Min: -100, Max: 100})
+	k.Resize(fyne.NewSize(160, 70))
+
+	k.DoubleTapped(&fyne.PointEvent{Position: fyne.NewPos(150, 20)})
+	k.TypedRune('-')
+	k.TypedRune('9')
+	k.TypedRune('9')
+	k.TypedRune('9')
+	k.TypedKey(&fyne.KeyEvent{Name: fyne.KeyBackspace})
+	k.TypedKey(&fyne.KeyEvent{Name: fyne.KeyEnter})
+	assert.Equal(t, -99, k.Value())
+
+	k.DoubleTapped(&fyne.PointEvent{Position: fyne.NewPos(150, 20)})
+	k.TypedRune('5')
+	k.TypedKey(&fyne.KeyEvent{Name: fyne.KeyEscape})
+	assert.Equal(t, -99, k.Value(), "Escape discards the edit")
+
+	k.DoubleTapped(&fyne.PointEvent{Position: fyne.NewPos(150, 20)})
+	k.TypedRune('9')
+	k.TypedRune('9')
+	k.TypedRune('9')
+	k.TypedRune('\n')
+	assert.Equal(t, 100, k.Value(), "Done commits and clamps to the knob range")
+}
+
+func TestKnobTapAndDragDoNotFocus(t *testing.T) {
+	a := test.NewApp()
+	a.Settings().SetTheme(theme.DefaultTheme())
+	k := newTestKnob(nil)
+	w := test.NewWindow(k)
+	defer w.Close()
+
+	k.Tapped(nil)
+	assert.NotEqual(t, k, w.Canvas().Focused())
+	k.Dragged(&fyne.DragEvent{Dragged: fyne.NewDelta(0, -6)})
+	assert.Equal(t, 125, k.Value())
+	assert.NotEqual(t, k, w.Canvas().Focused())
+}
+
+func TestKnobDragCancelsPartialNumericEdit(t *testing.T) {
+	a := test.NewApp()
+	a.Settings().SetTheme(theme.DefaultTheme())
+	k := NewKnob(KnobConfig{Value: 65, Min: 0, Max: 100})
+	w := test.NewWindow(k)
+	defer w.Close()
+	w.Resize(fyne.NewSize(160, 70))
+
+	k.DoubleTapped(&fyne.PointEvent{Position: fyne.NewPos(150, 20)})
+	k.TypedRune('9')
+	k.Dragged(&fyne.DragEvent{Dragged: fyne.NewDelta(0, -6)})
+	assert.Equal(t, 66, k.Value(), "drag adjusts the original value instead of committing partial text")
+	assert.False(t, k.editing)
+}
+
+func TestKnobArrowsDoNotOverwriteNumericEdit(t *testing.T) {
+	a := test.NewApp()
+	a.Settings().SetTheme(theme.DefaultTheme())
+	k := NewKnob(KnobConfig{Value: 65, Min: 0, Max: 100})
+	k.Resize(fyne.NewSize(160, 70))
+	k.DoubleTapped(&fyne.PointEvent{Position: fyne.NewPos(150, 20)})
+	k.TypedRune('8')
+
+	k.TypedKey(&fyne.KeyEvent{Name: fyne.KeyUp})
+	assert.Equal(t, "8", k.editText)
+	assert.Equal(t, 65, k.Value())
 }
 
 func TestKnobLightsWhenFocused(t *testing.T) {

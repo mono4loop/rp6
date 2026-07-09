@@ -4,11 +4,13 @@ import (
 	"image"
 	"image/color"
 	"math"
+	"strconv"
 	"sync"
 	"time"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
+	"fyne.io/fyne/v2/driver/mobile"
 	"fyne.io/fyne/v2/widget"
 )
 
@@ -64,15 +66,20 @@ type KnobIndicator interface {
 // Knob is a rotary value control: an LED segment ring (full circle, lit up to
 // the value in the accent color, unlit segments grey) on the left of a dark
 // LCD-style plate, with a small amber caption and the formatted value to its
-// right. The plate border lights in the accent color when the knob is focused.
-// It responds to mouse drag (up/down), the scroll wheel, and the arrow keys
-// (Up/Right increase, Down/Left decrease).
+// right. Drag/scroll adjusts it; a double tap on the left resets to zero, while
+// a double tap on the right focuses it for direct numeric input. The plate
+// border lights in the accent color while focused. Arrow keys adjust a focused
+// knob (Up/Right increase, Down/Left decrease).
 type Knob struct {
 	widget.BaseWidget
-	cfg     KnobConfig
-	value   int
-	focused bool
-	dragAcc float64
+	cfg      KnobConfig
+	value    int
+	focused  bool
+	dragAcc  float64
+	dragging bool
+	editing  bool
+	editText string
+	replace  bool
 
 	flashMu   sync.Mutex
 	flashing  bool          // border flashing (a queued/pending change)
@@ -120,6 +127,10 @@ func (k *Knob) SetValue(v int) { k.set(v) }
 // SetValueSilent sets the value (clamped) without firing OnChange.
 func (k *Knob) SetValueSilent(v int) {
 	k.value = clampInt(v, k.cfg.Min, k.cfg.Max)
+	if k.editing {
+		k.editText = strconv.Itoa(k.value)
+		k.replace = true
+	}
 	if k.plate != nil {
 		k.Refresh()
 	}
@@ -167,6 +178,10 @@ func (k *Knob) set(v int) {
 	v = clampInt(v, k.cfg.Min, k.cfg.Max)
 	changed := v != k.value
 	k.value = v
+	if k.editing {
+		k.editText = strconv.Itoa(k.value)
+		k.replace = true
+	}
 	if k.plate != nil {
 		k.Refresh()
 	}
@@ -221,20 +236,69 @@ func (k *Knob) focus() {
 	}
 }
 
-// Tapped focuses the knob (fyne.Tappable).
-func (k *Knob) Tapped(*fyne.PointEvent) { k.focus() }
-
-// DoubleTapped resets the knob to zero (clamped to its configured range) and
-// fires OnChange like any other user edit.
-func (k *Knob) DoubleTapped(*fyne.PointEvent) {
-	k.focus()
-	k.set(0)
+func (k *Knob) unfocus() {
+	if c := fyne.CurrentApp().Driver().CanvasForObject(k); c != nil {
+		c.Unfocus()
+	}
 }
+
+// Tapped dismisses numeric editing without opening it. Dragging remains the
+// primary single-touch adjustment gesture.
+func (k *Knob) Tapped(*fyne.PointEvent) {
+	if k.editing {
+		k.finishEdit(true)
+	}
+	k.unfocus()
+}
+
+// DoubleTapped resets to zero on the left half, or starts direct numeric editing
+// on the right half. Zero is clamped to the knob's configured range.
+func (k *Knob) DoubleTapped(e *fyne.PointEvent) {
+	if e == nil || e.Position.X < k.Size().Width/2 {
+		k.cancelEdit()
+		k.unfocus()
+		k.set(0)
+		return
+	}
+	k.beginEdit()
+}
+
+func (k *Knob) beginEdit() {
+	k.editing = true
+	k.editText = strconv.Itoa(k.value)
+	k.replace = true
+	k.focus()
+	if k.plate != nil {
+		k.Refresh()
+	}
+}
+
+func (k *Knob) finishEdit(commit bool) {
+	if !k.editing {
+		return
+	}
+	text := k.editText
+	k.editing = false
+	k.editText = ""
+	k.replace = false
+	if commit {
+		if v, err := strconv.Atoi(text); err == nil {
+			k.set(v)
+		}
+	}
+	if k.plate != nil {
+		k.Refresh()
+	}
+}
+
+func (k *Knob) cancelEdit() { k.finishEdit(false) }
 
 // Dragged turns the knob: dragging up increases, down decreases (fyne.Draggable).
 func (k *Knob) Dragged(e *fyne.DragEvent) {
-	if !k.focused {
-		k.focus()
+	if !k.dragging {
+		k.dragging = true
+		k.cancelEdit()
+		k.unfocus()
 	}
 	const pxPerStep = 6
 	k.dragAcc += -float64(e.Dragged.DY)
@@ -248,8 +312,11 @@ func (k *Knob) Dragged(e *fyne.DragEvent) {
 	}
 }
 
-// DragEnd resets the drag accumulator (fyne.Draggable).
-func (k *Knob) DragEnd() { k.dragAcc = 0 }
+// DragEnd resets the drag state (fyne.Draggable).
+func (k *Knob) DragEnd() {
+	k.dragAcc = 0
+	k.dragging = false
+}
 
 // Scrolled turns the knob with the mouse wheel (fyne.Scrollable).
 func (k *Knob) Scrolled(e *fyne.ScrollEvent) {
@@ -263,11 +330,65 @@ func (k *Knob) Scrolled(e *fyne.ScrollEvent) {
 
 // --- fyne.Focusable ---
 
-func (k *Knob) FocusGained()   { k.focused = true; k.Refresh() }
-func (k *Knob) FocusLost()     { k.focused = false; k.Refresh() }
-func (k *Knob) TypedRune(rune) {}
+func (k *Knob) FocusGained() { k.focused = true; k.Refresh() }
+func (k *Knob) FocusLost() {
+	k.finishEdit(true)
+	k.focused = false
+	k.Refresh()
+}
+
+// Keyboard requests Android's numeric keyboard only after the knob is focused
+// by a right-half double tap.
+func (k *Knob) Keyboard() mobile.KeyboardType { return mobile.NumberKeyboard }
+
+func (k *Knob) TypedRune(r rune) {
+	if r == '\n' {
+		if k.editing {
+			k.finishEdit(true)
+		}
+		return
+	}
+	if !k.editing {
+		return
+	}
+	switch {
+	case r >= '0' && r <= '9':
+		if k.replace {
+			k.editText = ""
+			k.replace = false
+		}
+		if len(k.editText) < 10 {
+			k.editText += string(r)
+		}
+	case (r == '-' || r == '+') && k.cfg.Min < 0:
+		if k.replace || k.editText == "" {
+			k.editText = string(r)
+			k.replace = false
+		}
+	}
+	if k.plate != nil {
+		k.Refresh()
+	}
+}
 
 func (k *Knob) TypedKey(e *fyne.KeyEvent) {
+	if k.editing {
+		switch e.Name {
+		case fyne.KeyBackspace, fyne.KeyDelete:
+			if k.replace {
+				k.editText = ""
+				k.replace = false
+			} else if len(k.editText) > 0 {
+				k.editText = k.editText[:len(k.editText)-1]
+			}
+			k.Refresh()
+		case fyne.KeyReturn, fyne.KeyEnter:
+			k.finishEdit(true)
+		case fyne.KeyEscape:
+			k.cancelEdit()
+		}
+		return
+	}
 	switch e.Name {
 	case fyne.KeyUp, fyne.KeyRight:
 		k.Increment()
@@ -372,7 +493,11 @@ func (r *knobRenderer) Refresh() {
 	k.valTxt.Color = lcdText // bright amber — most legible on the dark plate
 	k.ring.Image = k.indicatorImage()
 	k.label.Text = k.cfg.Label
-	k.valTxt.Text = k.cfg.Format(k.value)
+	if k.editing {
+		k.valTxt.Text = k.editText
+	} else {
+		k.valTxt.Text = k.cfg.Format(k.value)
+	}
 	r.place(k.Size())
 	for _, o := range r.objects {
 		o.Refresh()
