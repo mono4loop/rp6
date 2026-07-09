@@ -44,9 +44,9 @@ const (
 	)`
 )
 
-// DefaultPath returns $XDG_DATA_HOME/rp6/rp6.db (falling back to
-// ~/.local/share/rp6/rp6.db).
-func DefaultPath() (string, error) {
+// dataDir returns the rp6 data directory: $XDG_DATA_HOME/rp6 (falling back to
+// ~/.local/share/rp6).
+func dataDir() (string, error) {
 	dir := os.Getenv("XDG_DATA_HOME")
 	if dir == "" {
 		home, err := os.UserHomeDir()
@@ -55,7 +55,28 @@ func DefaultPath() (string, error) {
 		}
 		dir = filepath.Join(home, ".local", "share")
 	}
-	return filepath.Join(dir, "rp6", "rp6.db"), nil
+	return filepath.Join(dir, "rp6"), nil
+}
+
+// DefaultPath returns $XDG_DATA_HOME/rp6/rp6.db (falling back to
+// ~/.local/share/rp6/rp6.db).
+func DefaultPath() (string, error) {
+	dir, err := dataDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, "rp6.db"), nil
+}
+
+// SamplesDir returns $XDG_DATA_HOME/rp6/samples (falling back to
+// ~/.local/share/rp6/samples), the base directory where installed sample paks
+// (.rp6sp) live, each in its own subdirectory.
+func SamplesDir() (string, error) {
+	dir, err := dataDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, "samples"), nil
 }
 
 // Open opens (creating if needed) the database at path, migrates any legacy

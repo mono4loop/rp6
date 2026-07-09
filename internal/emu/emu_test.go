@@ -449,16 +449,16 @@ func TestScanSamplesLogsBankDirError(t *testing.T) {
 	assert.Contains(t, buf.String(), "perm-boom", "the bank-dir read error should be logged")
 }
 
-// TestFirstWAVLogsReadError verifies a pad-folder read failure (P-6 layout) is
+// TestFirstAudioLogsReadError verifies a pad-folder read failure (P-6 layout) is
 // logged instead of silently returning no match (jaeb).
-func TestFirstWAVLogsReadError(t *testing.T) {
+func TestFirstAudioLogsReadError(t *testing.T) {
 	var buf bytes.Buffer
 	old := log.Writer()
 	log.SetOutput(&buf)
 	defer log.SetOutput(old)
 
 	fsys := fakeFS{errDirs: map[string]error{"BANK_A/PAD_1": errors.New("pad-boom")}}
-	_, ok := firstWAV(fsys, "BANK_A/PAD_1")
+	_, ok := firstAudio(fsys, "BANK_A/PAD_1")
 	assert.False(t, ok)
 	assert.Contains(t, buf.String(), "pad-boom", "the pad-dir read error should be logged")
 }

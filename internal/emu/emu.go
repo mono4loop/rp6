@@ -8,17 +8,19 @@
 // sequencer or granular engine).
 //
 // Samples are laid out like the P-6's own 48 slots — 8 banks (A–H) × 6 pads —
-// so the same directory works for both the emulator and the hardware. Three
-// layouts are recognized (all case-insensitive; the first match per pad wins):
+// so the same directory works for both the emulator and the hardware. Each pad
+// file may be a WAV or a FLAC (".wav"/".flac", case-insensitive); FLAC is
+// lossless and rp6-emulator-only (the P-6 hardware imports WAV only). Three
+// layouts are recognized (the first match per pad wins):
 //
 //   - flat pad labels in one directory: "A1.wav".."H6.wav" (a descriptive
-//     suffix is allowed, e.g. "A1 kick.wav");
+//     suffix is allowed, e.g. "A1 kick.wav"; ".flac" works too);
 //   - per-bank subdirectories with pad files: "A/1.wav".."H/6.wav";
 //   - the P-6's own export/import layout: "BANK_A/PAD_1/*.wav" .. "BANK_H/PAD_6/*.wav"
-//     (bank dir "BANK_<A..H>", pad dir "PAD_<1..6>", any WAV inside; a sibling
-//     ".PRM" is ignored). This is exactly what the P-6 SampleTool and the
-//     factory sample pack produce, so one directory feeds both the emulator and
-//     a hardware import.
+//     (bank dir "BANK_<A..H>", pad dir "PAD_<1..6>", any audio file inside; a
+//     sibling ".PRM" is ignored). This is exactly what the P-6 SampleTool and
+//     the factory sample pack produce, so one directory feeds both the emulator
+//     and a hardware import.
 //
 // Audio output uses the malgo/miniaudio backend behind the "capture" build tag
 // (the same tag rp6 already uses for the VU meter). Without the tag the
@@ -80,19 +82,21 @@ func Open(dir string, cfg p6.Config) (*Emulator, error) {
 	if !info.IsDir() {
 		return nil, fmt.Errorf("emu: %s is not a directory", dir)
 	}
-	return openFS(os.DirFS(dir), dir, cfg)
+	return OpenFS(os.DirFS(dir), dir, cfg)
 }
 
 // OpenDefault loads the built-in "modular-hits" sample kit embedded in the
 // binary and starts audio output, so the emulator is playable with no external
 // samples. See DefaultKitName / assets/modular-hits/CREDITS.txt.
 func OpenDefault(cfg p6.Config) (*Emulator, error) {
-	return openFS(defaultKitFSSub(), DefaultKitName, cfg)
+	return OpenFS(defaultKitFSSub(), DefaultKitName, cfg)
 }
 
-// openFS is the shared loader: it scans fsys for pad samples (A1..H6), decodes
-// them and starts the audio sink. name is a human-readable label for the source.
-func openFS(fsys fs.FS, name string, cfg p6.Config) (*Emulator, error) {
+// OpenFS loads pad samples from an arbitrary filesystem (e.g. os.DirFS, an
+// embedded kit, or a *zip.Reader for a .rp6sp pak) and starts audio output.
+// name is a human-readable label for the source. It scans fsys for pad samples
+// (A1..H6), decodes them and starts the audio sink.
+func OpenFS(fsys fs.FS, name string, cfg p6.Config) (*Emulator, error) {
 	s, err := openSink()
 	if err != nil {
 		return nil, err
@@ -106,7 +110,7 @@ func openFS(fsys fs.FS, name string, cfg p6.Config) (*Emulator, error) {
 	}
 	if n == 0 {
 		_ = s.Close()
-		return nil, fmt.Errorf("emu: no pad samples (A1..H6 .wav) found in %s", name)
+		return nil, fmt.Errorf("emu: no pad samples (A1..H6 .wav/.flac) found in %s", name)
 	}
 	e.loaded = n
 
@@ -181,16 +185,17 @@ func scanSamples(fsys fs.FS) (map[int]string, error) {
 			sortEntries(subEntries)
 			for _, se := range subEntries {
 				if se.IsDir() {
-					// P-6 layout: BANK_x/PAD_n/<file>.wav — take the first WAV
-					// inside the pad folder (its sibling .PRM is ignored).
+					// P-6 layout: BANK_x/PAD_n/<file>.{wav,flac} — take the
+					// first audio file inside the pad folder (its sibling .PRM
+					// is ignored).
 					if pad, ok := parsePadDir(se.Name()); ok {
-						if wav, ok := firstWAV(fsys, path.Join(name, se.Name())); ok {
-							put(padID(bank, pad), wav)
+						if af, ok := firstAudio(fsys, path.Join(name, se.Name())); ok {
+							put(padID(bank, pad), af)
 						}
 					}
 					continue
 				}
-				if !isWAV(se.Name()) {
+				if !isAudioFile(se.Name()) {
 					continue
 				}
 				if pad, ok := parsePadNumber(se.Name()); ok {
@@ -199,7 +204,7 @@ func scanSamples(fsys fs.FS) (map[int]string, error) {
 			}
 			continue
 		}
-		if !isWAV(name) {
+		if !isAudioFile(name) {
 			continue
 		}
 		if bank, pad, ok := parsePadLabel(name); ok {
@@ -209,12 +214,18 @@ func scanSamples(fsys fs.FS) (map[int]string, error) {
 	return paths, nil
 }
 
+// decodeFile opens name from fsys and decodes it by extension: WAV via
+// DecodeWAV, FLAC via DecodeFLAC. FLAC is an rp6-emulator-only format (the P-6
+// hardware only imports WAV).
 func decodeFile(fsys fs.FS, name string) (*Clip, error) {
 	f, err := fsys.Open(name)
 	if err != nil {
 		return nil, err
 	}
 	defer f.Close()
+	if isFLAC(name) {
+		return DecodeFLAC(f)
+	}
 	return DecodeWAV(f)
 }
 
@@ -222,7 +233,12 @@ func decodeFile(fsys fs.FS, name string) (*Clip, error) {
 // matching the note ordering the hardware uses (bank A pad 1 .. bank H pad 6).
 func padID(bank, pad int) int { return bank*p6.PadsPerBank + (pad - 1) }
 
-func isWAV(name string) bool { return strings.EqualFold(filepath.Ext(name), ".wav") }
+func isWAV(name string) bool  { return strings.EqualFold(filepath.Ext(name), ".wav") }
+func isFLAC(name string) bool { return strings.EqualFold(filepath.Ext(name), ".flac") }
+
+// isAudioFile reports whether name is a pad sample the emulator can decode: a
+// WAV (also readable by the P-6 hardware) or a FLAC (rp6-emulator only).
+func isAudioFile(name string) bool { return isWAV(name) || isFLAC(name) }
 
 func sortEntries(entries []fs.DirEntry) {
 	sort.Slice(entries, func(i, j int) bool { return entries[i].Name() < entries[j].Name() })
@@ -271,9 +287,9 @@ func parsePadDir(name string) (pad int, ok bool) {
 	return 0, false
 }
 
-// firstWAV returns the path of the first WAV file (in sorted order) directly
-// inside dir of fsys, if any.
-func firstWAV(fsys fs.FS, dir string) (string, bool) {
+// firstAudio returns the path of the first audio file (WAV or FLAC, in sorted
+// order) directly inside dir of fsys, if any.
+func firstAudio(fsys fs.FS, dir string) (string, bool) {
 	entries, err := fs.ReadDir(fsys, dir)
 	if err != nil {
 		log.Printf("emu: reading pad dir %s: %v", dir, err)
@@ -281,7 +297,7 @@ func firstWAV(fsys fs.FS, dir string) (string, bool) {
 	}
 	sortEntries(entries)
 	for _, e := range entries {
-		if !e.IsDir() && isWAV(e.Name()) {
+		if !e.IsDir() && isAudioFile(e.Name()) {
 			return path.Join(dir, e.Name()), true
 		}
 	}

@@ -964,9 +964,16 @@ func (u *ui) showEmuSettings() {
 		widget.NewLabelWithStyle("Emulator samples directory", fyne.TextAlignLeading, fyne.TextStyle{Bold: true}),
 		dirLabel,
 		loadedLabel,
-		widget.NewLabel("Layout: flat A1.wav..H6.wav, A/1.wav.., or BANK_A/PAD_1/*.wav"),
+		widget.NewLabel("Layout: flat A1.wav..H6.wav, A/1.wav.., or BANK_A/PAD_1/*.wav (WAV or FLAC)"),
 		choose,
 	)
+	for _, o := range u.emuSettingsExtra(func() {
+		if dlg != nil {
+			dlg.Hide()
+		}
+	}) {
+		content.Add(o)
+	}
 	dlg = dialog.NewCustom("EMULATOR — Settings", "Close", content, u.win)
 	dlg.Resize(fyne.NewSize(440, 280))
 	dlg.Show()
@@ -2164,12 +2171,19 @@ func (u *ui) close() {
 }
 
 func main() {
+	// `rp6 pak <create|install|list> …` runs an offline sample-pak command and
+	// exits (desktop only; no-op stub elsewhere) before the GUI starts.
+	maybeRunPakCLI()
+
 	// -emu runs the software P-6 emulator against a directory of WAV samples
 	// laid out like the hardware's 48 slots (A1..H6), instead of connecting to
 	// real hardware — handy when the P-6 isn't around. Defaults to the
 	// RP6_EMU_SAMPLES environment variable.
 	emuDir := flag.String("emu", os.Getenv("RP6_EMU_SAMPLES"),
 		"run the P-6 emulator using WAV samples from this directory (A1..H6) instead of the hardware")
+	// -pak installs a .rp6sp sample pak into the rp6 samples directory and
+	// launches the emulator on it (desktop only).
+	pakPath := flag.String("pak", "", "install this .rp6sp sample pak and run the emulator on it")
 	// -timing controls the emulator's voice-start timing (no effect on real
 	// hardware). "sample" (default) starts each triggered sample at its exact
 	// sub-buffer position, so near-simultaneous pad hits (e.g. a chord from a
@@ -2193,6 +2207,10 @@ func main() {
 	// MIDI); when it isn't reachable the connect below falls back to the
 	// emulator, and the device watcher connects to it if it appears.
 	u.useEmu = *emuDir != "" || onMobile
+	// -pak installs a sample pak and points the emulator at it (overriding -emu).
+	if *pakPath != "" {
+		u.installAndSelectPak(*pakPath)
+	}
 	// If the CLI didn't pin a pak, reuse the last one picked at runtime so the
 	// emulator reopens that pak instead of the built-in kit. Backend selection
 	// (useEmu) is deliberately left untouched — see vxrv.
