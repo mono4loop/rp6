@@ -222,28 +222,32 @@ func TestParseBankAndPadDir(t *testing.T) {
 }
 
 func TestMixerTriggerRenderRetire(t *testing.T) {
-	m := newMixer(1, 48000, false)
+	m := newMixer(1, 1000, false) // 2-frame limiter look-ahead
 	m.trigger([]float32{1, 1, 1}, 1)
 	assert.Equal(t, 1, m.active())
 
 	out := make([]float32, 2)
 	m.render(out)
-	assert.Equal(t, []float32{1, 1}, out)
+	assert.Equal(t, []float32{0, 0}, out)
 	assert.Equal(t, 1, m.active()) // one sample left
 
 	m.render(out) // consumes the last sample; voice retires
-	assert.Equal(t, float32(1), out[0])
-	assert.Equal(t, float32(0), out[1]) // past end -> silence
+	assert.InDeltaSlice(t, []float32{limiterCeiling, limiterCeiling}, out, 1e-6)
 	assert.Equal(t, 0, m.active())
+
+	m.render(out) // the limiter drains its final delayed sample
+	assert.InDelta(t, limiterCeiling, out[0], 1e-6)
+	assert.Zero(t, out[1])
 }
 
-func TestMixerSumsAndClamps(t *testing.T) {
-	m := newMixer(1, 48000, false)
-	m.trigger([]float32{0.8, 0.8}, 1)
-	m.trigger([]float32{0.8, 0.8}, 1) // sum 1.6 -> clamp to 1
-	out := make([]float32, 2)
+func TestMixerLimitsOverlappingSamples(t *testing.T) {
+	m := newMixer(1, 1000, false) // 2-frame limiter look-ahead
+	m.trigger([]float32{0.8, 0.8, 0.8, 0.8}, 1)
+	m.trigger([]float32{0.8, 0.8, 0.8, 0.8}, 1) // raw sum 1.6
+	out := make([]float32, 6)
 	m.render(out)
-	assert.Equal(t, []float32{1, 1}, out)
+	assert.InDeltaSlice(t, []float32{0, 0, limiterCeiling, limiterCeiling, limiterCeiling, limiterCeiling}, out, 1e-6)
+	assert.NotContains(t, out, float32(1), "the mix must not be hard-clipped")
 }
 
 func TestMixerVoiceCap(t *testing.T) {
@@ -257,22 +261,22 @@ func TestMixerVoiceCap(t *testing.T) {
 func TestMixerTriggerSpeedDoublePitch(t *testing.T) {
 	// A double-speed voice reads the clip twice as fast: a 4-frame mono clip is
 	// consumed in ~2 output frames, skipping every other frame at zero phase.
-	m := newMixer(1, 48000, false)
+	m := newMixer(1, 1000, false) // 2-frame limiter look-ahead
 	m.triggerSpeed([]float32{0, 0.1, 0.2, 0.3}, 1, 2)
-	out := make([]float32, 2)
+	out := make([]float32, 4)
 	m.render(out)
-	assert.InDeltaSlice(t, []float32{0, 0.2}, out, 1e-6)
+	assert.InDeltaSlice(t, []float32{0, 0, 0, 0.2}, out, 1e-6)
 	assert.Equal(t, 0, m.active(), "the clip is fully consumed")
 }
 
 func TestMixerTriggerSpeedHalfPitchInterpolates(t *testing.T) {
 	// A half-speed voice reads the clip half as fast, linearly interpolating the
 	// in-between frames.
-	m := newMixer(1, 48000, false)
+	m := newMixer(1, 1000, false) // 2-frame limiter look-ahead
 	m.triggerSpeed([]float32{0, 0.4}, 1, 0.5)
-	out := make([]float32, 4)
+	out := make([]float32, 6)
 	m.render(out)
-	assert.InDeltaSlice(t, []float32{0, 0.2, 0.4, 0.4}, out, 1e-6)
+	assert.InDeltaSlice(t, []float32{0, 0, 0, 0.2, 0.4, 0.4}, out, 1e-6)
 	assert.Equal(t, 0, m.active())
 }
 
@@ -296,7 +300,8 @@ func TestMixerVoiceStartTiming(t *testing.T) {
 	time.Sleep(15 * time.Millisecond)
 	mb.trigger([]float32{1}, 1)
 	mb.render(out)
-	assert.Equal(t, 0, firstNonZero(out), "buffer mode starts the voice at the buffer boundary")
+	bufferStart := firstNonZero(out)
+	assert.Equal(t, mb.limiter.lookahead, bufferStart, "buffer mode starts after the limiter look-ahead")
 
 	// Sample-accurate: the same delayed trigger starts partway into the buffer,
 	// reflecting the elapsed time (preserving true inter-hit timing).
@@ -305,7 +310,7 @@ func TestMixerVoiceStartTiming(t *testing.T) {
 	time.Sleep(15 * time.Millisecond)
 	ma.trigger([]float32{1}, 1)
 	ma.render(out)
-	assert.Greater(t, firstNonZero(out), 0, "sample-accurate mode offsets the voice by the elapsed time")
+	assert.Greater(t, firstNonZero(out), bufferStart, "sample-accurate mode adds the elapsed time to the limiter look-ahead")
 }
 
 func TestEmulatorOpenAndTrigger(t *testing.T) {

@@ -31,8 +31,11 @@ type mixer struct {
 	channels int
 	rate     int
 	accurate bool
+	limiter  *peakLimiter
 
-	mu         sync.Mutex
+	renderMu sync.Mutex // serializes audio callbacks and limiter reset
+	mu       sync.Mutex // protects voices and timing from concurrent triggers
+
 	voices     []*voice
 	frameClock int64     // total frames rendered so far (mixer clock)
 	renderWall time.Time // wall-clock at the start of the last render
@@ -46,7 +49,12 @@ func newMixer(channels, rate int, accurate bool) *mixer {
 	if rate <= 0 {
 		rate = 48000
 	}
-	return &mixer{channels: channels, rate: rate, accurate: accurate}
+	return &mixer{
+		channels: channels,
+		rate:     rate,
+		accurate: accurate,
+		limiter:  newPeakLimiter(channels, rate),
+	}
 }
 
 // trigger starts playing data (interleaved, already in output format) at the
@@ -90,14 +98,16 @@ func (m *mixer) active() int {
 	return len(m.voices)
 }
 
-// render fills out with the sum of all active voices, advancing and retiring
-// them. out is fully overwritten (zeroed first). Output is clamped to [-1, 1].
+// render fills out with the mastered sum of all active voices, advancing and
+// retiring them. out is fully overwritten (zeroed first).
 func (m *mixer) render(out []float32) {
+	m.renderMu.Lock()
+	defer m.renderMu.Unlock()
+
 	for i := range out {
 		out[i] = 0
 	}
 	m.mu.Lock()
-	defer m.mu.Unlock()
 
 	bufStart := m.frameClock
 	m.renderWall = time.Now()
@@ -105,9 +115,6 @@ func (m *mixer) render(out []float32) {
 	frames := len(out) / m.channels
 	m.frameClock += int64(frames)
 
-	if len(m.voices) == 0 {
-		return
-	}
 	live := m.voices[:0]
 	for _, v := range m.voices {
 		off := int(v.start - bufStart) // start frame within this buffer
@@ -142,18 +149,17 @@ func (m *mixer) render(out []float32) {
 		}
 	}
 	m.voices = live
-	for i := range out {
-		if out[i] > 1 {
-			out[i] = 1
-		} else if out[i] < -1 {
-			out[i] = -1
-		}
-	}
+	m.mu.Unlock()
+
+	m.limiter.process(out)
 }
 
 // reset drops all playing voices (used on Close/panic).
 func (m *mixer) reset() {
+	m.renderMu.Lock()
 	m.mu.Lock()
 	m.voices = nil
 	m.mu.Unlock()
+	m.limiter.reset()
+	m.renderMu.Unlock()
 }
