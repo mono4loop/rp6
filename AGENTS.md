@@ -524,6 +524,29 @@ selects the granular source A1..H6).
   respects `Visible()`, but you must trigger a relayout: keep a reference to the
   container (`u.root`) and call `.Refresh()` after `Show()/Hide()` (see
   `toggleVisible`, the shared show/hide helper behind every section toggle).
+- **Never `go fyne.Do(relayout)` per event — route through one main()-started
+  goroutine.** Fyne's text shaper (harfbuzz) is a shared, **not thread-safe**
+  global; two goroutines shaping text at once corrupt it (hard panic:
+  `harfbuzz…index out of range`). In production `fyne.Do` serializes onto the
+  single UI loop, but the **headless test driver runs each `fyne.Do` on its
+  calling goroutine**, so spawning a goroutine per resize (the old
+  `onCanvasResize` did `go fyne.Do(u.relayout)`) races the foreground relayout
+  and *also* leaks goroutines across tests. Fix: `onCanvasResize` does a
+  non-blocking send to a coalescing channel (`relayoutReq`), and a **single
+  long-lived watcher started in `main()`** (`relayoutWatch`, stopped in `close()`)
+  drains it through `fyne.Do`. Started in `main()` not `build()`, so tests never
+  run a background relayout (same rule as the meter/LED animators). This is the
+  general lesson: any recurring background→UI work goes through one coalesced,
+  main()-started goroutine, never an ad-hoc `go` per event.
+- **A layout variant's `show:` overrides must be *restored* when the variant is
+  left**, or force-shown racks leak into the next layout (they cram its stacks and
+  push content off-screen). `applyRackShow` records each forced rack's prior
+  visibility in `u.forced` (keyed by id, generic — any rack any variant forces);
+  `setConsole` restores them on the way out. Do the restore in the **single-
+  threaded toggle action, not inside `relayout`** — a resize-driven relayout can
+  otherwise hide racks mid-build and (in tests) race the shaper. Also: after a
+  synchronous relayout that handled a full-screen flip, set `u.lastFullScreen`
+  yourself so `onCanvasResize` doesn't fire a *second*, redundant relayout.
 - **Don't move a CanvasObject tree between windows — rebuild it.** Fyne keys the
   object→canvas association in a global 1:1 map (`internal/cache/canvases.go`,
   `SetCanvasForObject` uses `LoadOrStore`), so re-parenting the *same* tree to a
@@ -566,7 +589,14 @@ selects the granular source A1..H6).
 - **Don't start long-lived goroutines in `build()`** — the meter animator and
   the LED breathing pulse (`LED.StartPulse`) are started in `main()`, not
   `build()`, so tests that call `build()` don't spawn ticking goroutines that
-  outlive them.
+  outlive them. The resize-relayout watcher (`relayoutWatch`) follows the same
+  rule — see §6's note on `onCanvasResize`.
+- **`newTestUI` sizes the window like production (`w.Resize(900, 760)`).** The
+  compact/wide form factor is classified from the canvas *size*
+  (`classifyCompact`); a content-min-sized test window can come up unexpectedly
+  tall/narrow and misclassify as compact. `main()` opens ~858×900, so the test
+  harness mirrors a wide desktop window and the default variant is `default`, not
+  `compact`.
 - For concurrent writers (the `Clocker`), tests use a mutex-wrapped buffer
   (`safeBuf`/`syncBuf`) and assert loosely (starts with `0xFA`, contains `0xFC`).
 - **`go test -race` flags the tap-flash / pulse goroutines** (pad, transport,
@@ -601,6 +631,29 @@ Clock `0xF8`.
 When asking a human to verify, watch the **pad/bank LEDs and the 4-char display**
 and report sound — that's how the "banks don't switch" / "CCs don't hit sample
 pads" facts were nailed down.
+
+### Android on-device testing (adb)
+
+- Build + deploy an arm64 device: `make android ANDROID_ABI=android/arm64` then
+  `adb install -r build/android/RP6.apk`. `make android` bumps `cmd/rp6/version.go`
+  as a side effect — revert it (`git checkout cmd/rp6/version.go`) unless you're
+  cutting a release, so the bump doesn't sneak into an unrelated commit.
+- **`fyne package`'s debug keystore isn't stable across builds**, so a rebuilt APK
+  often fails `adb install -r` with `INSTALL_FAILED_UPDATE_INCOMPATIBLE`. You then
+  have to `adb uninstall io.github.mono4loop.rp6` first — which **wipes the app's
+  preferences and stored sequences**. Warn the user before doing it.
+- **`adb shell input tap X Y` uses the panel's native (portrait) coordinates, not
+  the rotated landscape screenshot's.** On a landscape tablet, screenshot-derived
+  x/y won't land on the right control (taps silently miss). Scripting taps by
+  screenshot coords is unreliable — ask the human to tap and then screencap, or
+  transform coords by the display rotation. `adb exec-out screencap -p` for
+  screenshots; the image is in the rotated (landscape) orientation.
+- Fyne canvas sizes are in **density-independent units** (≈ Android dp), so the
+  standard **`sw600dp` tablet breakpoint** works directly (`isTabletSize` = smallest
+  side ≥ 600). The screen size isn't known until the first `onCanvasResize`, so
+  size-dependent launch defaults (e.g. tablets starting in the console layout) are
+  decided there, once. Persist per-session UI choices with `app.Preferences()`
+  (see `pad.layout` / `console.on`).
 
 ---
 
