@@ -23,6 +23,7 @@ layout consoletablet when fullscreen && mobile {
   Border {
     bottom: VBox {
       fx(show: false)
+      keysfx(show: false) if !p6_active
       keys(show: true)
       toggles
       status

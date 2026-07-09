@@ -17,11 +17,12 @@
 
 layout console when fullscreen {
   Border {
-    // Bottom: the P-6-only rack (full width, only when the P-6 is active) above
-    // the keyboard (full width, on by default in the console, and twice as tall
-    // — the keys expand vertically) and a full-width status bar.
+    // Bottom: the P-6-only rack (full width, only when the P-6 is active), or the
+    // emulator's host-side Keys FX rack, above the keyboard (full width, on by
+    // default in the console, and twice as tall) and a full-width status bar.
     bottom: VBox {
       p6 if p6_active
+      keysfx(show: true) if !p6_active
       keys(show: true)
       toggles
       status

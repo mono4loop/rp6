@@ -33,6 +33,7 @@ import (
 	"fyne.io/fyne/v2/widget"
 
 	"github.com/mono4loop/rp6/internal/audio"
+	"github.com/mono4loop/rp6/internal/audiofx"
 	"github.com/mono4loop/rp6/internal/effects"
 	"github.com/mono4loop/rp6/internal/emu"
 	"github.com/mono4loop/rp6/internal/midiin"
@@ -125,27 +126,28 @@ type ui struct {
 	relayoutReq  chan struct{}
 	relayoutStop chan struct{} // closed to stop the relayout watcher on shutdown
 
-	grid         *components.PadGrid
-	padRackObj   fyne.CanvasObject // pad grid + tool column, wrapped as a toggleable rack
-	padGridArea  *fyne.Container   // holds the current grid object (swapped on density toggle)
-	padFloatBtn  *components.RackToggle
-	midiInBtn    *components.RackToggle
-	layoutBtn    *components.RackCycle
-	padLayout    padLayout   // how the 48 pads are paged across the grid
-	listenMIDI   atomic.Bool // reflect hardware pad presses in the UI
-	padWin       fyne.Window // non-nil while the pad rack floats in its own window
-	padFloating  bool
-	playBtn      *components.TransportButton
-	tempo        *components.Knob
-	patternStep  *components.Knob
-	fxRack       *effectsRack
-	seqRack      *sequencerRack
-	keyboardRack *keyboardRack
-	paksRack     *paksRack
-	meter        *components.LevelMeter
-	meterArea    *fyne.Container   // stable holder; its child is the framed meter (V or H)
-	meterHoriz   bool              // meter currently laid out horizontally (compact mode)
-	p6Obj        fyne.CanvasObject // the P-6-only rack (transport + PATTERN + Delay/Reverb); hidden on the emulator
+	grid           *components.PadGrid
+	padRackObj     fyne.CanvasObject // pad grid + tool column, wrapped as a toggleable rack
+	padGridArea    *fyne.Container   // holds the current grid object (swapped on density toggle)
+	padFloatBtn    *components.RackToggle
+	midiInBtn      *components.RackToggle
+	layoutBtn      *components.RackCycle
+	padLayout      padLayout   // how the 48 pads are paged across the grid
+	listenMIDI     atomic.Bool // reflect hardware pad presses in the UI
+	padWin         fyne.Window // non-nil while the pad rack floats in its own window
+	padFloating    bool
+	playBtn        *components.TransportButton
+	tempo          *components.Knob
+	patternStep    *components.Knob
+	fxRack         *effectsRack
+	keyboardFXRack *keyboardFXRack
+	seqRack        *sequencerRack
+	keyboardRack   *keyboardRack
+	paksRack       *paksRack
+	meter          *components.LevelMeter
+	meterArea      *fyne.Container   // stable holder; its child is the framed meter (V or H)
+	meterHoriz     bool              // meter currently laid out horizontally (compact mode)
+	p6Obj          fyne.CanvasObject // the P-6-only rack (transport + PATTERN + Delay/Reverb); hidden on the emulator
 
 	transportRack fyne.CanvasObject
 	statusBar     fyne.CanvasObject
@@ -197,6 +199,9 @@ type ui struct {
 	padBtn     *components.RackToggle
 	p6Btn      *components.RackToggle
 	fxBtn      *components.RackToggle
+	padFXBtn   *components.RackToggle
+	keysFXBtn  *components.RackToggle
+	fxChoices  *fyne.Container
 	seqBtn     *components.RackToggle
 	keysBtn    *components.RackToggle
 	paksBtn    *components.RackToggle
@@ -227,6 +232,8 @@ type ui struct {
 	// or Ctrl+click), which suppresses the auto-switch.
 	emuFallback atomic.Bool
 	watchStop   chan struct{} // closed to stop the device watcher on shutdown
+
+	keyboardFX audiofx.Settings // retained across emulator kit/backend switches
 }
 
 func newUI() *ui {
@@ -255,6 +262,15 @@ func (u *ui) build(w fyne.Window) {
 		"fxRoll": u.fxRack.roll,
 		"fxRate": u.fxRack.rate.Object(),
 	}, u.fxRack.defaultObject)
+	u.keyboardFX = loadKeyboardFX()
+	u.keyboardFXRack = newKeyboardFXRack(u.keyboardFX, u.setKeyboardFX)
+	u.keyboardFXRack.obj = u.composeRack("keysfx", layoutspec.Registry{
+		"keysFXTone":   u.keyboardFXRack.tone.Object(),
+		"keysFXComp":   u.keyboardFXRack.comp.Object(),
+		"keysFXChorus": u.keyboardFXRack.chorus.Object(),
+		"keysFXDelay":  u.keyboardFXRack.delay.Object(),
+		"keysFXReverb": u.keyboardFXRack.reverb.Object(),
+	}, u.keyboardFXRack.defaultObject)
 	u.seqRack = newSequencerRack(u.seq,
 		func() {
 			if u.root != nil {
@@ -366,7 +382,11 @@ func (u *ui) build(w fyne.Window) {
 	acc := deviceHwAccent
 	u.padBtn = components.NewRackToggle("PADS", acc, u.togglePads)
 	u.p6Btn = components.NewRackToggle("P-6", acc, u.toggleP6Rack)
-	u.fxBtn = components.NewRackToggle("FX", acc, func() { u.toggleVisible(u.fxRack.Object(), u.fxBtn) })
+	u.fxBtn = components.NewRackToggle("FX", acc, u.toggleFXChoices)
+	u.padFXBtn = components.NewRackToggle("PAD FX", acc, func() { u.toggleVisible(u.fxRack.Object(), u.padFXBtn) })
+	u.keysFXBtn = components.NewRackToggle("KEYS FX", deviceEmuAccent, u.toggleKeyboardFX)
+	u.fxChoices = container.NewHBox(u.padFXBtn, u.keysFXBtn)
+	u.fxChoices.Hide()
 	u.seqBtn = components.NewRackToggle("SEQ", acc, u.toggleSeqView)
 	u.keysBtn = components.NewRackToggle("KEYS", acc, func() { u.toggleVisible(u.keyboardRack.Object(), u.keysBtn) })
 	u.paksBtn = components.NewRackToggle("PAKS", acc, func() { u.toggleVisible(u.paksRack.Object(), u.paksBtn) })
@@ -375,7 +395,7 @@ func (u *ui) build(w fyne.Window) {
 	// and the same wide layout on a large tablet.
 	u.consoleBtn = components.NewRackToggle("CONSOLE", acc, u.toggleConsole)
 	u.consoleBtn.SetOn(u.fullScreen)
-	toggleObjs := []fyne.CanvasObject{u.padBtn, u.p6Btn, u.fxBtn, u.seqBtn, u.keysBtn, u.paksBtn, u.meterBtn, u.consoleBtn}
+	toggleObjs := []fyne.CanvasObject{u.padBtn, u.p6Btn, u.fxBtn, u.fxChoices, u.seqBtn, u.keysBtn, u.paksBtn, u.meterBtn, u.consoleBtn}
 	toggleObjs = append(toggleObjs, u.jamToggles()...) // JAM button (absent in -tags nojam / web / mobile builds)
 	toggles := container.NewHBox(toggleObjs...)
 
@@ -397,7 +417,7 @@ func (u *ui) build(w fyne.Window) {
 	// Ctrl+Shift+P/D/F/S/K/M toggle the Pads, P-6, FX, Sequencer, Keyboard, Meter racks.
 	u.addRackShortcut(w, fyne.KeyP, u.togglePads)
 	u.addRackShortcut(w, fyne.KeyD, u.toggleP6Rack)
-	u.addRackShortcut(w, fyne.KeyF, func() { u.toggleVisible(u.fxRack.Object(), u.fxBtn) })
+	u.addRackShortcut(w, fyne.KeyF, u.toggleFXChoices)
 	u.addRackShortcut(w, fyne.KeyS, u.toggleSeqView)
 	u.addRackShortcut(w, fyne.KeyK, func() { u.toggleVisible(u.keyboardRack.Object(), u.keysBtn) })
 	u.addRackShortcut(w, fyne.KeyA, func() { u.toggleVisible(u.paksRack.Object(), u.paksBtn) })
@@ -424,7 +444,8 @@ func (u *ui) build(w fyne.Window) {
 	// (undocked) by default.
 	u.setVisible(u.padRackObj, u.padBtn, true)
 	u.setVisible(u.p6Obj, u.p6Btn, true)
-	u.setVisible(u.fxRack.Object(), u.fxBtn, false)
+	u.setVisible(u.fxRack.Object(), u.padFXBtn, false)
+	u.setVisible(u.keyboardFXRack.Object(), u.keysFXBtn, false)
 	u.setVisible(u.seqRack.Object(), u.seqBtn, true)
 	u.setVisible(u.keyboardRack.Object(), u.keysBtn, false)
 	u.setVisible(u.paksRack.Object(), u.paksBtn, false)
@@ -461,6 +482,7 @@ func (u *ui) relayout() {
 		"transport": u.transportRack,
 		"p6":        u.p6Obj,
 		"fx":        u.fxRack.Object(),
+		"keysfx":    u.keyboardFXRack.Object(),
 		"seq":       u.seqRack.Object(),
 		"keys":      u.keyboardRack.Object(),
 		"paks":      u.paksRack.Object(),
@@ -787,6 +809,28 @@ func (u *ui) toggleP6Rack() {
 	u.toggleVisible(u.p6Obj, u.p6Btn)
 }
 
+// toggleFXChoices expands/collapses the bottom-bar FX selector. The two child
+// buttons independently show the pad-trigger FX rack and emulator Keys FX rack.
+func (u *ui) toggleFXChoices() {
+	show := !u.fxChoices.Visible()
+	if show {
+		u.fxChoices.Show()
+	} else {
+		u.fxChoices.Hide()
+	}
+	u.fxBtn.SetOn(show)
+	if u.root != nil {
+		u.root.Refresh()
+	}
+}
+
+func (u *ui) toggleKeyboardFX() {
+	if u.keysFXBtn.Disabled() {
+		return
+	}
+	u.toggleVisible(u.keyboardFXRack.Object(), u.keysFXBtn)
+}
+
 // applyBackendGating reveals or hides the P-6-only rack for the active backend.
 // Its controls (transport clock, Program Change, global-FX CC) are no-ops on the
 // emulator, so on the emulator the rack is hidden and its bottom-bar toggle is
@@ -802,6 +846,13 @@ func (u *ui) applyBackendGating() {
 	if u.p6Obj != nil {
 		changed = u.p6Obj.Visible() != onP6
 		u.setVisible(u.p6Obj, u.p6Btn, onP6)
+	}
+	if u.keysFXBtn != nil {
+		u.keysFXBtn.SetDisabled(onP6)
+	}
+	if u.keyboardFXRack != nil && onP6 && u.keyboardFXRack.Object().Visible() {
+		u.setVisible(u.keyboardFXRack.Object(), u.keysFXBtn, false)
+		changed = true
 	}
 	u.refreshPaksRack() // the loaded-pak highlight clears on the P-6, returns on the emulator
 	// Relayout is the expensive part, so only do it when the P-6 rack's presence
@@ -892,7 +943,7 @@ type savedRack struct {
 // overrides are (re)applied during the build.
 func (u *ui) restoreForcedRacks() {
 	for _, s := range u.forced {
-		u.setVisible(s.obj, s.btn, s.on)
+		u.setVisible(s.obj, s.btn, s.on && !s.btn.Disabled())
 	}
 	u.forced = nil
 }
@@ -913,6 +964,67 @@ const numSeqSlots = 16
 // scoped and can't hold it (we don't know the profile until we know emuDir),
 // so this lives in the app's global preferences and survives a restart.
 const prefKeyEmuDir = "emu.samplesDir"
+
+const (
+	prefKeyFXTone   = "keysfx.tone"
+	prefKeyFXComp   = "keysfx.comp"
+	prefKeyFXChorus = "keysfx.chorus"
+	prefKeyFXDelay  = "keysfx.delay"
+	prefKeyFXReverb = "keysfx.reverb"
+)
+
+func loadKeyboardFX() audiofx.Settings {
+	app := fyne.CurrentApp()
+	if app == nil {
+		return audiofx.Settings{}
+	}
+	p := app.Preferences()
+	return audiofx.Settings{
+		Tone:   float32(p.IntWithFallback(prefKeyFXTone, 0)) / 100,
+		Comp:   float32(p.IntWithFallback(prefKeyFXComp, 0)) / 100,
+		Chorus: float32(p.IntWithFallback(prefKeyFXChorus, 0)) / 100,
+		Delay:  float32(p.IntWithFallback(prefKeyFXDelay, 0)) / 100,
+		Reverb: float32(p.IntWithFallback(prefKeyFXReverb, 0)) / 100,
+	}
+}
+
+func rememberKeyboardFX(s audiofx.Settings) {
+	if app := fyne.CurrentApp(); app != nil {
+		p := app.Preferences()
+		p.SetInt(prefKeyFXTone, int(s.Tone*100))
+		p.SetInt(prefKeyFXComp, int(s.Comp*100))
+		p.SetInt(prefKeyFXChorus, int(s.Chorus*100))
+		p.SetInt(prefKeyFXDelay, int(s.Delay*100))
+		p.SetInt(prefKeyFXReverb, int(s.Reverb*100))
+	}
+}
+
+func (u *ui) setKeyboardFX(settings audiofx.Settings) {
+	u.keyboardFX = settings
+	rememberKeyboardFX(settings)
+	u.devMu.Lock()
+	dev := u.dev
+	u.devMu.Unlock()
+	if target, ok := dev.(interface{ SetKeyboardFX(audiofx.Settings) }); ok {
+		target.SetKeyboardFX(settings)
+	}
+	u.setStatus("keyboard effects updated")
+}
+
+type keyboardFXController interface {
+	SetKeyboardFX(audiofx.Settings)
+	SetKeyboardFXEnabled(bool)
+}
+
+func (u *ui) applyKeyboardFXEnabled() {
+	enabled := u.useEmu && u.keyboardFXRack != nil && u.keyboardFXRack.Object().Visible()
+	u.devMu.Lock()
+	dev := u.dev
+	u.devMu.Unlock()
+	if target, ok := dev.(keyboardFXController); ok {
+		target.SetKeyboardFXEnabled(enabled)
+	}
+}
 
 // rememberEmuDir persists the emulator samples directory so the next launch
 // reopens that pak instead of the built-in kit.
@@ -1476,6 +1588,9 @@ func (u *ui) setVisible(o fyne.CanvasObject, btn *components.RackToggle, visible
 		o.Hide()
 	}
 	btn.SetOn(visible)
+	if u.keyboardFXRack != nil && o == u.keyboardFXRack.Object() {
+		u.applyKeyboardFXEnabled()
+	}
 }
 
 // applyRackShow applies a toggle-able rack's `show:` visibility from the layout,
@@ -2007,11 +2122,12 @@ func (u *ui) connect() {
 	}
 	ct := time.Now()
 	u.devMu.Lock()
-	if u.dev != nil {
-		_ = u.dev.Close()
-		u.dev = nil
-	}
+	oldDev := u.dev
+	u.dev = nil
 	u.devMu.Unlock()
+	if oldDev != nil {
+		_ = oldDev.Close()
+	}
 	perfLap("connect: close old device", &ct)
 
 	// New connection generation: retires stale background goroutines (Listen /
@@ -2033,6 +2149,10 @@ func (u *ui) connect() {
 	u.devMu.Lock()
 	u.dev = dev
 	u.devMu.Unlock()
+	if target, ok := dev.(keyboardFXController); ok {
+		target.SetKeyboardFX(u.keyboardFX)
+		target.SetKeyboardFXEnabled(u.keyboardFXRack != nil && u.keyboardFXRack.Object().Visible())
+	}
 	u.clock = p6.NewClocker(dev, u.bpm)
 	u.clock.SetOnError(func(err error) { u.deviceFailed(gen, err) })
 	u.setConnected(true)
@@ -2365,10 +2485,12 @@ func (u *ui) close() {
 	// below don't marshal a "disconnected" update onto the tearing-down loop.
 	u.devGen.Add(1)
 	u.devMu.Lock()
-	if u.dev != nil {
-		_ = u.dev.Close()
-	}
+	dev := u.dev
+	u.dev = nil
 	u.devMu.Unlock()
+	if dev != nil {
+		_ = dev.Close()
+	}
 	for path, dev := range u.midiIns {
 		_ = dev.Close() // unblocks each input Run goroutine
 		delete(u.midiIns, path)

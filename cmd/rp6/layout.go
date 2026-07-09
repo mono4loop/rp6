@@ -106,7 +106,9 @@ func (u *ui) configureComponent(id string, props map[string]string) {
 			u.applyMeterOrientation(o == "horizontal")
 		}
 	case "fx":
-		u.applyRackShow("fx", props, u.fxRack.Object(), u.fxBtn)
+		u.applyRackShow("fx", props, u.fxRack.Object(), u.padFXBtn)
+	case "keysfx":
+		u.applyRackShow("keysfx", props, u.keyboardFXRack.Object(), u.keysFXBtn)
 	case "keys":
 		u.applyRackShow("keys", props, u.keyboardRack.Object(), u.keysBtn)
 	case "paks":

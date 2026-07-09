@@ -13,6 +13,7 @@ import (
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/test"
 	"fyne.io/fyne/v2/theme"
+	"github.com/mono4loop/rp6/internal/audiofx"
 	"github.com/mono4loop/rp6/internal/effects"
 	"github.com/mono4loop/rp6/internal/midiin"
 	"github.com/mono4loop/rp6/internal/sequencer"
@@ -115,6 +116,79 @@ func TestKeyboardRackHiddenByDefault(t *testing.T) {
 	u.toggleVisible(u.keyboardRack.Object(), u.keysBtn)
 	assert.True(t, u.keyboardRack.Object().Visible())
 	assert.True(t, u.keysBtn.On())
+}
+
+func TestFXButtonExpandsIndependentChoices(t *testing.T) {
+	u := newTestUI(t)
+	require.False(t, u.fxChoices.Visible())
+	require.False(t, u.fxRack.Object().Visible())
+	require.False(t, u.keyboardFXRack.Object().Visible())
+
+	u.toggleFXChoices()
+	assert.True(t, u.fxChoices.Visible())
+	assert.True(t, u.fxBtn.On())
+
+	u.padFXBtn.Tapped(nil)
+	assert.True(t, u.fxRack.Object().Visible())
+	assert.False(t, u.keyboardFXRack.Object().Visible())
+
+	// Keys FX is hardware-gated until the emulator is active.
+	assert.True(t, u.keysFXBtn.Disabled())
+	u.useEmu = true
+	u.applyBackendGating()
+	u.keysFXBtn.Tapped(nil)
+	assert.True(t, u.keyboardFXRack.Object().Visible())
+	assert.True(t, u.keysFXBtn.On())
+	assert.True(t, u.fxRack.Object().Visible(), "both FX racks can be visible")
+
+	u.toggleFXChoices()
+	assert.False(t, u.fxChoices.Visible(), "collapsing the selector doesn't hide either rack")
+	assert.True(t, u.fxRack.Object().Visible())
+	assert.True(t, u.keyboardFXRack.Object().Visible())
+}
+
+type keyboardFXTarget struct {
+	*p6.Device
+	settings audiofx.Settings
+	enabled  bool
+}
+
+func (t *keyboardFXTarget) SetKeyboardFX(settings audiofx.Settings) { t.settings = settings }
+func (t *keyboardFXTarget) SetKeyboardFXEnabled(enabled bool)       { t.enabled = enabled }
+
+func TestKeyboardFXKnobsForwardSettings(t *testing.T) {
+	u := newTestUI(t)
+	target := &keyboardFXTarget{Device: p6.New(&bytes.Buffer{}, p6.DefaultConfig())}
+	u.dev = target
+
+	u.keyboardFXRack.reverb.SetValue(65)
+	u.keyboardFXRack.tone.SetValue(-30)
+
+	assert.InDelta(t, 0.65, target.settings.Reverb, 1e-6)
+	assert.InDelta(t, -0.30, target.settings.Tone, 1e-6)
+	assert.Equal(t, u.keyboardFXRack.Settings(), u.keyboardFX)
+	assert.False(t, target.enabled, "editing hidden effects retains settings without enabling them")
+}
+
+func TestKeyboardFXToggleBypassesAndRestoresState(t *testing.T) {
+	u := newTestUI(t)
+	target := &keyboardFXTarget{Device: p6.New(&bytes.Buffer{}, p6.DefaultConfig())}
+	u.dev = target
+	u.useEmu = true
+	u.applyBackendGating()
+	u.keyboardFXRack.reverb.SetValue(65)
+
+	u.toggleKeyboardFX()
+	assert.True(t, target.enabled)
+	assert.InDelta(t, 0.65, target.settings.Reverb, 1e-6)
+
+	u.toggleKeyboardFX()
+	assert.False(t, target.enabled, "hiding the rack bypasses effects")
+	assert.InDelta(t, 0.65, u.keyboardFXRack.Settings().Reverb, 1e-6, "knob state is retained")
+
+	u.toggleKeyboardFX()
+	assert.True(t, target.enabled, "showing the rack restores effects")
+	assert.InDelta(t, 0.65, target.settings.Reverb, 1e-6)
 }
 
 func TestExternalKeyboardPlaysAndReveals(t *testing.T) {
@@ -724,6 +798,7 @@ func TestP6RackGatedByBackend(t *testing.T) {
 	u := newTestUI(t) // starts on the P-6 backend (useEmu=false)
 	assert.True(t, u.p6Obj.Visible(), "P-6 rack shown on the hardware backend")
 	assert.False(t, u.p6Btn.Disabled(), "P-6 toggle enabled on the hardware backend")
+	assert.True(t, u.keysFXBtn.Disabled(), "host Keys FX unavailable on hardware")
 
 	// Switch to the emulator: the rack hides and its toggle greys out.
 	u.useEmu = true
@@ -731,6 +806,7 @@ func TestP6RackGatedByBackend(t *testing.T) {
 	assert.False(t, u.p6Obj.Visible(), "P-6 rack hidden on the emulator")
 	assert.True(t, u.p6Btn.Disabled(), "P-6 toggle disabled on the emulator")
 	assert.False(t, u.p6Btn.On(), "P-6 toggle untoggled on the emulator")
+	assert.False(t, u.keysFXBtn.Disabled(), "Keys FX available on the emulator")
 
 	// A disabled toggle is inert — tapping it doesn't reveal the rack.
 	u.toggleP6Rack()
@@ -741,6 +817,7 @@ func TestP6RackGatedByBackend(t *testing.T) {
 	u.applyBackendGating()
 	assert.True(t, u.p6Obj.Visible(), "P-6 rack restored on the hardware backend")
 	assert.False(t, u.p6Btn.Disabled(), "P-6 toggle re-enabled on the hardware backend")
+	assert.True(t, u.keysFXBtn.Disabled(), "Keys FX disabled again on hardware")
 }
 
 // TestHardwareReflectWhileFloated guards that incoming pad presses are reflected

@@ -44,6 +44,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/mono4loop/rp6/internal/audiofx"
 	"github.com/mono4loop/rp6/p6"
 )
 
@@ -421,13 +422,30 @@ func (e *Emulator) NoteOn(channel int, note, velocity uint8) error {
 // TriggerPadVelocity), mirroring the hardware ("select a pad, then play it
 // chromatically"). Pads with no assigned sample are silently ignored.
 func (e *Emulator) PlayNote(note, velocity uint8) error {
-	data := e.clips[e.selected.Load()]
+	id := int(e.selected.Load())
+	if id < 0 || id >= len(e.clips) {
+		return nil
+	}
+	data := e.clips[id]
 	if data == nil {
 		return nil
 	}
 	speed := math.Pow(2, float64(int(note)-p6.KeyboardCenterNote)/12.0)
-	e.mix.triggerSpeed(data, float32(velocity)/127, speed)
+	e.mix.triggerKeyboard(data, float32(velocity)/127, speed)
 	return nil
+}
+
+// SetKeyboardFX updates the emulator's keyboard-bus instrument effects. It is
+// intentionally outside p6.Controller: hardware keyboard notes are generated
+// and heard inside the P-6, so host-side DSP is only available on the emulator.
+func (e *Emulator) SetKeyboardFX(settings audiofx.Settings) {
+	e.mix.setKeyboardFX(settings)
+}
+
+// SetKeyboardFXEnabled bypasses or enables the keyboard effects while retaining
+// their configured macro values for the next enable.
+func (e *Emulator) SetKeyboardFXEnabled(enabled bool) {
+	e.mix.setKeyboardFXEnabled(enabled)
 }
 
 // ControlChange is accepted but has no effect (no emulated FX engine).

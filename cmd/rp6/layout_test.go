@@ -18,7 +18,7 @@ import (
 // embedded layout can be built without a running UI.
 func rp6Registry() layoutspec.Registry {
 	r := layoutspec.Registry{}
-	for _, id := range []string{"transport", "p6", "fx", "seq", "keys", "paks", "pads", "vu", "toggles", "status"} {
+	for _, id := range []string{"transport", "p6", "fx", "keysfx", "seq", "keys", "paks", "pads", "vu", "toggles", "status"} {
 		r[id] = canvas.NewRectangle(color.White)
 	}
 	return r
@@ -96,12 +96,13 @@ func TestFullScreenSelectsConsole(t *testing.T) {
 func TestDefaultRackBlocks(t *testing.T) {
 	doc, err := layoutlang.Parse(layoutSource())
 	require.NoError(t, err)
-	assert.ElementsMatch(t, []string{"transport", "p6", "fx", "pads", "seq", "keys", "paks"}, doc.RackNames())
+	assert.ElementsMatch(t, []string{"transport", "p6", "fx", "keysfx", "pads", "seq", "keys", "paks"}, doc.RackNames())
 
 	racks := map[string][]string{
 		"transport": {"tempo"},
 		"p6":        {"play", "pattern", "delayTime", "delayLevel", "reverbTime", "reverbLevel"},
 		"fx":        {"fxRoll", "fxRate"},
+		"keysfx":    {"keysFXTone", "keysFXComp", "keysFXChorus", "keysFXDelay", "keysFXReverb"},
 		"pads":      {"padFloat", "padListen", "padDensity", "badge", "padGrid"},
 		"seq":       {"seqHeader", "seqControls", "seqGrid"},
 		"keys":      {"keyboardOct", "keyboardKeys"},
@@ -182,7 +183,7 @@ func TestConsoleRevealsFx(t *testing.T) {
 
 	// Toggling FX off while still in the console must stick (same variant, so the
 	// `show:` default is not re-applied on relayout).
-	u.setVisible(u.fxRack.Object(), u.fxBtn, false)
+	u.setVisible(u.fxRack.Object(), u.padFXBtn, false)
 	u.relayout()
 	assert.False(t, u.fxRack.Object().Visible(), "manual toggle respected within the console")
 }
@@ -228,7 +229,7 @@ func TestConsolePreservesRackState(t *testing.T) {
 	assert.False(t, u.fxRack.Object().Visible(), "FX restored to off")
 	assert.False(t, u.keyboardRack.Object().Visible(), "KEYS restored to off")
 	assert.False(t, u.paksRack.Object().Visible(), "PAKS restored to off")
-	assert.False(t, u.fxBtn.On())
+	assert.False(t, u.padFXBtn.On())
 	assert.False(t, u.keysBtn.On())
 	assert.False(t, u.paksBtn.On())
 	assert.True(t, u.padRackObj.Visible(), "pads still visible")
@@ -242,7 +243,7 @@ func TestConsoleKeepsUserToggleWithinConsole(t *testing.T) {
 	require.True(t, u.fxRack.Object().Visible())
 
 	// User turns FX off while in the console; it should stay off there.
-	u.toggleVisible(u.fxRack.Object(), u.fxBtn)
+	u.toggleVisible(u.fxRack.Object(), u.padFXBtn)
 	assert.False(t, u.fxRack.Object().Visible())
 
 	u.toggleConsole() // leave — fx should remain off (matches pre-console)
@@ -291,7 +292,7 @@ func TestConsoleLayoutSmoke(t *testing.T) {
 		do   func()
 	}{
 		{"show p6 rack", func() { u.toggleP6Rack() }},
-		{"show fx", func() { u.toggleVisible(u.fxRack.Object(), u.fxBtn) }},
+		{"show fx", func() { u.toggleVisible(u.fxRack.Object(), u.padFXBtn) }},
 		{"dock sequencer", func() { u.onSeqDock(true) }},
 		{"undock sequencer", func() { u.onSeqDock(false) }},
 		{"hide pads", func() { u.togglePads() }},

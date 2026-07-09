@@ -20,6 +20,7 @@ layout compact when compact {
       transport
       p6 if p6_active
       fx
+      keysfx if !p6_active
       keys
       paks
       seq if !seq_docked
@@ -50,6 +51,7 @@ layout default {
       }
       p6 if p6_active
       fx
+      keysfx if !p6_active
       keys
       paks
       seq if !seq_docked
@@ -111,6 +113,18 @@ rack paks {
 
 rack fx {
   RackPanel { HBox { fxRoll; Separator; fxRate } }
+}
+
+rack keysfx {
+  RackPanel {
+    Stack {
+      HBox { keysFXTone; keysFXComp; keysFXChorus; keysFXDelay; keysFXReverb } if !mobile
+      VBox {
+        HBox { keysFXTone; keysFXComp; keysFXChorus }
+        HBox { keysFXDelay; keysFXReverb }
+      } if mobile
+    }
+  }
 }
 
 rack pads {

@@ -73,6 +73,21 @@ func TestKnobDragAndScroll(t *testing.T) {
 	assert.Equal(t, 130, k.Value())
 }
 
+func TestKnobDoubleTapResetsToZero(t *testing.T) {
+	test.NewApp()
+	got := -1
+	k := NewKnob(KnobConfig{Value: 65, Min: 0, Max: 100, OnChange: func(v int) { got = v }})
+
+	k.DoubleTapped(nil)
+	assert.Zero(t, k.Value())
+	assert.Zero(t, got, "reset fires OnChange")
+
+	// Knobs whose range excludes zero reset to the closest valid edge.
+	tempo := newTestKnob(nil)
+	tempo.DoubleTapped(nil)
+	assert.Equal(t, 40, tempo.Value())
+}
+
 func TestKnobLightsWhenFocused(t *testing.T) {
 	a := test.NewApp()
 	a.Settings().SetTheme(theme.DefaultTheme()) // real fonts (bold monospace value)

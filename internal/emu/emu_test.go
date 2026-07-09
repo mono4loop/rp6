@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/mono4loop/rp6/internal/audiofx"
 	"github.com/mono4loop/rp6/p6"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -280,6 +281,56 @@ func TestMixerTriggerSpeedHalfPitchInterpolates(t *testing.T) {
 	assert.Equal(t, 0, m.active())
 }
 
+func TestMixerKeyboardFXDoesNotAffectPadVoices(t *testing.T) {
+	m := newMixer(1, 1000, false)
+	m.setKeyboardFX(audiofx.Settings{Tone: -1})
+	m.setKeyboardFXEnabled(true)
+	clip := []float32{1, -1, 1, -1}
+	m.trigger(clip, 0.25)
+	m.triggerKeyboard(clip, 0.25, 1)
+
+	out := make([]float32, 6)
+	m.render(out)
+	// The keyboard voice is darkened while the pad voice remains unchanged, so
+	// the summed first sample is lower than two dry voices (0.5).
+	assert.Less(t, out[2], float32(0.5))
+	assert.Greater(t, out[2], float32(0.25), "the dry pad voice still reaches the master mix")
+}
+
+func TestMixerKeyboardFXBypassRetainsSettings(t *testing.T) {
+	clip := []float32{1, -1, 1, -1}
+	render := func(enabled bool) []float32 {
+		m := newMixer(1, 1000, false)
+		m.setKeyboardFX(audiofx.Settings{Tone: -1})
+		m.setKeyboardFXEnabled(enabled)
+		m.triggerKeyboard(clip, 0.5, 1)
+		out := make([]float32, 6)
+		m.render(out)
+		return out
+	}
+
+	dry := render(false)
+	wet := render(true)
+	assert.NotEqual(t, dry, wet, "enabled effects alter the keyboard bus")
+
+	m := newMixer(1, 1000, false)
+	m.setKeyboardFX(audiofx.Settings{Tone: -1})
+	m.setKeyboardFXEnabled(true)
+	m.setKeyboardFXEnabled(false)
+	m.setKeyboardFXEnabled(true)
+	m.triggerKeyboard(clip, 0.5, 1)
+	out := make([]float32, 6)
+	m.render(out)
+	assert.Equal(t, wet, out, "re-enabling restores retained effect settings")
+}
+
+func TestMixerLargeCallbackDoesNotAllocate(t *testing.T) {
+	m := newMixer(2, 48000, false)
+	out := make([]float32, len(m.keysBuf)+512)
+	allocs := testing.AllocsPerRun(20, func() { m.render(out) })
+	assert.Zero(t, allocs)
+}
+
 // firstNonZero returns the index of the first non-zero sample, or -1.
 func firstNonZero(out []float32) int {
 	for i, v := range out {
@@ -367,6 +418,14 @@ func TestEmulatorPlayNote(t *testing.T) {
 	assert.Equal(t, 2, e.mix.active())
 	require.NoError(t, e.PlayNote(p6.KeyboardCenterNote, 100))
 	assert.Equal(t, 2, e.mix.active(), "no sample on the selected pad -> ignored")
+}
+
+func TestEmulatorPlayNoteIgnoresInvalidSelection(t *testing.T) {
+	e := &Emulator{mix: newMixer(2, 48000, false)}
+	e.selected.Store(-1)
+	assert.NoError(t, e.PlayNote(p6.KeyboardCenterNote, 100))
+	e.selected.Store(p6.NumPads)
+	assert.NoError(t, e.PlayNote(p6.KeyboardCenterNote, 100))
 }
 
 func TestEmulatorControllerNoOps(t *testing.T) {

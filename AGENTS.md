@@ -185,6 +185,8 @@ internal/emu/       software P-6 emulator: plays WAV/FLAC samples (NO Fyne)
   sink_stub.go      default (no tag): silent sink (loads+mixes, no sound)
   sink_malgo.go     //go:build capture: miniaudio/malgo playback backend
   sink_js.go        (js) Web Audio sink (AudioWorklet, resumed on a user gesture)
+                    Keyboard-mode voices use a separate bus through
+                    internal/audiofx before joining pad voices at the limiter.
 internal/effects/   host-side effects engine (NO Fyne, NO p6 — pure logic)
   effects.go        Engine: per-pad slots, Roll (tempo-synced retrigger), Tap,
                     background rollers; fires pads via a Trigger callback
@@ -245,6 +247,9 @@ internal/audio/     reusable audio capture (NO Fyne, NO p6)
   audio.go          Capturer interface, Peak/RMS, NormDB, Meter (smoothed VU)
   capture_stub.go   default (no tag): OpenCapture -> ErrUnavailable
   capture_malgo.go  //go:build capture: miniaudio/malgo capture backend
+internal/audiofx/   reusable host-side DSP (NO Fyne, NO p6): allocation-free
+                    interleaved-float32 processors + the keyboard instrument
+                    chain (tone, compressor, chorus, delay, room reverb)
 internal/jam/       host-side shared jam sessions (NO Fyne, NO p6, NO pion) —
                     peers broadcast live pad hits to each other. Generic +
                     callback-based like effects/sequencer, loopback-testable with

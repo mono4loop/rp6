@@ -224,6 +224,13 @@ func (k *Knob) focus() {
 // Tapped focuses the knob (fyne.Tappable).
 func (k *Knob) Tapped(*fyne.PointEvent) { k.focus() }
 
+// DoubleTapped resets the knob to zero (clamped to its configured range) and
+// fires OnChange like any other user edit.
+func (k *Knob) DoubleTapped(*fyne.PointEvent) {
+	k.focus()
+	k.set(0)
+}
+
 // Dragged turns the knob: dragging up increases, down decreases (fyne.Draggable).
 func (k *Knob) Dragged(e *fyne.DragEvent) {
 	if !k.focused {

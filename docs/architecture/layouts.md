@@ -118,10 +118,11 @@ more-specific guard wins on a mobile device (see §9). See §9 for the files.
 
 ## 5. Widget IDs
 
-Top-level racks: `transport` · `dlyrev` · `fx` · `seq` · `keys` · `pads` · `vu` ·
+Top-level racks: `transport` · `p6` · `fx` · `keysfx` · `seq` · `keys` · `paks` · `pads` · `vu` ·
 `status`. Rack-internal sub-widgets (see §6): `play`/`tempo`/`pattern` (transport);
-`delayTime`/`delayLevel`/`reverbTime`/`reverbLevel` (dlyrev); `fxRoll`/`fxRate`
-(fx); `keyboardOct`/`keyboardKeys` (keys); `padFloat`/`padListen`/`padDensity`/`badge`/`padGrid`
+`delayTime`/`delayLevel`/`reverbTime`/`reverbLevel` (p6); `fxRoll`/`fxRate`
+(fx); `keysFXTone`/`keysFXComp`/`keysFXChorus`/`keysFXDelay`/`keysFXReverb`
+(keysfx); `keyboardOct`/`keyboardKeys` (keys); `padFloat`/`padListen`/`padDensity`/`badge`/`padGrid`
 (pads); `seqHeader`/`seqControls`/`seqGrid` (seq).
 
 ## 6. Rack internals (`rack` blocks) + the holder pattern
