@@ -96,9 +96,9 @@ func (u *ui) selectLayout(reg layoutspec.Registry) fyne.CanvasObject {
 // app knows what they mean.
 //
 //   - vu(orientation: horizontal|vertical) — the VU meter's orientation (always).
-//   - fx/keys(show: true|false)            — the rack's default visibility, set
+//   - fx/keys/paks(show: true|false)        — the rack's default visibility, set
 //     only when the layout variant is entered (u.variantChanged), so the user's
-//     FX/KEYS toggles still work while that variant is showing.
+//     toggles still work while that variant is showing.
 func (u *ui) configureComponent(id string, props map[string]string) {
 	switch id {
 	case "vu":
@@ -109,6 +109,8 @@ func (u *ui) configureComponent(id string, props map[string]string) {
 		u.applyRackShow("fx", props, u.fxRack.Object(), u.fxBtn)
 	case "keys":
 		u.applyRackShow("keys", props, u.keyboardRack.Object(), u.keysBtn)
+	case "paks":
+		u.applyRackShow("paks", props, u.paksRack.Object(), u.paksBtn)
 	}
 }
 

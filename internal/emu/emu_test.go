@@ -66,6 +66,15 @@ func TestResampleChannelsAndRate(t *testing.T) {
 	}
 }
 
+func TestSincTableCached(t *testing.T) {
+	// The (expensive) kernel table is built once per cutoff and reused, so a kit's
+	// pads don't each rebuild an identical table.
+	a := sincTable(0.5)
+	b := sincTable(0.5)
+	assert.Same(t, a, b, "same cutoff returns the cached table")
+	assert.NotSame(t, a, sincTable(0.25), "a different cutoff builds its own table")
+}
+
 func TestResampleNoOp(t *testing.T) {
 	c := &Clip{Samples: []float32{0.1, -0.2, 0.3, -0.4}, Channels: 2, SampleRate: 48000}
 	out := c.Resample(2, 48000)

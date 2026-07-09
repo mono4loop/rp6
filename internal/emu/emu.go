@@ -40,9 +40,20 @@ import (
 	"sort"
 	"strings"
 	"sync/atomic"
+	"time"
 
 	"github.com/mono4loop/rp6/p6"
 )
+
+// profile enables coarse load-timing logs (RP6_PROFILE=1) to find where the time
+// goes when opening/switching sample kits.
+var profile = os.Getenv("RP6_PROFILE") != ""
+
+func perf(format string, args ...any) {
+	if profile {
+		log.Printf("rp6perf/emu: "+format, args...)
+	}
+}
 
 // SampleAccurate selects the mixer's voice-start timing for emulators opened
 // afterwards: true (default) starts each triggered sample at its exact sub-buffer
@@ -97,27 +108,33 @@ func OpenDefault(cfg p6.Config) (*Emulator, error) {
 // name is a human-readable label for the source. It scans fsys for pad samples
 // (A1..H6), decodes them and starts the audio sink.
 func OpenFS(fsys fs.FS, name string, cfg p6.Config) (*Emulator, error) {
+	t := time.Now()
 	s, err := openSink()
 	if err != nil {
 		return nil, err
 	}
+	perf("openSink %s -> %s", time.Since(t), s.Name())
 	e := &Emulator{cfg: cfg, name: name, fsys: fsys, sink: s, mix: newMixer(s.Channels(), s.SampleRate(), SampleAccurate)}
 
+	t = time.Now()
 	n, err := e.load()
 	if err != nil {
 		_ = s.Close()
 		return nil, err
 	}
+	perf("load %d pads in %s", n, time.Since(t))
 	if n == 0 {
 		_ = s.Close()
 		return nil, fmt.Errorf("emu: no pad samples (A1..H6 .wav/.flac) found in %s", name)
 	}
 	e.loaded = n
 
+	t = time.Now()
 	if err := s.Start(e.mix.render); err != nil {
 		_ = s.Close()
 		return nil, fmt.Errorf("emu: starting audio output: %w", err)
 	}
+	perf("sink.Start %s", time.Since(t))
 	log.Printf("emu: loaded %d/%d pad samples from %s (output: %s)", n, p6.NumPads, name, s.Name())
 	return e, nil
 }
@@ -140,15 +157,21 @@ func (e *Emulator) load() (int, error) {
 	sort.Ints(ids)
 
 	count := 0
+	var decodeD, resampleD time.Duration
 	for _, id := range ids {
+		t := time.Now()
 		clip, err := decodeFile(e.fsys, paths[id])
 		if err != nil {
 			log.Printf("emu: skipping %s: %v", paths[id], err)
 			continue
 		}
+		decodeD += time.Since(t)
+		t = time.Now()
 		e.clips[id] = clip.Resample(e.sink.Channels(), e.sink.SampleRate())
+		resampleD += time.Since(t)
 		count++
 	}
+	perf("decode %s / resample %s (%d files)", decodeD, resampleD, count)
 	return count, nil
 }
 

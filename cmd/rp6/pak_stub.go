@@ -14,5 +14,8 @@ func (u *ui) installAndSelectPak(path string) {}
 
 func (u *ui) emuSettingsExtra(onInstalled func()) []fyne.CanvasObject { return nil }
 
+// installedPakItems is empty on the web build (no local samples directory).
+func (u *ui) installedPakItems() []pakItem { return nil }
+
 // openSampleStore reports that the store isn't available on the web build.
 func (u *ui) openSampleStore() { u.setStatus("the sample-pak store needs the desktop or mobile app") }

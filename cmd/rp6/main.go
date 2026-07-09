@@ -50,6 +50,21 @@ import (
 // seqMaxBars is the maximum bar length a sequencer track can have.
 const seqMaxBars = 4
 
+// profileOn enables coarse switch-timing logs (RP6_PROFILE=1) to find where the
+// time goes when switching sample kits.
+var profileOn = os.Getenv("RP6_PROFILE") != ""
+
+// perfLap logs the elapsed time since *t under label and resets *t to now. It's a
+// no-op unless RP6_PROFILE is set, so it's free in normal runs.
+func perfLap(label string, t *time.Time) {
+	if !profileOn {
+		return
+	}
+	now := time.Now()
+	log.Printf("rp6perf: %-32s %s", label, now.Sub(*t))
+	*t = now
+}
+
 type ui struct {
 	dev   p6.Controller
 	devMu sync.Mutex // guards dev for the off-main roll/fire path
@@ -71,6 +86,13 @@ type ui struct {
 	// useEmu selects the active backend: the emulator (needs emuDir) when true,
 	// the P-6 hardware when false. Initialized from the -emu flag.
 	useEmu bool
+
+	// preopened holds an emulator that was loaded off the UI thread (see
+	// setEmuSamples), for the next openDevice to adopt instead of loading inline —
+	// so decoding/resampling a sample pak doesn't freeze the UI. loadingSamples
+	// guards against overlapping background loads.
+	preopened      p6.Controller
+	loadingSamples atomic.Bool
 
 	bpm float64 // clock tempo for transport
 
@@ -116,6 +138,7 @@ type ui struct {
 	fxRack       *effectsRack
 	seqRack      *sequencerRack
 	keyboardRack *keyboardRack
+	paksRack     *paksRack
 	meter        *components.LevelMeter
 	meterArea    *fyne.Container   // stable holder; its child is the framed meter (V or H)
 	meterHoriz   bool              // meter currently laid out horizontally (compact mode)
@@ -173,6 +196,7 @@ type ui struct {
 	fxBtn      *components.RackToggle
 	seqBtn     *components.RackToggle
 	keysBtn    *components.RackToggle
+	paksBtn    *components.RackToggle
 	meterBtn   *components.RackToggle
 	consoleBtn *components.RackToggle
 
@@ -254,6 +278,14 @@ func (u *ui) build(w fyne.Window) {
 		"keyboardKeys": u.keyboardRack.piano,
 	}, u.keyboardRack.defaultObject)
 
+	// Paks rack: a kit selector listing the sample paks installed from the store;
+	// tapping one loads it into the emulator, and a store key opens the store.
+	u.paksRack = newPaksRack(u.installedPakItems, u.setEmuSamples, u.openSampleStore)
+	u.paksRack.obj = u.composeRack("paks", layoutspec.Registry{
+		"paksHeader": u.paksRack.header,
+		"paksList":   u.paksRack.scroll,
+	}, u.paksRack.defaultObject)
+
 	// Transport rack: just the TEMPO knob. Play/Stop and PATTERN moved into the
 	// P-6-only rack (see below) — TEMPO stays here because it also drives the
 	// host-side sequencer/effects clocks, so it's useful on the emulator too.
@@ -334,12 +366,13 @@ func (u *ui) build(w fyne.Window) {
 	u.fxBtn = components.NewRackToggle("FX", acc, func() { u.toggleVisible(u.fxRack.Object(), u.fxBtn) })
 	u.seqBtn = components.NewRackToggle("SEQ", acc, u.toggleSeqView)
 	u.keysBtn = components.NewRackToggle("KEYS", acc, func() { u.toggleVisible(u.keyboardRack.Object(), u.keysBtn) })
+	u.paksBtn = components.NewRackToggle("PAKS", acc, func() { u.toggleVisible(u.paksRack.Object(), u.paksBtn) })
 	u.meterBtn = components.NewRackToggle("VU", acc, func() { u.toggleVisible(u.meterArea, u.meterBtn) })
 	// CONSOLE switches to the "mixing console" layout: full screen on desktop,
 	// and the same wide layout on a large tablet.
 	u.consoleBtn = components.NewRackToggle("CONSOLE", acc, u.toggleConsole)
 	u.consoleBtn.SetOn(u.fullScreen)
-	toggleObjs := []fyne.CanvasObject{u.padBtn, u.p6Btn, u.fxBtn, u.seqBtn, u.keysBtn, u.meterBtn, u.consoleBtn}
+	toggleObjs := []fyne.CanvasObject{u.padBtn, u.p6Btn, u.fxBtn, u.seqBtn, u.keysBtn, u.paksBtn, u.meterBtn, u.consoleBtn}
 	toggleObjs = append(toggleObjs, u.jamToggles()...) // JAM button (absent in -tags nojam / web / mobile builds)
 	toggles := container.NewHBox(toggleObjs...)
 
@@ -364,6 +397,7 @@ func (u *ui) build(w fyne.Window) {
 	u.addRackShortcut(w, fyne.KeyF, func() { u.toggleVisible(u.fxRack.Object(), u.fxBtn) })
 	u.addRackShortcut(w, fyne.KeyS, u.toggleSeqView)
 	u.addRackShortcut(w, fyne.KeyK, func() { u.toggleVisible(u.keyboardRack.Object(), u.keysBtn) })
+	u.addRackShortcut(w, fyne.KeyA, func() { u.toggleVisible(u.paksRack.Object(), u.paksBtn) })
 	u.addRackShortcut(w, fyne.KeyM, func() { u.toggleVisible(u.meterArea, u.meterBtn) })
 
 	// F11 toggles full screen, which switches to the "console" layout (Fyne has
@@ -390,6 +424,7 @@ func (u *ui) build(w fyne.Window) {
 	u.setVisible(u.fxRack.Object(), u.fxBtn, false)
 	u.setVisible(u.seqRack.Object(), u.seqBtn, true)
 	u.setVisible(u.keyboardRack.Object(), u.keysBtn, false)
+	u.setVisible(u.paksRack.Object(), u.paksBtn, false)
 	u.setVisible(u.meterArea, u.meterBtn, true)
 
 	// Gate the P-6-only rack for the current backend (hidden + disabled on the
@@ -425,6 +460,7 @@ func (u *ui) relayout() {
 		"fx":        u.fxRack.Object(),
 		"seq":       u.seqRack.Object(),
 		"keys":      u.keyboardRack.Object(),
+		"paks":      u.paksRack.Object(),
 		"pads":      u.padRackObj,
 		"vu":        u.meterArea,
 		"toggles":   u.controlBar,
@@ -762,9 +798,23 @@ func (u *ui) applyBackendGating() {
 	if u.p6Obj != nil {
 		u.setVisible(u.p6Obj, u.p6Btn, onP6)
 	}
+	u.refreshPaksRack() // the loaded-pak highlight clears on the P-6, returns on the emulator
 	if u.root != nil {
 		u.relayout()
 	}
+}
+
+// refreshPaksRack repopulates the paks rack and lights the currently-loaded pak
+// (the active emulator samples directory; none on the P-6 or the built-in kit).
+func (u *ui) refreshPaksRack() {
+	if u.paksRack == nil {
+		return
+	}
+	active := ""
+	if u.useEmu {
+		active = u.emuDir // "" for the built-in kit — matches no installed pak
+	}
+	u.paksRack.refresh(active)
 }
 
 // toggleFullScreen toggles the "mixing console" layout (F11 / Ctrl+Shift+Enter).
@@ -1106,18 +1156,46 @@ func (u *ui) setListenDefault() {
 // setEmuSamples points the emulator at a new samples directory and reconnects
 // (also switching to the emulator backend if not already on it). Each directory
 // is its own persistence profile, so this re-scopes and reloads sequences.
+//
+// Decoding + resampling a pak's samples is the slow part of the switch, so it
+// runs off the UI thread: the current backend keeps playing while the new kit
+// loads, then it's swapped in via fyne.Do (openDevice adopts u.preopened). The
+// loadingSamples guard drops taps that arrive while a load is already running.
 func (u *ui) setEmuSamples(dir string) {
 	dir = strings.TrimSpace(dir)
 	if dir == "" {
 		return
 	}
+	if !u.loadingSamples.CompareAndSwap(false, true) {
+		u.setStatus("still loading a sample pak — one moment…")
+		return
+	}
 	log.Printf("rp6emu: setEmuSamples dir=%q", dir)
-	u.emuDir = dir
-	u.useEmu = true
-	u.emuFallback.Store(false) // picking a kit is a deliberate emulator choice
-	u.rememberEmuDir(dir)      // survive a restart (see vxrv)
-	u.reconnectProfile()
-	u.setStatus("emulator samples: " + dir)
+	u.setStatus("loading sample pak…")
+	go func() {
+		t := time.Now()
+		dev, err := emu.Open(dir, p6.DefaultConfig()) // decode + resample, off the UI thread
+		perfLap("setEmuSamples: emu.Open (bg)", &t)
+		fyne.Do(func() {
+			st := time.Now()
+			defer func() {
+				perfLap("setEmuSamples: swap (UI thread)", &st)
+				u.loadingSamples.Store(false)
+			}()
+			if err != nil {
+				log.Printf("rp6emu: emu.Open(%q) failed: %v", dir, err)
+				u.setStatus("couldn't load samples: " + err.Error())
+				return
+			}
+			u.emuDir = dir
+			u.useEmu = true
+			u.emuFallback.Store(false) // picking a kit is a deliberate emulator choice
+			u.rememberEmuDir(dir)      // survive a restart (see vxrv)
+			u.preopened = dev          // connect() adopts this instead of loading inline
+			u.reconnectProfile()
+			u.setStatus("emulator samples: " + dir)
+		})
+	}()
 }
 
 // reconnectProfile stops transport, persists the outgoing profile's sequence,
@@ -1125,22 +1203,29 @@ func (u *ui) setEmuSamples(dir string) {
 // to the (possibly changed) profile and reloads its sequence. The store is
 // re-opened from storeProfile(), so callers only set useEmu/emuDir beforehand.
 func (u *ui) reconnectProfile() {
+	t := time.Now()
 	u.seq.Stop()
 	u.playBtn.SetRunning(false)
 	u.autosaveSeq() // persist under the still-open outgoing profile
+	perfLap("reconnect: autosave", &t)
 	if u.store != nil {
 		_ = u.store.Close()
 		u.store = nil
 	}
+	perfLap("reconnect: store.Close", &t)
 
 	name, tag, accent := u.deviceIdentity()
 	u.deviceBadge.SetAccent(accent)
 	u.deviceBadge.SetName(name, tag)
 
-	u.connect()             // open the new backend (also updates badge state)
-	u.openStore()           // re-scope persistence to the new profile
+	u.connect() // open the new backend (also updates badge state)
+	perfLap("reconnect: connect", &t)
+	u.openStore() // re-scope persistence to the new profile
+	perfLap("reconnect: openStore", &t)
 	u.loadInitialSequence() // load that profile's last sequence
-	u.applyBackendGating()  // show/hide the P-6-only rack for the new backend
+	perfLap("reconnect: loadInitialSequence", &t)
+	u.applyBackendGating() // show/hide the P-6-only rack for the new backend
+	perfLap("reconnect: applyBackendGating", &t)
 }
 
 func (u *ui) openStore() {
@@ -1875,6 +1960,13 @@ func (u *ui) sendFX(name string, cc, value uint8) {
 // WAV samples from u.emuDir) when -emu/RP6_EMU_SAMPLES is set, otherwise the
 // real hardware over USB MIDI.
 func (u *ui) openDevice() (p6.Controller, error) {
+	// A kit already loaded off the UI thread (setEmuSamples) — adopt it rather
+	// than re-decoding inline, so the swap is instant.
+	if u.preopened != nil {
+		dev := u.preopened
+		u.preopened = nil
+		return dev, nil
+	}
 	if u.useEmu {
 		if strings.TrimSpace(u.emuDir) == "" {
 			return emu.OpenDefault(p6.DefaultConfig()) // built-in modular-hits kit
@@ -1905,12 +1997,14 @@ func (u *ui) connect() {
 		_ = u.clock.Stop()
 		u.clock = nil
 	}
+	ct := time.Now()
 	u.devMu.Lock()
 	if u.dev != nil {
 		_ = u.dev.Close()
 		u.dev = nil
 	}
 	u.devMu.Unlock()
+	perfLap("connect: close old device", &ct)
 
 	// New connection generation: retires stale background goroutines (Listen /
 	// clock) from any prior device so their failures can't touch the UI.
@@ -1922,6 +2016,7 @@ func (u *ui) connect() {
 	}
 
 	dev, err := u.openDevice()
+	perfLap("connect: openDevice", &ct)
 	if err != nil {
 		u.setConnected(false)
 		u.setStatus(u.connectErrorMessage(err))

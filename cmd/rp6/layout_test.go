@@ -18,7 +18,7 @@ import (
 // embedded layout can be built without a running UI.
 func rp6Registry() layoutspec.Registry {
 	r := layoutspec.Registry{}
-	for _, id := range []string{"transport", "p6", "fx", "seq", "keys", "pads", "vu", "toggles", "status"} {
+	for _, id := range []string{"transport", "p6", "fx", "seq", "keys", "paks", "pads", "vu", "toggles", "status"} {
 		r[id] = canvas.NewRectangle(color.White)
 	}
 	return r
@@ -96,7 +96,7 @@ func TestFullScreenSelectsConsole(t *testing.T) {
 func TestDefaultRackBlocks(t *testing.T) {
 	doc, err := layoutlang.Parse(layoutSource())
 	require.NoError(t, err)
-	assert.ElementsMatch(t, []string{"transport", "p6", "fx", "pads", "seq", "keys"}, doc.RackNames())
+	assert.ElementsMatch(t, []string{"transport", "p6", "fx", "pads", "seq", "keys", "paks"}, doc.RackNames())
 
 	racks := map[string][]string{
 		"transport": {"tempo"},
@@ -105,6 +105,7 @@ func TestDefaultRackBlocks(t *testing.T) {
 		"pads":      {"padFloat", "padListen", "padDensity", "badge", "padGrid"},
 		"seq":       {"seqHeader", "seqControls", "seqGrid"},
 		"keys":      {"keyboardOct", "keyboardKeys"},
+		"paks":      {"paksHeader", "paksList"},
 	}
 	for name, ids := range racks {
 		t.Run(name, func(t *testing.T) {
@@ -207,25 +208,29 @@ func TestConsoleRevealsKeyboard(t *testing.T) {
 }
 
 // TestConsolePreservesRackState reproduces the round-trip bug: the console
-// force-shows FX and KEYS; leaving it must restore the racks the user had before
-// (here: both off), not leave them stuck on (which crammed the normal layout and
-// pushed the pads off-screen).
+// force-shows FX, KEYS and PAKS; leaving it must restore the racks the user had
+// before (here: all off), not leave them stuck on (which crammed the normal
+// layout and pushed the pads off-screen).
 func TestConsolePreservesRackState(t *testing.T) {
 	u := newTestUI(t)
-	// Default state: fx / keys are off; pads on.
+	// Default state: fx / keys / paks are off; pads on.
 	require.False(t, u.fxRack.Object().Visible())
 	require.False(t, u.keyboardRack.Object().Visible())
+	require.False(t, u.paksRack.Object().Visible())
 	require.True(t, u.padRackObj.Visible())
 
-	u.toggleConsole() // enter console — force-shows the two racks
+	u.toggleConsole() // enter console — force-shows the racks
 	assert.True(t, u.fxRack.Object().Visible())
 	assert.True(t, u.keyboardRack.Object().Visible())
+	assert.True(t, u.paksRack.Object().Visible(), "console reveals the paks rack")
 
 	u.toggleConsole() // back to normal — must restore the prior (off) state
 	assert.False(t, u.fxRack.Object().Visible(), "FX restored to off")
 	assert.False(t, u.keyboardRack.Object().Visible(), "KEYS restored to off")
+	assert.False(t, u.paksRack.Object().Visible(), "PAKS restored to off")
 	assert.False(t, u.fxBtn.On())
 	assert.False(t, u.keysBtn.On())
+	assert.False(t, u.paksBtn.On())
 	assert.True(t, u.padRackObj.Visible(), "pads still visible")
 }
 

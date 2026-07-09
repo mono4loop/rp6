@@ -27,12 +27,15 @@ layout console when fullscreen {
       status
     }
 
-    // Left rail: transport, then the VU meter as a horizontal strip right below
-    // it (not the wide vertical meter), with a spacer filling the rest.
-    left: VBox {
-      transport
-      vu(orientation: horizontal)
-      Spacer
+    // Left rail: transport + the VU meter (horizontal strip) on top, and the
+    // sample-pak selector filling the rest of the tall rail below them (on by
+    // default in the console — that big empty column is just right for it).
+    left: Border {
+      top: VBox {
+        transport
+        vu(orientation: horizontal)
+      }
+      center: paks(show: true)
     }
 
     // Right rail: the effect rack(s) stacked. `show: true` turns FX on when the

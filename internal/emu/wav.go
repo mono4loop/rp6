@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"sync"
 )
 
 // Clip is decoded PCM audio: interleaved float32 samples in [-1, 1], plus the
@@ -323,10 +324,32 @@ func resampleSinc(in []float32, channels, srcRate, dstRate int) []float32 {
 	return out
 }
 
-// sincTable precomputes the windowed-sinc kernel for each fractional phase, at
-// the given cutoff (normalized to the source Nyquist). Each phase's taps are
-// normalized to sum to 1 so the resampler has unity passband gain.
+// sincTable returns the windowed-sinc kernel table for cutoff, building it once
+// and caching it. A kit's pads usually share the same source→sink rate ratio (so
+// the same cutoff), and the table is ~64 KB of transcendental evaluations; caching
+// it avoids rebuilding an identical table for every one of the (up to 48) pads
+// loaded, which was a real chunk of the pak-load time. The cached table is
+// read-only, so the shared pointer is safe for concurrent resamples.
 func sincTable(cutoff float64) *[sincPhases][sincTaps]float32 {
+	sincCacheMu.Lock()
+	defer sincCacheMu.Unlock()
+	if t, ok := sincCache[cutoff]; ok {
+		return t
+	}
+	t := buildSincTable(cutoff)
+	sincCache[cutoff] = t
+	return t
+}
+
+var (
+	sincCacheMu sync.Mutex
+	sincCache   = map[float64]*[sincPhases][sincTaps]float32{}
+)
+
+// buildSincTable precomputes the windowed-sinc kernel for each fractional phase,
+// at the given cutoff (normalized to the source Nyquist). Each phase's taps are
+// normalized to sum to 1 so the resampler has unity passband gain.
+func buildSincTable(cutoff float64) *[sincPhases][sincTaps]float32 {
 	var table [sincPhases][sincTaps]float32
 	for p := range sincPhases {
 		frac := float64(p) / float64(sincPhases)

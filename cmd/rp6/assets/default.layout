@@ -21,6 +21,7 @@ layout compact when compact {
       p6 if p6_active
       fx
       keys
+      paks
       seq if !seq_docked
     }
     center: Split {
@@ -50,6 +51,7 @@ layout default {
       p6 if p6_active
       fx
       keys
+      paks
       seq if !seq_docked
     }
     center: Split {
@@ -92,6 +94,18 @@ rack p6 {
     delayLevel
     reverbTime
     reverbLevel
+  }
+}
+
+// The sample-pak (kit) selector: a caption + store key on top, a scrolling
+// column of pak keys below (one per installed pak, the loaded one lit). Go fills
+// the list in (paksList) and supplies the header (paksHeader).
+rack paks {
+  RackPanel {
+    Border {
+      top: paksHeader
+      center: paksList
+    }
   }
 }
 

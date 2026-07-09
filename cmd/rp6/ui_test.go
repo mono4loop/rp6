@@ -649,7 +649,54 @@ func (fakeMIDIIn) Path() string              { return "fake:0" }
 func (fakeMIDIIn) Run(midiin.Handlers) error { return nil }
 func (fakeMIDIIn) Close() error              { return nil }
 
-// TestExternalInputGatedByListen checks the listen (eye) toggle silences an
+// TestPaksRackHighlightsActive checks the paks rack lists the installed paks as
+// keys and lights the one matching the active samples directory, and shows a hint
+// when none are installed.
+func TestPaksRackHighlightsActive(t *testing.T) {
+	u := newTestUI(t)
+	u.paksRack.lister = func() []pakItem {
+		return []pakItem{
+			{ID: "a", Name: "Alpha", Dir: "/x/a"},
+			{ID: "b", Name: "Beta", Dir: "/x/b"},
+		}
+	}
+	u.paksRack.refresh("/x/b") // Beta is the loaded pak
+
+	objs := u.paksRack.listBox.Objects
+	require.Len(t, objs, 2, "one key per installed pak")
+	alpha := objs[0].(*components.RackToggle)
+	beta := objs[1].(*components.RackToggle)
+	assert.False(t, alpha.On(), "unloaded pak key is unlit")
+	assert.True(t, beta.On(), "the loaded pak's key is lit")
+
+	// Selecting a key loads that pak.
+	var loaded string
+	u.paksRack.onSelect = func(dir string) { loaded = dir }
+	alpha.Tapped(nil)
+	assert.Equal(t, "/x/a", loaded, "tapping a key loads its pak")
+
+	// Filtering narrows the list by name (case-insensitive), keeping the loaded
+	// pak's key lit when it matches.
+	u.paksRack.search.OnChanged("bet")
+	require.Len(t, u.paksRack.listBox.Objects, 1, "only matching paks shown")
+	assert.True(t, u.paksRack.listBox.Objects[0].(*components.RackToggle).On(), "matched loaded pak stays lit")
+
+	// A filter that matches nothing shows a hint (not an empty box).
+	u.paksRack.search.OnChanged("zzz")
+	require.Len(t, u.paksRack.listBox.Objects, 1, "no-match hint shown")
+	_, isToggle := u.paksRack.listBox.Objects[0].(*components.RackToggle)
+	assert.False(t, isToggle, "no-match entry is a hint label, not a pak key")
+
+	// Clearing the filter restores the full list.
+	u.paksRack.search.OnChanged("")
+	require.Len(t, u.paksRack.listBox.Objects, 2, "clearing the filter restores all paks")
+
+	// No installed paks -> a single hint entry, nothing lit.
+	u.paksRack.lister = func() []pakItem { return nil }
+	u.paksRack.refresh("")
+	require.Len(t, u.paksRack.listBox.Objects, 1, "empty state shows a hint")
+}
+
 // external controller: with it off, a pad hit from the controller neither plays
 // nor changes the selection.
 func TestExternalInputGatedByListen(t *testing.T) {

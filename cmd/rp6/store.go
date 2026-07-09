@@ -90,6 +90,24 @@ func installedPaks() map[string]string {
 	return dirs
 }
 
+// installedPakItems lists the installed sample paks for the paks rack (name +
+// directory), sorted by name. Empty on any error or when none are installed.
+func (u *ui) installedPakItems() []pakItem {
+	dir, err := paksSamplesDir()
+	if err != nil {
+		return nil
+	}
+	list, err := samplepak.List(dir)
+	if err != nil {
+		return nil
+	}
+	items := make([]pakItem, 0, len(list))
+	for _, in := range list {
+		items = append(items, pakItem{ID: in.Manifest.ID, Name: in.Manifest.Name, Dir: in.Dir})
+	}
+	return items
+}
+
 // storeEntryCard renders one catalog entry: cover image, name, metadata
 // (author • license • version • size), description, and an action button that
 // toggles between Install (download + install, which then flips the button to
@@ -188,6 +206,7 @@ func (u *ui) installFromStore(e samplepak.CatalogEntry, onDone func(installedDir
 		}
 		fyne.Do(func() {
 			u.setStatus("installed pak: " + m.Name + " — press Select to load it")
+			u.refreshPaksRack() // the new pak now appears in the paks rack
 			onDone(installed)
 		})
 	}()
