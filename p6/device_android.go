@@ -41,7 +41,7 @@ func OpenPath(_ string, cfg Config) (*Device, error) {
 	d := New(midibridge.Writer(outID), cfg)
 	d.path = pathPrefix + outName
 
-	closer := &androidCloser{outID: outID}
+	closer := &androidCloser{}
 
 	// Wire the P-6's MIDI input (if any) so Listen reflects hardware pad presses.
 	if inID, _, ok := findBridgeInput(isP6Name); ok {
@@ -74,15 +74,15 @@ func findBridgeInput(match func(string) bool) (id, name string, ok bool) {
 	return "", "", false
 }
 
-// androidCloser releases the bridge resources when the Device is closed:
-// it detaches the output sender and closes the input reader (unblocking Listen).
+// androidCloser closes this Device's input reader, unblocking Listen. The
+// physical USB transport owns the output sender and removes it only when the
+// hardware disconnects; clearing it here would break a later OpenPath while the
+// same P-6 remains attached.
 type androidCloser struct {
-	outID  string
 	reader *midibridge.InputReader
 }
 
 func (c *androidCloser) Close() error {
-	midibridge.ClearOutput(c.outID)
 	if c.reader != nil {
 		c.reader.Close()
 	}
