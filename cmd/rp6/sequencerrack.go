@@ -285,29 +285,44 @@ func (r *sequencerRack) copyCurrent() {
 // syncFromEngine refreshes all widgets to match the engine (after a load).
 func (r *sequencerRack) syncFromEngine() {
 	r.tracksStep.SetValueSilent(r.seq.Tracks())
-	r.applyTracks(r.seq.Tracks())
+	changed := r.applyTracks(r.seq.Tracks())
 	for t := 0; t < r.seq.MaxTracks(); t++ {
 		r.trackBtns[t].SetLabel(padLabelForID(r.seq.Pad(t)))
 		r.trackBtns[t].SetAccent(bankNRGBAForID(r.seq.Pad(t)))
 		r.trackBtns[t].SetOn(!r.seq.Muted(t)) // lit as a label; dark while muted
 		r.setTrackAccent(t)
-		r.applyBars(t, r.seq.Bars(t))
+		if r.applyBars(t, r.seq.Bars(t)) {
+			changed = true
+		}
 	}
 	r.disarm() // loading a sequence clears the armed track
 	r.refreshCells()
-	r.layoutChanged()
+	// A full relayout is only needed when the set of visible tracks/bars changed;
+	// the per-cell/-track widgets refresh themselves, and pad labels are fixed
+	// width, so a same-shape load (the common pak switch) skips the costly
+	// window-tree refresh.
+	if changed {
+		r.layoutChanged()
+	}
 }
 
-func (r *sequencerRack) applyTracks(n int) {
+func (r *sequencerRack) applyTracks(n int) bool {
 	r.seq.SetTracks(n)
 	n = r.seq.Tracks()
+	changed := false
 	for t, block := range r.blocks {
-		if t < n {
+		want := t < n
+		if block.Visible() == want {
+			continue
+		}
+		changed = true
+		if want {
 			block.Show()
 		} else {
 			block.Hide()
 		}
 	}
+	return changed
 }
 
 // cycleArmedBars advances the armed track's bar count (wrapping at maxBars).
@@ -321,16 +336,23 @@ func (r *sequencerRack) cycleArmedBars() {
 	r.layoutChanged()
 }
 
-func (r *sequencerRack) applyBars(track, n int) {
+func (r *sequencerRack) applyBars(track, n int) bool {
 	r.seq.SetBars(track, n)
 	n = r.seq.Bars(track)
+	changed := false
 	for b, row := range r.barRows[track] {
-		if b < n {
+		want := b < n
+		if row.Visible() == want {
+			continue
+		}
+		changed = true
+		if want {
 			row.Show()
 		} else {
 			row.Hide()
 		}
 	}
+	return changed
 }
 
 func (r *sequencerRack) play() {
