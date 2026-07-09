@@ -307,6 +307,8 @@ func TestEmulatorOpenAndTrigger(t *testing.T) {
 	e, err := Open(dir, p6.DefaultConfig())
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = e.Close() })
+	// Keep the capture sink from consuming voices while this test inspects them.
+	require.NoError(t, e.sink.Stop())
 
 	assert.Equal(t, 2, e.Loaded())
 	assert.Contains(t, e.Path(), dir)
@@ -337,6 +339,8 @@ func TestEmulatorPlayNote(t *testing.T) {
 	e, err := Open(dir, p6.DefaultConfig())
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = e.Close() })
+	// Keep the capture sink from consuming voices while this test inspects them.
+	require.NoError(t, e.sink.Stop())
 
 	// The default selection (A1, id 0) is loaded, so keyboard notes pitch it.
 	require.NoError(t, e.PlayNote(p6.KeyboardCenterNote, 100))
