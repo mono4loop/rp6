@@ -223,9 +223,11 @@ HTTP works; there's nothing RP6-specific on the server side.
   device badge. Its tap calls `u.openSampleStore()`.
 - **Store dialog + install** (`cmd/rp6/store.go`, `!js` — desktop **and**
   mobile): fetches the catalog off the UI thread, lists each entry (cover, name,
-  metadata, description) and shows either **Install** (download → install →
-  select) or, for packs already on disk, **Select** (load that installed pak).
-  All network/disk work runs in goroutines; UI updates go through `fyne.Do`.
+  metadata, description) and shows either **Install** (download + install, which
+  then flips that entry's button to **Select**) or, for packs already on disk,
+  **Select** (load that installed pak). The store stays open across installs, so
+  several packs can be installed in a row. All network/disk work runs in
+  goroutines; UI updates go through `fyne.Do`.
 - **The platform seam** is `paksSamplesDir() (string, error)` — the *only*
   platform-specific piece. `store.go` and the CLI use it opaquely:
   - `cmd/rp6/paksdir_desktop.go` (`!js && !android && !ios`) → `store.SamplesDir()`.

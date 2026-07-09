@@ -35,10 +35,11 @@ func storeURL() string {
 
 // openSampleStore opens the sample-pak store: it fetches the catalog from
 // storeURL() and lists each pak with its cover, name, description and license.
-// New packs get an Install button (download + install + load); already-installed
-// packs get a Select button (load). Network/disk work runs off the UI thread;
-// updates are marshaled back through fyne.Do. Available on desktop and mobile
-// (the web build stubs it out — see pak_stub.go).
+// New packs get an Install button (download + install; the button then flips to
+// Select); already-installed packs get a Select button (load). The store stays
+// open across installs. Network/disk work runs off the UI thread; updates are
+// marshaled back through fyne.Do. Available on desktop and mobile (the web build
+// stubs it out — see pak_stub.go).
 func (u *ui) openSampleStore() {
 	list := container.NewVBox(widget.NewLabel("Loading catalog…"))
 	scroll := container.NewVScroll(list)
@@ -90,29 +91,46 @@ func installedPaks() map[string]string {
 }
 
 // storeEntryCard renders one catalog entry: cover image, name, metadata
-// (author • license • version • size), description, and an action — an Install
-// button, or (when the pak is already installed at installedDir) a Select button
-// that loads it into the emulator.
+// (author • license • version • size), description, and an action button that
+// toggles between Install (download + install, which then flips the button to
+// Select) and Select (load the installed pak). The store stays open across
+// installs so several packs can be installed in a row.
 func (u *ui) storeEntryCard(e samplepak.CatalogEntry, dlg dialog.Dialog, installedDir string) fyne.CanvasObject {
 	title := widget.NewLabelWithStyle(e.Name, fyne.TextAlignLeading, fyne.TextStyle{Bold: true})
 	metaLbl := widget.NewLabel(strings.Join(nonEmpty(e.Author, e.License, e.Version, humanSize(e.Size)), "  •  "))
 	desc := widget.NewLabel(e.Description)
 	desc.Wrapping = fyne.TextWrapWord
 
-	var action *widget.Button
-	if installedDir != "" {
-		action = widget.NewButtonWithIcon("Select", theme.ConfirmIcon(), func() {
-			if dlg != nil {
-				dlg.Hide()
-			}
-			u.setEmuSamples(installedDir)
-		})
-	} else {
-		action = widget.NewButtonWithIcon("Install", theme.DownloadIcon(), func() {
-			u.installFromStore(e, dlg)
-		})
+	actionRow := container.NewHBox()
+	var setAction func(installed string)
+	setAction = func(installed string) {
+		var b *widget.Button
+		if installed != "" {
+			b = widget.NewButtonWithIcon("Select", theme.ConfirmIcon(), func() {
+				if dlg != nil {
+					dlg.Hide()
+				}
+				u.setEmuSamples(installed)
+			})
+		} else {
+			b = widget.NewButtonWithIcon("Install", theme.DownloadIcon(), func() {
+				b.SetText("Installing…")
+				b.Disable()
+				u.installFromStore(e, func(dir string) {
+					if dir == "" { // failed — restore the Install button
+						b.SetText("Install")
+						b.Enable()
+						return
+					}
+					setAction(dir) // installed — becomes Select
+				})
+			})
+		}
+		actionRow.Objects = []fyne.CanvasObject{b, layout.NewSpacer()}
+		actionRow.Refresh()
 	}
-	info := container.NewVBox(title, metaLbl, desc, container.NewHBox(action, layout.NewSpacer()))
+	setAction(installedDir)
+	info := container.NewVBox(title, metaLbl, desc, actionRow)
 
 	cover := canvas.NewImageFromResource(theme.FileImageIcon())
 	cover.FillMode = canvas.ImageFillContain
@@ -135,37 +153,42 @@ func (u *ui) storeEntryCard(e samplepak.CatalogEntry, dlg dialog.Dialog, install
 	)
 }
 
-// installFromStore downloads the entry's pak, installs it into the samples
-// directory, and switches the emulator to it. Network + disk work runs off the
-// UI thread. The download is staged in the samples directory (same volume as the
-// install, and writable on Android).
-func (u *ui) installFromStore(e samplepak.CatalogEntry, dlg dialog.Dialog) {
+// installFromStore downloads the entry's pak and installs it into the samples
+// directory, without closing the store or loading it (the user presses Select to
+// load). onDone is called on the UI thread with the installed directory on
+// success, or "" on failure. Network + disk work runs off the UI thread; the
+// download is staged in the samples directory (same volume as the install, and
+// writable on Android).
+func (u *ui) installFromStore(e samplepak.CatalogEntry, onDone func(installedDir string)) {
 	u.setStatus("downloading " + e.Name + "…")
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 		defer cancel()
+		fail := func(msg string) {
+			fyne.Do(func() {
+				u.setStatus(msg)
+				onDone("")
+			})
+		}
 		dir, err := paksSamplesDir()
 		if err != nil {
-			fyne.Do(func() { u.setStatus("couldn't locate samples dir: " + err.Error()) })
+			fail("couldn't locate samples dir: " + err.Error())
 			return
 		}
 		tmp, err := samplepak.DownloadTemp(ctx, e.DownloadURL, dir)
 		if err != nil {
-			fyne.Do(func() { u.setStatus("download failed: " + err.Error()) })
+			fail("download failed: " + err.Error())
 			return
 		}
 		defer os.Remove(tmp)
 		installed, m, err := samplepak.Install(tmp, dir)
 		if err != nil {
-			fyne.Do(func() { u.setStatus("install failed: " + err.Error()) })
+			fail("install failed: " + err.Error())
 			return
 		}
 		fyne.Do(func() {
-			u.setStatus("installed pak: " + m.Name)
-			if dlg != nil {
-				dlg.Hide()
-			}
-			u.setEmuSamples(installed)
+			u.setStatus("installed pak: " + m.Name + " — press Select to load it")
+			onDone(installed)
 		})
 	}()
 }
