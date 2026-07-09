@@ -1,5 +1,6 @@
 /rp6
 /build
+/paks/
 /.flatpak-builder/
 /docs/hardware/macropad/__pycache__/
 .kata.local.toml
