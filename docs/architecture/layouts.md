@@ -163,10 +163,15 @@ what they mean:
 - **`vu(orientation: horizontal|vertical)`** — the VU meter's orientation
   (`applyMeterOrientation`). Applied on every relayout (idempotent). This
   replaced the old Go logic that derived orientation from `compact`.
-- **`fx(show: true|false)` / `dlyrev(show: true|false)`** — a rack's default
-  visibility, applied **only when the variant is entered** (`variantChanged`), so
-  a variant sets its default visible racks without fighting the user's FX/DLY-REV
-  toggles while that variant stays on screen (`applyRackShow`).
+- **`fx(show: true|false)` / `dlyrev(show: true|false)` / `keys(show: true)`** —
+  a rack's default visibility, applied **only when the variant is entered**
+  (`variantChanged`), so a variant sets its default visible racks without
+  fighting the user's toggles while that variant stays on screen (`applyRackShow`).
+  Each override remembers the rack's prior visibility (`ui.forced`, keyed by id)
+  and is **undone on the next variant switch** (`restoreForcedRacks`), so leaving
+  a variant restores the racks to how the user had them — e.g. leaving the
+  console doesn't leave its force-shown racks stuck on in the normal layout. This
+  is generic: any variant + any rack using `show:` is handled, no hardcoded list.
 
 ## 8. The full-screen / console gotcha
 

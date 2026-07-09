@@ -188,23 +188,65 @@ func TestConsoleRevealsFxDlyRev(t *testing.T) {
 }
 
 // TestConsoleRevealsKeyboard checks the keyboard is off by default (windowed),
-// turns on when the console (full screen) is entered, and stays on when leaving
-// full screen — so it adapts gracefully back into the windowed layout.
+// turns on when the console is entered, is taller there, and — crucially —
+// returns to its prior hidden state when the console is left (via the real
+// setConsole path, not a raw relayout).
 func TestConsoleRevealsKeyboard(t *testing.T) {
 	u := newTestUI(t)
 	require.False(t, u.keyboardRack.Object().Visible(), "keyboard hidden by default (windowed)")
 	compactH := u.keyboardRack.piano.MinSize().Height
 
-	u.fullScreen = true
-	u.relayout()
+	u.setConsole(true)
 	assert.True(t, u.keyboardRack.Object().Visible(), "console reveals the keyboard on entry")
 	assert.True(t, u.keysBtn.On())
 	assert.Greater(t, u.keyboardRack.piano.MinSize().Height, compactH, "keyboard is taller in the console")
 
-	u.fullScreen = false
-	u.relayout()
-	assert.True(t, u.keyboardRack.Object().Visible(), "keyboard stays on after leaving full screen")
+	u.setConsole(false)
+	assert.False(t, u.keyboardRack.Object().Visible(), "keyboard returns to its prior hidden state on leaving the console")
+	assert.False(t, u.keysBtn.On())
 	assert.Equal(t, compactH, u.keyboardRack.piano.MinSize().Height, "keyboard returns to compact height when windowed")
+}
+
+// TestConsolePreservesRackState reproduces the round-trip bug: the console
+// force-shows DLY/REV, FX and KEYS; leaving it must restore the racks the user
+// had before (here: all three off), not leave them stuck on (which crammed the
+// normal layout and pushed the pads off-screen).
+func TestConsolePreservesRackState(t *testing.T) {
+	u := newTestUI(t)
+	// Default state: dlyrev / fx / keys are off; pads on.
+	require.False(t, u.dlyRevObj.Visible())
+	require.False(t, u.fxRack.Object().Visible())
+	require.False(t, u.keyboardRack.Object().Visible())
+	require.True(t, u.padRackObj.Visible())
+
+	u.toggleConsole() // enter console — force-shows the three racks
+	assert.True(t, u.dlyRevObj.Visible())
+	assert.True(t, u.fxRack.Object().Visible())
+	assert.True(t, u.keyboardRack.Object().Visible())
+
+	u.toggleConsole() // back to normal — must restore the prior (off) state
+	assert.False(t, u.dlyRevObj.Visible(), "DLY/REV restored to off")
+	assert.False(t, u.fxRack.Object().Visible(), "FX restored to off")
+	assert.False(t, u.keyboardRack.Object().Visible(), "KEYS restored to off")
+	assert.False(t, u.dlyRevBtn.On())
+	assert.False(t, u.fxBtn.On())
+	assert.False(t, u.keysBtn.On())
+	assert.True(t, u.padRackObj.Visible(), "pads still visible")
+}
+
+// TestConsoleKeepsUserToggleWithinConsole checks that turning a force-shown rack
+// off while the console stays open is remembered as the state to restore.
+func TestConsoleKeepsUserToggleWithinConsole(t *testing.T) {
+	u := newTestUI(t)
+	u.toggleConsole() // enter — fx forced on
+	require.True(t, u.fxRack.Object().Visible())
+
+	// User turns FX off while in the console; it should stay off there.
+	u.toggleVisible(u.fxRack.Object(), u.fxBtn)
+	assert.False(t, u.fxRack.Object().Visible())
+
+	u.toggleConsole() // leave — fx should remain off (matches pre-console)
+	assert.False(t, u.fxRack.Object().Visible())
 }
 
 // TestToggleFullScreenRelayouts exercises the F11 path against the real widgets:

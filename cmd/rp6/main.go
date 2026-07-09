@@ -145,6 +145,13 @@ type ui struct {
 	fullScreen     bool
 	windowedSize   fyne.Size
 	lastFullScreen bool
+	// forced tracks the racks the active layout variant force-shows/hides via a
+	// `show:` property, keyed by rack id, each remembering the visibility the
+	// rack had *before* the variant forced it. On a variant switch these are
+	// restored (so e.g. leaving the console doesn't leave its force-shown racks
+	// stuck on), then the new variant's overrides repopulate the map. Generic:
+	// any variant + any rack using `show:` is handled, no hardcoded list.
+	forced map[string]savedRack
 
 	// bottom-bar visibility toggles (backlit rack labels)
 	padBtn     *components.RackToggle
@@ -630,46 +637,59 @@ func (u *ui) toggleSeqView() {
 	u.relayout()
 }
 
-// toggleFullScreen flips the main window between full screen and windowed, then
-// re-lays out — full screen selects the "console" layout (console.layout),
-// windowed uses the default/compact layout. Bound to F11 / Ctrl+Shift+Enter.
+// toggleFullScreen toggles the "mixing console" layout (F11 / Ctrl+Shift+Enter).
+func (u *ui) toggleFullScreen() { u.setConsole(!u.fullScreen) }
+
+// toggleConsole toggles the console layout via the bottom-bar CONSOLE button.
+func (u *ui) toggleConsole() { u.setConsole(!u.fullScreen) }
+
+// setConsole enters (on) or leaves (off) the "mixing console" layout, then
+// re-lays out. On desktop it also drives the OS window full screen (the console
+// is `when fullscreen`); on mobile there's no window to toggle (it's already full
+// screen), so it just switches the layout variant — useful on large tablets.
+//
+// The console force-shows some racks (DLY/REV, FX, KEYS via `show: true`). Those
+// are restored to their prior state on the way out by the generic variant-switch
+// handling in selectLayout (see u.forced / applyRackShow), so they don't leak
+// into the normal layout — no console-specific bookkeeping is needed here.
 //
 // SetFullScreen is applied asynchronously (Fyne queues it onto the main loop),
-// so we can't just relayout here and be done: the canvas is still the old size
-// at this point. The authoritative relayout happens from onCanvasResize once the
-// window settles at its new size. Leaving full screen, we also restore the saved
-// windowed size explicitly, because some drivers don't reliably resize the
-// canvas back down on their own (leaving the content laid out at full-screen
-// size and clipped by the smaller window).
-func (u *ui) toggleFullScreen() {
-	if u.win == nil {
-		return
-	}
-	u.fullScreen = !u.fullScreen
-	if u.fullScreen {
-		u.windowedSize = u.win.Canvas().Size() // remember, to restore on exit
-		u.win.SetFullScreen(true)
-	} else {
-		u.win.SetFullScreen(false)
-		if u.windowedSize.Width > 1 && u.windowedSize.Height > 1 {
-			u.win.Resize(u.windowedSize)
+// so we can't rely on the canvas size here; the authoritative relayout happens
+// from onCanvasResize once the window settles. Leaving full screen we also
+// restore the saved windowed size explicitly, because some drivers don't shrink
+// the canvas back on their own (leaving content laid out at full-screen size).
+func (u *ui) setConsole(on bool) {
+	u.fullScreen = on
+	if !onMobile && u.win != nil {
+		if on {
+			u.windowedSize = u.win.Canvas().Size() // remember, to restore on exit
+			u.win.SetFullScreen(true)
+		} else {
+			u.win.SetFullScreen(false)
+			if u.windowedSize.Width > 1 && u.windowedSize.Height > 1 {
+				u.win.Resize(u.windowedSize)
+			}
 		}
 	}
 	u.relayout() // immediate variant switch; onCanvasResize corrects the sizing
 }
 
-// toggleConsole switches to/from the "mixing console" layout via the bottom-bar
-// CONSOLE button. On desktop it goes full screen (which selects the console
-// layout); on a tablet there's no OS window to toggle (it's already full screen),
-// so it just switches the layout variant — useful on large screens where the
-// wide console arrangement fits.
-func (u *ui) toggleConsole() {
-	if onMobile {
-		u.fullScreen = !u.fullScreen
-		u.relayout()
-		return
+// savedRack captures a toggleable rack's visibility so it can be restored.
+type savedRack struct {
+	obj fyne.CanvasObject
+	btn *components.RackToggle
+	on  bool
+}
+
+// restoreForcedRacks undoes the visibility overrides the previous layout variant
+// applied via `show:`, restoring each rack to the visibility it had before that
+// variant forced it. Called on a variant switch, before the new variant's
+// overrides are (re)applied during the build.
+func (u *ui) restoreForcedRacks() {
+	for _, s := range u.forced {
+		u.setVisible(s.obj, s.btn, s.on)
 	}
-	u.toggleFullScreen()
+	u.forced = nil
 }
 
 // addRackShortcut binds Ctrl+Shift+<key> to fn on the window canvas.
@@ -1169,17 +1189,25 @@ func (u *ui) setVisible(o fyne.CanvasObject, btn *components.RackToggle, visible
 	btn.SetOn(visible)
 }
 
-// applyRackShow sets a toggle-able rack's visibility from a layout `show:`
-// property, but only when the layout variant was just entered (variantChanged) —
-// so a variant declares its default visible racks without overriding the user's
-// manual toggle while that variant stays on screen. Called from configureComponent.
-func (u *ui) applyRackShow(props map[string]string, o fyne.CanvasObject, btn *components.RackToggle) {
+// applyRackShow applies a toggle-able rack's `show:` visibility from the layout,
+// but only when the variant was just entered (variantChanged) — so a variant
+// declares its default visible racks without overriding the user's manual toggle
+// while that variant stays on screen. It records the rack's prior visibility in
+// u.forced (keyed by id) so restoreForcedRacks can put it back when the variant
+// is left. Called from configureComponent.
+func (u *ui) applyRackShow(id string, props map[string]string, o fyne.CanvasObject, btn *components.RackToggle) {
 	if !u.variantChanged {
 		return
 	}
-	if s, ok := props["show"]; ok {
-		u.setVisible(o, btn, s == "true")
+	s, ok := props["show"]
+	if !ok {
+		return
 	}
+	if u.forced == nil {
+		u.forced = map[string]savedRack{}
+	}
+	u.forced[id] = savedRack{obj: o, btn: btn, on: o.Visible()} // remember, to restore on leave
+	u.setVisible(o, btn, s == "true")
 }
 
 // toggleVisible flips an object's visibility and re-lays out the window.

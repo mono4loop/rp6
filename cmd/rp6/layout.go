@@ -81,6 +81,12 @@ func (u *ui) selectLayout(reg layoutspec.Registry) fyne.CanvasObject {
 	name, _ := u.layoutDoc.SelectedName(env)
 	u.variantChanged = name != u.activeVariant
 	u.activeVariant = name
+	if u.variantChanged {
+		// Undo the previous variant's `show:` overrides before the new variant's
+		// are applied during the build — so a variant's force-shown racks are
+		// restored to the user's prior state when it's left (generic; see u.forced).
+		u.restoreForcedRacks()
+	}
 	root := layoutspec.BuildConfig(reg, u.configureComponent, u.layoutDoc.Select(env))
 	u.variantChanged = false
 	return root
@@ -102,11 +108,11 @@ func (u *ui) configureComponent(id string, props map[string]string) {
 			u.applyMeterOrientation(o == "horizontal")
 		}
 	case "fx":
-		u.applyRackShow(props, u.fxRack.Object(), u.fxBtn)
+		u.applyRackShow("fx", props, u.fxRack.Object(), u.fxBtn)
 	case "dlyrev":
-		u.applyRackShow(props, u.dlyRevObj, u.dlyRevBtn)
+		u.applyRackShow("dlyrev", props, u.dlyRevObj, u.dlyRevBtn)
 	case "keys":
-		u.applyRackShow(props, u.keyboardRack.Object(), u.keysBtn)
+		u.applyRackShow("keys", props, u.keyboardRack.Object(), u.keysBtn)
 	}
 }
 
