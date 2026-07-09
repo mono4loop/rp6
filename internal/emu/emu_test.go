@@ -72,6 +72,33 @@ func TestResampleNoOp(t *testing.T) {
 	assert.Equal(t, c.Samples, out)
 }
 
+// TestResampleSincQuality checks the band-limited resampler reconstructs a pure
+// tone accurately across a rate change (44.1k -> 48k), which linear
+// interpolation could not (it rolls off / images the highs — the audible
+// "lo-fi" artifact). The resampler is phase-aligned (output frame f samples
+// source position f*srcRate/dstRate), so the expected value at f is the same
+// sine evaluated at the destination rate.
+func TestResampleSincQuality(t *testing.T) {
+	const srcRate, dstRate, freq = 44100, 48000, 3000.0
+	in := make([]float32, 0, srcRate) // 1s mono
+	for n := 0; n < srcRate; n++ {
+		in = append(in, float32(0.8*math.Sin(2*math.Pi*freq*float64(n)/srcRate)))
+	}
+	c := &Clip{Samples: in, Channels: 1, SampleRate: srcRate}
+	out := c.Resample(1, dstRate)
+
+	var maxErr float64
+	// Skip the kernel-width edges where truncation reduces the window.
+	for f := sincTaps; f < len(out)-sincTaps; f++ {
+		want := 0.8 * math.Sin(2*math.Pi*freq*float64(f)/dstRate)
+		if e := math.Abs(float64(out[f]) - want); e > maxErr {
+			maxErr = e
+		}
+	}
+	// Well below −60 dB (0.001); linear interpolation is ~10× worse here.
+	assert.Less(t, maxErr, 1e-3, "sinc resample peak error too high: %v", maxErr)
+}
+
 func TestRemixDownmix(t *testing.T) {
 	// Stereo->mono averages the source channels rather than dropping one.
 	out := remixChannels([]float32{1.0, -1.0}, 2, 1)

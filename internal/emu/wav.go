@@ -216,8 +216,8 @@ func EncodeWAV(w io.Writer, samples []float32, channels, sampleRate int) error {
 // Resample converts a clip to the given channel count and sample rate,
 // returning interleaved float32 samples. Channel remixing is done first (mono
 // duplicated to N channels, extra channels averaged down to fewer), then the
-// rate is converted with linear interpolation. A clip already in the target
-// format is returned as-is (copied).
+// rate is converted with a band-limited (windowed-sinc) resampler. A clip
+// already in the target format is returned as-is (copied).
 func (c *Clip) Resample(dstChannels, dstRate int) []float32 {
 	if dstChannels <= 0 {
 		dstChannels = 1
@@ -231,7 +231,7 @@ func (c *Clip) Resample(dstChannels, dstRate int) []float32 {
 	if c.SampleRate == dstRate {
 		return remixed
 	}
-	return resampleLinear(remixed, dstChannels, c.SampleRate, dstRate)
+	return resampleSinc(remixed, dstChannels, c.SampleRate, dstRate)
 }
 
 // remixChannels converts interleaved audio from srcCh to dstCh channels.
@@ -263,9 +263,23 @@ func remixChannels(in []float32, srcCh, dstCh int) []float32 {
 	return out
 }
 
-// resampleLinear resamples interleaved audio from srcRate to dstRate using
-// per-channel linear interpolation.
-func resampleLinear(in []float32, channels, srcRate, dstRate int) []float32 {
+// Windowed-sinc resampler parameters. sincHalf taps each side gives a 2*sincHalf
+// tap kernel; sincPhases quantizes the fractional sample position. These give a
+// stopband well below −70 dB — far cleaner than linear interpolation, whose
+// imaging/roll-off is audible as a subtle "lo-fi" downsampled quality.
+const (
+	sincHalf   = 16
+	sincTaps   = 2 * sincHalf
+	sincPhases = 512
+)
+
+// resampleSinc resamples interleaved audio from srcRate to dstRate using a
+// band-limited windowed-sinc (Blackman-windowed) polyphase kernel. For
+// downsampling the sinc cutoff is lowered to the destination Nyquist to prevent
+// aliasing; for upsampling the cutoff is the source Nyquist. The kernel is
+// precomputed per phase (no transcendentals in the inner loop) and normalized so
+// the passband gain is unity.
+func resampleSinc(in []float32, channels, srcRate, dstRate int) []float32 {
 	if channels <= 0 {
 		channels = 1
 	}
@@ -277,21 +291,79 @@ func resampleLinear(in []float32, channels, srcRate, dstRate int) []float32 {
 	if dstFrames <= 0 {
 		return nil
 	}
+
+	cutoff := 1.0 // normalized to the source Nyquist
+	if dstRate < srcRate {
+		cutoff = float64(dstRate) / float64(srcRate)
+	}
+	table := sincTable(cutoff)
+
 	out := make([]float32, dstFrames*channels)
-	ratio := float64(srcRate) / float64(dstRate)
+	ratio := float64(srcRate) / float64(dstRate) // input frames per output frame
 	for f := range dstFrames {
-		srcPos := float64(f) * ratio
-		i0 := int(srcPos)
-		frac := float32(srcPos - float64(i0))
-		i1 := i0 + 1
-		if i1 >= srcFrames {
-			i1 = srcFrames - 1
+		center := float64(f) * ratio
+		i0 := int(center)
+		phase := int((center - float64(i0)) * sincPhases)
+		if phase >= sincPhases {
+			phase = sincPhases - 1
 		}
-		for ch := 0; ch < channels; ch++ {
-			a := in[i0*channels+ch]
-			b := in[i1*channels+ch]
-			out[f*channels+ch] = a + (b-a)*frac
+		kernel := &table[phase]
+		for c := 0; c < channels; c++ {
+			var acc float32
+			for t := 0; t < sincTaps; t++ {
+				idx := i0 + t - (sincHalf - 1) // tap 0 -> i0-(sincHalf-1)
+				if idx < 0 || idx >= srcFrames {
+					continue
+				}
+				acc += in[idx*channels+c] * kernel[t]
+			}
+			out[f*channels+c] = acc
 		}
 	}
 	return out
+}
+
+// sincTable precomputes the windowed-sinc kernel for each fractional phase, at
+// the given cutoff (normalized to the source Nyquist). Each phase's taps are
+// normalized to sum to 1 so the resampler has unity passband gain.
+func sincTable(cutoff float64) *[sincPhases][sincTaps]float32 {
+	var table [sincPhases][sincTaps]float32
+	for p := range sincPhases {
+		frac := float64(p) / float64(sincPhases)
+		var sum float64
+		var w [sincTaps]float64
+		for t := range sincTaps {
+			k := t - (sincHalf - 1) // input offset for this tap
+			x := frac - float64(k)  // distance (in source samples) from the output point
+			w[t] = windowedSinc(x, cutoff)
+			sum += w[t]
+		}
+		if sum == 0 {
+			sum = 1
+		}
+		for t := range sincTaps {
+			table[p][t] = float32(w[t] / sum)
+		}
+	}
+	return &table
+}
+
+// windowedSinc evaluates a Blackman-windowed sinc at distance x (in source
+// samples) with the given cutoff (normalized to the source Nyquist, ≤1). It is
+// zero outside the ±sincHalf window.
+func windowedSinc(x, cutoff float64) float64 {
+	if x <= -float64(sincHalf) || x >= float64(sincHalf) {
+		return 0
+	}
+	var s float64
+	if x == 0 {
+		s = cutoff
+	} else {
+		px := math.Pi * x
+		s = math.Sin(cutoff*px) / px
+	}
+	// Blackman window over [-sincHalf, sincHalf].
+	n := (x + float64(sincHalf)) / (2 * float64(sincHalf)) // 0..1
+	win := 0.42 - 0.5*math.Cos(2*math.Pi*n) + 0.08*math.Cos(4*math.Pi*n)
+	return s * win
 }
