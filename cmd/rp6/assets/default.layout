@@ -116,15 +116,7 @@ rack fx {
 }
 
 rack keysfx {
-  RackPanel {
-    Stack {
-      HBox { keysFXTone; keysFXComp; keysFXChorus; keysFXDelay; keysFXReverb } if !mobile
-      VBox {
-        HBox { keysFXTone; keysFXComp; keysFXChorus }
-        HBox { keysFXDelay; keysFXReverb }
-      } if mobile
-    }
-  }
+  RackPanel { HBox { keysFXTone; keysFXComp; keysFXChorus; keysFXDelay; keysFXReverb } }
 }
 
 rack pads {
