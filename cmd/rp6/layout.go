@@ -81,12 +81,6 @@ func (u *ui) selectLayout(reg layoutspec.Registry) fyne.CanvasObject {
 	name, _ := u.layoutDoc.SelectedName(env)
 	u.variantChanged = name != u.activeVariant
 	u.activeVariant = name
-	if u.variantChanged {
-		// Undo the previous variant's `show:` overrides before the new variant's
-		// are applied during the build — so a variant's force-shown racks are
-		// restored to the user's prior state when it's left (generic; see u.forced).
-		u.restoreForcedRacks()
-	}
 	root := layoutspec.BuildConfig(reg, u.configureComponent, u.layoutDoc.Select(env))
 	u.variantChanged = false
 	return root

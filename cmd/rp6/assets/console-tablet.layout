@@ -26,6 +26,7 @@ layout consoletablet when fullscreen && mobile {
   Border {
     bottom: VBox {
       keys(show: true)
+      toggles
       status
     }
 

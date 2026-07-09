@@ -18,7 +18,7 @@ import (
 // embedded layout can be built without a running UI.
 func rp6Registry() layoutspec.Registry {
 	r := layoutspec.Registry{}
-	for _, id := range []string{"transport", "dlyrev", "fx", "seq", "keys", "pads", "vu", "status"} {
+	for _, id := range []string{"transport", "dlyrev", "fx", "seq", "keys", "pads", "vu", "toggles", "status"} {
 		r[id] = canvas.NewRectangle(color.White)
 	}
 	return r
@@ -174,9 +174,8 @@ func TestConsoleRevealsFxDlyRev(t *testing.T) {
 	require.False(t, u.fxRack.Object().Visible(), "fx hidden by default")
 	require.False(t, u.dlyRevObj.Visible(), "dlyrev hidden by default")
 
-	// Enter the console layout (full screen).
-	u.fullScreen = true
-	u.relayout()
+	// Enter the console layout (full screen), via the real toggle path.
+	u.setConsole(true)
 	assert.True(t, u.fxRack.Object().Visible(), "console reveals fx on entry")
 	assert.True(t, u.dlyRevObj.Visible(), "console reveals dlyrev on entry")
 

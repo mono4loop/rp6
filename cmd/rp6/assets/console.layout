@@ -21,6 +21,7 @@ layout console when fullscreen {
     // as tall — the keys expand vertically) above a full-width status bar.
     bottom: VBox {
       keys(show: true)
+      toggles
       status
     }
 

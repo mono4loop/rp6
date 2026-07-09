@@ -21,10 +21,11 @@ var (
 )
 
 const (
-	rackPadX   = 22
-	rackPadY   = 12
-	screwR     = 5
-	screwInset = 11
+	rackPadX     = 22
+	rackPadY     = 12
+	rackPadYThin = 5 // reduced vertical padding for slim single-row strips
+	screwR       = 5
+	screwInset   = 11
 )
 
 // RackPanel wraps content in a rack-unit style panel: a gunmetal gradient face
@@ -32,11 +33,21 @@ const (
 type RackPanel struct {
 	widget.BaseWidget
 	content fyne.CanvasObject
+	padY    float32 // vertical padding (see NewRackPanelThin)
 }
 
 // NewRackPanel wraps content in a rack panel.
 func NewRackPanel(content fyne.CanvasObject) *RackPanel {
-	p := &RackPanel{content: content}
+	p := &RackPanel{content: content, padY: rackPadY}
+	p.ExtendBaseWidget(p)
+	return p
+}
+
+// NewRackPanelThin wraps content in a rack panel with reduced vertical padding —
+// for slim single-row strips (e.g. the status bar) where minimizing height
+// matters. The frame/screws are unchanged; only the top/bottom padding shrinks.
+func NewRackPanelThin(content fyne.CanvasObject) *RackPanel {
+	p := &RackPanel{content: content, padY: rackPadYThin}
 	p.ExtendBaseWidget(p)
 	return p
 }
@@ -81,7 +92,7 @@ func (r *rackRenderer) Destroy() {}
 
 func (r *rackRenderer) MinSize() fyne.Size {
 	cs := r.p.content.MinSize()
-	return fyne.NewSize(cs.Width+2*rackPadX, cs.Height+2*rackPadY)
+	return fyne.NewSize(cs.Width+2*rackPadX, cs.Height+2*r.p.padY)
 }
 
 func (r *rackRenderer) Layout(size fyne.Size) {
@@ -92,8 +103,8 @@ func (r *rackRenderer) Layout(size fyne.Size) {
 	r.hi.Position1 = fyne.NewPos(3, 1.5)
 	r.hi.Position2 = fyne.NewPos(size.Width-3, 1.5)
 
-	r.p.content.Move(fyne.NewPos(rackPadX, rackPadY))
-	r.p.content.Resize(fyne.NewSize(size.Width-2*rackPadX, size.Height-2*rackPadY))
+	r.p.content.Move(fyne.NewPos(rackPadX, r.p.padY))
+	r.p.content.Resize(fyne.NewSize(size.Width-2*rackPadX, size.Height-2*r.p.padY))
 
 	centers := [4]fyne.Position{
 		{X: screwInset, Y: screwInset},

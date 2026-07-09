@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/test"
 	"fyne.io/fyne/v2/theme"
 	"github.com/mono4loop/rp6/internal/effects"
@@ -48,6 +49,10 @@ func newTestUI(t *testing.T) *ui {
 	w := test.NewWindow(nil)
 	t.Cleanup(func() { w.Close() })
 	u.build(w)
+	// Match production's default window size (main() opens ~858x900, a wide
+	// desktop aspect) so the compact/wide classification starts wide — the test
+	// harness otherwise sizes the window to the content's min size.
+	w.Resize(fyne.NewSize(900, 760))
 	return u
 }
 

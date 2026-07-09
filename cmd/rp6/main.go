@@ -91,6 +91,15 @@ type ui struct {
 	audioDevice string
 	win         fyne.Window
 
+	// relayoutReq coalesces resize-driven relayout requests (from onCanvasResize)
+	// onto a single watcher goroutine started in main() (relayoutWatch), which
+	// marshals each through fyne.Do. Routing them through one main()-started
+	// goroutine (rather than spawning one per resize) keeps relayout serialized on
+	// the UI loop and means tests — which call build(), not main() — never run a
+	// background relayout that would race Fyne's shared text shaper.
+	relayoutReq  chan struct{}
+	relayoutStop chan struct{} // closed to stop the relayout watcher on shutdown
+
 	grid         *components.PadGrid
 	padRackObj   fyne.CanvasObject // pad grid + tool column, wrapped as a toggleable rack
 	padGridArea  *fyne.Container   // holds the current grid object (swapped on density toggle)
@@ -165,6 +174,7 @@ type ui struct {
 	statusLED   *components.LED
 	root        fyne.CanvasObject
 	status      *widget.Label
+	controlBar  fyne.CanvasObject       // bottom control bar: section toggles + info button
 	deviceBadge *components.DeviceBadge // pad rack tool row: backlit device nameplate
 	deviceState components.DeviceState  // last-known connection state, re-applied when the badge is rebuilt (float/dock)
 
@@ -189,6 +199,7 @@ func newUI() *ui {
 	u := &ui{bpm: 120, selPad: -1, padLayout: loadPadLayout()}
 	u.activity = &activitySource{}
 	u.meterSrc = u.activity
+	u.relayoutReq = make(chan struct{}, 1) // buffered: coalesces resize relayout requests
 	u.fx = effects.New(u.firePad)
 	u.seq = sequencer.New(8, seqMaxBars, u.firePadVel)
 	return u
@@ -313,10 +324,14 @@ func (u *ui) build(w fyne.Window) {
 	info := widget.NewButtonWithIcon("", theme.InfoIcon(), u.showInfo)
 	info.Importance = widget.LowImportance
 	u.statusLED = components.NewLED(ledRed)
-	u.statusBar = components.NewRackPanel(container.NewBorder(nil, nil,
-		u.statusLED,
-		container.NewHBox(toggles, widget.NewSeparator(), info),
-		u.status))
+
+	// Control bar: the section toggles (left) + the info button (right).
+	u.controlBar = components.NewRackPanel(container.NewBorder(nil, nil, nil, info, toggles))
+
+	// Status strip: the connection LED + status message, in its own slim rack at
+	// the very bottom. NewRackPanelThin keeps it just tall enough for the LED and
+	// text — no taller — to minimize the vertical space it takes.
+	u.statusBar = components.NewRackPanelThin(container.NewBorder(nil, nil, u.statusLED, nil, u.status))
 
 	u.win = w
 
@@ -382,6 +397,7 @@ func (u *ui) relayout() {
 		"keys":      u.keyboardRack.Object(),
 		"pads":      u.padRackObj,
 		"vu":        u.meterArea,
+		"toggles":   u.controlBar,
 		"status":    u.statusBar,
 	}
 
@@ -389,7 +405,7 @@ func (u *ui) relayout() {
 	if u.root == nil {
 		// No document, or no variant matched: fall back to a minimal arrangement
 		// so the window is never blank.
-		u.root = container.NewBorder(u.transportRack, u.statusBar, nil, nil, u.padRackObj)
+		u.root = container.NewBorder(u.transportRack, container.NewVBox(u.controlBar, u.statusBar), nil, nil, u.padRackObj)
 	}
 
 	// A stable outer holder (created once) watches the window size so we can flip
@@ -453,8 +469,41 @@ func (u *ui) onCanvasResize(size fyne.Size) {
 	}
 	u.compact = compact
 	u.lastFullScreen = fs
-	// Defer off the current layout pass to avoid re-entrant relayout.
-	go fyne.Do(u.relayout)
+	// Request a relayout off this layout pass (calling relayout synchronously here
+	// would re-enter layout). The relayoutWatch goroutine (started in main())
+	// marshals it through fyne.Do so it runs serialized on the UI loop. A buffered
+	// send coalesces bursts; if the watcher isn't running (tests use build(), not
+	// main()), the request is simply dropped and the test drives relayout itself.
+	select {
+	case u.relayoutReq <- struct{}{}:
+	default:
+	}
+}
+
+// relayoutWatch marshals resize-driven relayout requests (from onCanvasResize)
+// onto the UI loop via fyne.Do, one at a time. Started in main() — not build() —
+// so the headless tests never run a background relayout (which would race Fyne's
+// shared text shaper); it runs until relayoutStop is closed on shutdown.
+func (u *ui) relayoutWatch() {
+	u.relayoutStop = make(chan struct{})
+	go func() {
+		for {
+			select {
+			case <-u.relayoutStop:
+				return
+			case <-u.relayoutReq:
+				fyne.Do(u.relayout)
+			}
+		}
+	}()
+}
+
+// stopRelayoutWatch halts the relayout watcher (idempotent).
+func (u *ui) stopRelayoutWatch() {
+	if u.relayoutStop != nil {
+		close(u.relayoutStop)
+		u.relayoutStop = nil
+	}
 }
 
 // classifyCompact decides whether a window is the compact (phone/portrait) form
@@ -648,10 +697,13 @@ func (u *ui) toggleConsole() { u.setConsole(!u.fullScreen) }
 // is `when fullscreen`); on mobile there's no window to toggle (it's already full
 // screen), so it just switches the layout variant — useful on large tablets.
 //
-// The console force-shows some racks (DLY/REV, FX, KEYS via `show: true`). Those
-// are restored to their prior state on the way out by the generic variant-switch
-// handling in selectLayout (see u.forced / applyRackShow), so they don't leak
-// into the normal layout — no console-specific bookkeeping is needed here.
+// The console force-shows some racks (DLY/REV, FX, KEYS via `show: true`). We
+// restore them to the user's prior state when leaving the console, so they don't
+// leak into the normal layout — which would cram its bottom stack and push the
+// pads off-screen. This is done here (a single-threaded user action), not in
+// relayout, so a background resize-driven relayout can't hide racks mid-build.
+// The set is generic — whatever a variant force-shows via `show:` is recorded in
+// u.forced by applyRackShow and restored here — so it works for any layout.
 //
 // SetFullScreen is applied asynchronously (Fyne queues it onto the main loop),
 // so we can't rely on the canvas size here; the authoritative relayout happens
@@ -659,7 +711,16 @@ func (u *ui) toggleConsole() { u.setConsole(!u.fullScreen) }
 // restore the saved windowed size explicitly, because some drivers don't shrink
 // the canvas back on their own (leaving content laid out at full-screen size).
 func (u *ui) setConsole(on bool) {
+	if on {
+		u.forced = nil // the entering variant's applyRackShow repopulates it
+	}
 	u.fullScreen = on
+	// We relayout synchronously below (the variant keys off the fullscreen flag,
+	// not pixel size), so record the state here and let onCanvasResize skip a
+	// redundant relayout for this flip — it still fires for a real compact change.
+	// That avoids a second, concurrent relayout (which corrupts Fyne's shared text
+	// shaper under the test driver, where fyne.Do runs off the main loop).
+	u.lastFullScreen = on
 	if !onMobile && u.win != nil {
 		if on {
 			u.windowedSize = u.win.Canvas().Size() // remember, to restore on exit
@@ -670,6 +731,9 @@ func (u *ui) setConsole(on bool) {
 				u.win.Resize(u.windowedSize)
 			}
 		}
+	}
+	if !on {
+		u.restoreForcedRacks() // put the force-shown racks back before relayout
 	}
 	u.relayout() // immediate variant switch; onCanvasResize corrects the sizing
 }
@@ -1193,8 +1257,8 @@ func (u *ui) setVisible(o fyne.CanvasObject, btn *components.RackToggle, visible
 // but only when the variant was just entered (variantChanged) — so a variant
 // declares its default visible racks without overriding the user's manual toggle
 // while that variant stays on screen. It records the rack's prior visibility in
-// u.forced (keyed by id) so restoreForcedRacks can put it back when the variant
-// is left. Called from configureComponent.
+// u.forced (keyed by id, first time only) so restoreForcedRacks can put it back
+// when the console is left (see setConsole). Called from configureComponent.
 func (u *ui) applyRackShow(id string, props map[string]string, o fyne.CanvasObject, btn *components.RackToggle) {
 	if !u.variantChanged {
 		return
@@ -1206,7 +1270,9 @@ func (u *ui) applyRackShow(id string, props map[string]string, o fyne.CanvasObje
 	if u.forced == nil {
 		u.forced = map[string]savedRack{}
 	}
-	u.forced[id] = savedRack{obj: o, btn: btn, on: o.Visible()} // remember, to restore on leave
+	if _, seen := u.forced[id]; !seen {
+		u.forced[id] = savedRack{obj: o, btn: btn, on: o.Visible()} // remember prior state once
+	}
 	u.setVisible(o, btn, s == "true")
 }
 
@@ -2004,6 +2070,7 @@ func (u *ui) setStatus(msg string) {
 
 func (u *ui) close() {
 	u.stopMeter() // stop UI animators before the run loop tears down
+	u.stopRelayoutWatch()
 	u.stopDeviceWatch()
 	u.stopJam()
 	u.fx.StopAll()
@@ -2090,6 +2157,7 @@ func main() {
 		u.loadInitialSequence()
 	}
 	u.startMeter()
+	u.relayoutWatch() // marshal resize-driven relayouts onto the UI loop (main() only)
 	// USB-audio VU capture needs raw device access (and the mic permission on
 	// mobile) — desktop only. External MIDI controllers (MacroPad) and the P-6
 	// device watcher use ALSA (desktop) or Web MIDI (web); Android reaches USB
