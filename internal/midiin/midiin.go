@@ -1,8 +1,8 @@
 // Package midiin is a small, pluggable framework for MIDI *input* controllers:
-// external hardware (a macropad, a grid controller, keys, …) that drives rp6's
-// pads and transport host-side. It is the mirror image of the p6 package (which
-// sends MIDI *out* to the P-6): here MIDI comes *in* from a controller and is
-// translated into rp6 actions.
+// external hardware (a macropad, a grid controller, a keyboard, …) that drives
+// rp6's pads, on-screen keyboard and transport host-side. It is the mirror image
+// of the p6 package (which sends MIDI *out* to the P-6): here MIDI comes *in*
+// from a controller and is translated into rp6 actions.
 //
 // Each concrete controller lives in its own subpackage (e.g.
 // internal/midiin/macropad) and registers a Driver from its init(). The app
@@ -35,6 +35,11 @@ type Handlers struct {
 	// bank*6+(pad-1)) at the given velocity (1..127). rp6 both plays the pad
 	// (through the active P-6 or emulator) and reflects it in the UI.
 	TriggerPad func(padID int, velocity uint8)
+
+	// PlayNote plays a chromatic MIDI note (0..127) at the given velocity —
+	// for keyboard-style controllers that drive rp6's on-screen keyboard
+	// (pitching the selected sample) rather than the pads.
+	PlayNote func(note, velocity uint8)
 
 	// Transport requests the host transport change to the given state (true =
 	// play, false = stop), e.g. from an encoder press.

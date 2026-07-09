@@ -36,6 +36,7 @@ import (
 	"github.com/mono4loop/rp6/internal/effects"
 	"github.com/mono4loop/rp6/internal/emu"
 	"github.com/mono4loop/rp6/internal/midiin"
+	_ "github.com/mono4loop/rp6/internal/midiin/arturia"  // register the Arturia keyboard input drivers
 	_ "github.com/mono4loop/rp6/internal/midiin/macropad" // register the MacroPad input driver
 	"github.com/mono4loop/rp6/internal/sequencer"
 	"github.com/mono4loop/rp6/internal/store"
@@ -59,6 +60,9 @@ type ui struct {
 	// midiInMissLogged suppresses repeating the "no controller" log line on the
 	// Android attach poller (which retries every 2s); reset once one connects.
 	midiInMissLogged bool
+	// keyboardAutoShown records that an external melodic keyboard's first note
+	// already revealed the keyboard rack, so we don't re-show it after a manual hide.
+	keyboardAutoShown bool
 
 	// emuDir, when set, holds WAV samples (A1..H6) the P-6 emulator can play.
 	// It's the pool the emulator draws from; whether the emulator is *active*
@@ -1766,6 +1770,7 @@ func (u *ui) startMIDIInput() {
 
 	h := midiin.Handlers{
 		TriggerPad: u.fireExternalPad,
+		PlayNote:   u.playExternalNote,
 		Transport: func(playing bool) {
 			fyne.Do(func() {
 				u.playBtn.SetRunning(playing)
@@ -1805,6 +1810,27 @@ func (u *ui) fireExternalPad(id int, velocity uint8) {
 		u.grid.Highlight(page, row, col)
 		u.padSelected(id)
 		u.setStatus(fmt.Sprintf("pad %s", p6.PadLabel(bank, number)))
+	})
+}
+
+// playExternalNote handles a note from an external melodic keyboard (e.g. an
+// Arturia KeyStep/MicroLab): it plays the note through rp6's keyboard path (the
+// selected sample, pitched — same as the on-screen keys) and reflects it on the
+// on-screen keyboard, revealing that rack the first time so the controller
+// visibly drives it. Runs on the controller's read goroutine.
+func (u *ui) playExternalNote(note, velocity uint8) {
+	u.playNote(note, velocity) // sound (Auto channel on hardware; pitched on the emulator); concurrency-safe
+	fyne.Do(func() {
+		if u.keyboardRack == nil {
+			return
+		}
+		if !u.keyboardAutoShown && !u.keyboardRack.Object().Visible() {
+			u.setVisible(u.keyboardRack.Object(), u.keysBtn, true)
+			u.keyboardAutoShown = true // reveal once; don't fight a later manual hide
+			u.relayout()
+		}
+		u.keyboardRack.reflectNote(note)
+		u.setStatus(fmt.Sprintf("♪ %s", noteName(note)))
 	})
 }
 

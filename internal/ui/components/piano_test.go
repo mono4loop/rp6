@@ -24,9 +24,31 @@ func TestPianoKeyboardFiresNote(t *testing.T) {
 		Accent: color.NRGBA{R: 0xE1, G: 0x87, B: 0x3B, A: 0xFF},
 		OnNote: func(i int) { got = i },
 	})
-	// Tapping key 5 reports index 5.
-	p.keys[5].Tapped(nil)
-	assert.Equal(t, 5, got)
+	r := p.CreateRenderer()
+	r.Layout(fyne.NewSize(900, 80))
+
+	// A tap in the lower area of a white key hits that white key (no black key
+	// overlaps the bottom). Aim at the vertical center-bottom of key 2 (D, white).
+	k := p.keys[2]
+	require.False(t, k.black)
+	pos := k.Position()
+	sz := k.Size()
+	p.Tapped(&fyne.PointEvent{Position: fyne.NewPos(pos.X+sz.Width/2, pos.Y+sz.Height-2)})
+	assert.Equal(t, 2, got)
+
+	// A tap high over a black key hits the black key, not the white beneath it.
+	got = -1
+	var bk *pianoKey
+	for _, kk := range p.keys {
+		if kk.black && kk.Visible() {
+			bk = kk
+			break
+		}
+	}
+	require.NotNil(t, bk)
+	bp, bs := bk.Position(), bk.Size()
+	p.Tapped(&fyne.PointEvent{Position: fyne.NewPos(bp.X+bs.Width/2, bp.Y+2)})
+	assert.Equal(t, bk.index, got, "a tap in the black-key zone hits the black key")
 }
 
 func TestChromaticForWhites(t *testing.T) {

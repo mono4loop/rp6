@@ -85,22 +85,22 @@ func TestKeyboardRackPlaysAutoChannel(t *testing.T) {
 	var buf bytes.Buffer
 	u.dev = p6.New(&buf, p6.DefaultConfig())
 
-	// Tapping key 0 at octave 0 plays the sample at original pitch
-	// (KeyboardCenterNote) as a Note On on the Auto channel (15 -> 0x9E).
+	// Tapping key 0 at octave 0 plays keyboardBaseNote (C3) as a Note On on the
+	// Auto channel (15 -> 0x9E).
 	u.keyboardRack.play(0)
-	assert.Equal(t, []byte{0x9E, p6.KeyboardCenterNote, p6.DefaultVelocity}, buf.Bytes())
+	assert.Equal(t, []byte{0x9E, keyboardBaseNote, p6.DefaultVelocity}, buf.Bytes())
 }
 
 func TestKeyboardRackOctaveShift(t *testing.T) {
 	u := newTestUI(t)
 
-	// Key 0 = KeyboardCenterNote at octave 0; each octave step is 12 semitones.
-	assert.Equal(t, int(p6.KeyboardCenterNote), u.keyboardRack.note(0))
-	assert.Equal(t, int(p6.KeyboardCenterNote)+12, u.keyboardRack.note(12)) // one octave up on the keys
+	// Key 0 = keyboardBaseNote at octave 0; each octave step is 12 semitones.
+	assert.Equal(t, int(keyboardBaseNote), u.keyboardRack.note(0))
+	assert.Equal(t, int(keyboardBaseNote)+12, u.keyboardRack.note(12)) // one octave up on the keys
 	u.keyboardRack.oct.SetValue(1)
-	assert.Equal(t, int(p6.KeyboardCenterNote)+12, u.keyboardRack.note(0))
+	assert.Equal(t, int(keyboardBaseNote)+12, u.keyboardRack.note(0))
 	u.keyboardRack.oct.SetValue(-2)
-	assert.Equal(t, int(p6.KeyboardCenterNote)-24, u.keyboardRack.note(0))
+	assert.Equal(t, int(keyboardBaseNote)-24, u.keyboardRack.note(0))
 }
 
 func TestKeyboardRackHiddenByDefault(t *testing.T) {
@@ -109,6 +109,53 @@ func TestKeyboardRackHiddenByDefault(t *testing.T) {
 	u.toggleVisible(u.keyboardRack.Object(), u.keysBtn)
 	assert.True(t, u.keyboardRack.Object().Visible())
 	assert.True(t, u.keysBtn.On())
+}
+
+func TestExternalKeyboardPlaysAndReveals(t *testing.T) {
+	u := newTestUI(t)
+	var buf bytes.Buffer
+	u.dev = p6.New(&buf, p6.DefaultConfig())
+	require.False(t, u.keyboardRack.Object().Visible(), "keyboard hidden before any external note")
+
+	u.playExternalNote(p6.KeyboardCenterNote+2, 90) // a note from an Arturia key
+
+	// Routed to the keyboard: a Note On on the Auto channel (15 -> 0x9E).
+	assert.Equal(t, []byte{0x9E, p6.KeyboardCenterNote + 2, 90}, buf.Bytes())
+	assert.True(t, u.keyboardRack.Object().Visible(), "an external keyboard note reveals the keyboard rack")
+	assert.True(t, u.keysBtn.On())
+}
+
+func TestExternalKeyboardReflectsOctave(t *testing.T) {
+	u := newTestUI(t)
+	var buf bytes.Buffer
+	u.dev = p6.New(&buf, p6.DefaultConfig())
+	require.Equal(t, 0, u.keyboardRack.oct.Value())
+
+	// The controller's default octave (C3 = keyboardBaseNote for its lowest key)
+	// keeps the window at OCT 0.
+	u.keyboardRack.reflectNote(keyboardBaseNote)
+	assert.Equal(t, 0, u.keyboardRack.oct.Value(), "device default octave reads 0")
+
+	// Playing higher — still within the visible keys — lights higher keys WITHOUT
+	// scrolling the octave window (upper notes must not collapse to the lower
+	// keys). The default keyboard shows more than one octave.
+	require.Greater(t, u.keyboardRack.piano.VisibleKeys(), 12)
+	u.keyboardRack.reflectNote(keyboardBaseNote + 12)
+	assert.Equal(t, 0, u.keyboardRack.oct.Value(), "an in-range higher note doesn't scroll the window")
+
+	// A note well above the visible range scrolls the window up so it stays
+	// visible; one well below scrolls it down.
+	require.Less(t, u.keyboardRack.piano.VisibleKeys(), 40) // 90-48=42 is above the window
+	u.keyboardRack.reflectNote(90)
+	assert.Positive(t, u.keyboardRack.oct.Value(), "a note past the top scrolls the window up")
+	u.keyboardRack.reflectNote(uint8(keyboardBaseNote - 12))
+	assert.Negative(t, u.keyboardRack.oct.Value(), "a note below the base scrolls the window down")
+
+	// Playing an external note still sounds at its true pitch (sent as-is on the
+	// Auto channel), independent of the window scrolling.
+	buf.Reset()
+	u.playExternalNote(uint8(keyboardBaseNote+7), 100)
+	assert.Equal(t, []byte{0x9E, keyboardBaseNote + 7, 100}, buf.Bytes())
 }
 
 func TestTriggerWithoutDeviceIsSafe(t *testing.T) {

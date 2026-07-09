@@ -64,9 +64,10 @@ type PianoConfig struct {
 // via OnNote.
 type PianoKeyboard struct {
 	widget.BaseWidget
-	cfg  PianoConfig
-	keys []*pianoKey
-	minH float32 // minimum keyboard height (keys fill it); see SetMinHeight
+	cfg     PianoConfig
+	keys    []*pianoKey
+	minH    float32 // minimum keyboard height (keys fill it); see SetMinHeight
+	visible int     // number of keys currently shown (updated on Layout)
 }
 
 // chromaticForWhites returns the number of chromatic keys (starting at C) whose
@@ -99,17 +100,53 @@ func NewPianoKeyboard(cfg PianoConfig) *PianoKeyboard {
 		cfg.WhiteW = 54
 	}
 	p := &PianoKeyboard{cfg: cfg, minH: pianoMinHeight}
+	p.visible = chromaticForWhites(cfg.MinWhite)
 	for i := range chromaticForWhites(cfg.MaxWhite) {
-		idx := i
-		p.keys = append(p.keys, newPianoKey(idx, isBlackKey(idx), cfg.Accent, func(n int) {
-			if p.cfg.OnNote != nil {
-				p.cfg.OnNote(n)
-			}
-		}))
+		p.keys = append(p.keys, newPianoKey(i, isBlackKey(i), cfg.Accent))
 	}
 	p.ExtendBaseWidget(p)
 	p.updateLabels()
 	return p
+}
+
+// Tapped plays the key under the tap. The keyboard hit-tests taps itself (rather
+// than making each key a tappable widget) so overlapping black keys reliably
+// take precedence over the white keys beneath them — the standard piano
+// behavior, and it fixes stray/half-height hits from sibling-widget overlap.
+// fyne.Tappable.
+func (p *PianoKeyboard) Tapped(e *fyne.PointEvent) {
+	if k := p.keyAt(e.Position); k != nil {
+		if p.cfg.OnNote != nil {
+			p.cfg.OnNote(k.index)
+		}
+		k.flash()
+	}
+}
+
+// keyAt returns the visible key at pos, or nil. Black keys (drawn on top, in the
+// upper region) are tested first so a tap in their area hits them rather than
+// the white key beneath. Keys are positioned by the renderer's Layout, so this
+// reads their live geometry.
+func (p *PianoKeyboard) keyAt(pos fyne.Position) *pianoKey {
+	hit := func(k *pianoKey) bool {
+		if !k.Visible() {
+			return false
+		}
+		kp, ks := k.Position(), k.Size()
+		return pos.X >= kp.X && pos.X < kp.X+ks.Width &&
+			pos.Y >= kp.Y && pos.Y < kp.Y+ks.Height
+	}
+	for _, k := range p.keys {
+		if k.black && hit(k) {
+			return k
+		}
+	}
+	for _, k := range p.keys {
+		if !k.black && hit(k) {
+			return k
+		}
+	}
+	return nil
 }
 
 // Refresh re-applies the key labels (e.g. after an octave change) and repaints.
@@ -131,6 +168,22 @@ func (p *PianoKeyboard) SetMinHeight(h float32) {
 	}
 	p.minH = h
 	p.Refresh()
+}
+
+// VisibleKeys reports how many chromatic keys are currently shown (it grows with
+// width). Callers use it to keep an external note within the on-screen range.
+func (p *PianoKeyboard) VisibleKeys() int { return p.visible }
+
+// FlashKey briefly lights the key at the given semitone index (0 = the leftmost
+// C), if that key is currently visible — used to echo an external MIDI note
+// press on the on-screen keyboard. Out-of-range/hidden indices are ignored.
+func (p *PianoKeyboard) FlashKey(index int) {
+	if index < 0 || index >= len(p.keys) {
+		return
+	}
+	if k := p.keys[index]; k.Visible() {
+		k.flash()
+	}
 }
 
 func (p *PianoKeyboard) updateLabels() {
@@ -173,12 +226,8 @@ func (r *pianoRenderer) MinSize() fyne.Size {
 // fit at the target white-key width, clamped to [MinWhite, MaxWhite].
 func (r *pianoRenderer) whiteCount(width float32) int {
 	w := int(width / r.p.cfg.WhiteW)
-	if w < r.p.cfg.MinWhite {
-		w = r.p.cfg.MinWhite
-	}
-	if w > r.p.cfg.MaxWhite {
-		w = r.p.cfg.MaxWhite
-	}
+	w = max(w, r.p.cfg.MinWhite)
+	w = min(w, r.p.cfg.MaxWhite)
 	return w
 }
 
@@ -188,6 +237,7 @@ func (r *pianoRenderer) Layout(size fyne.Size) {
 	if n == 0 {
 		return
 	}
+	r.p.visible = n
 	ww := size.Width / float32(white) // fills the width exactly
 	bw := ww * pianoBlackWFrac
 	bh := size.Height * pianoBlackHFrac
@@ -224,15 +274,16 @@ func (r *pianoRenderer) Refresh() {
 
 func (r *pianoRenderer) Objects() []fyne.CanvasObject { return r.objects }
 
-// pianoKey is one tappable key. Its own renderer just fills the size it's given
-// (the parent positions/sizes it), so overlapping white/black keys are simple.
+// pianoKey is one key's visuals (background + label) plus its flash state. It is
+// NOT tappable itself — the parent PianoKeyboard hit-tests taps by coordinate
+// (see keyAt) so overlapping black/white keys resolve correctly. The parent
+// positions/sizes it.
 type pianoKey struct {
 	widget.BaseWidget
 	index  int
 	black  bool
 	accent color.NRGBA
 	label  string
-	onTap  func(index int)
 
 	pressed  bool
 	flashSeq int
@@ -241,8 +292,8 @@ type pianoKey struct {
 	txt *canvas.Text
 }
 
-func newPianoKey(index int, black bool, accent color.NRGBA, onTap func(int)) *pianoKey {
-	k := &pianoKey{index: index, black: black, accent: accent, onTap: onTap}
+func newPianoKey(index int, black bool, accent color.NRGBA) *pianoKey {
+	k := &pianoKey{index: index, black: black, accent: accent}
 	k.ExtendBaseWidget(k)
 	return k
 }
@@ -253,14 +304,6 @@ func (k *pianoKey) setLabel(s string) {
 		k.txt.Text = s
 		k.txt.Refresh()
 	}
-}
-
-// Tapped plays the key and flashes it.
-func (k *pianoKey) Tapped(*fyne.PointEvent) {
-	if k.onTap != nil {
-		k.onTap(k.index)
-	}
-	k.flash()
 }
 
 func (k *pianoKey) flash() {
