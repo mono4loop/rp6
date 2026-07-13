@@ -3,7 +3,7 @@ module github.com/mono4loop/rp6
 go 1.26.4
 
 require (
-	fyne.io/fyne/v2 v2.8.0-rc3.0.20260707102740-6f1492f86144
+	fyne.io/fyne/v2 v2.8.0
 	github.com/gen2brain/malgo v0.11.25
 	github.com/mewkiz/flac v1.0.13
 	github.com/pion/webrtc/v4 v4.2.16
