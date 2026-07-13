@@ -47,6 +47,32 @@ type RackPanel struct {
 	nameLead  fyne.CanvasObject
 }
 
+// InspectionChildren exposes the semantic content embedded in this composite
+// widget. Fyne's accessibility collectors only recurse through containers, and
+// its public API has no semantic-tree walker, so RP6's inspection package uses
+// this narrow hook without depending on renderer internals.
+func (p *RackPanel) InspectionChildren() []fyne.CanvasObject {
+	children := []fyne.CanvasObject{p.content}
+	if p.nameLead != nil {
+		children = append(children, p.nameLead)
+	}
+	return children
+}
+
+// AccessibilityLabel names the rack panel for assistive technologies. Named
+// device panels use their nameplate; generic panels are exposed as a rack.
+func (p *RackPanel) AccessibilityLabel() string {
+	if p.nameplate != "" {
+		return p.nameplate + " rack"
+	}
+	return "Rack panel"
+}
+
+// AccessibilityRole reports that a rack panel groups related controls.
+func (p *RackPanel) AccessibilityRole() fyne.AccessibleRole {
+	return fyne.AccessibleRoleContainer
+}
+
 // NewRackPanel wraps content in a rack panel.
 func NewRackPanel(content fyne.CanvasObject) *RackPanel {
 	return newRackPanel(content, rackPadY)

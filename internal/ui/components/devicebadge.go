@@ -112,6 +112,19 @@ func (b *DeviceBadge) SetState(s DeviceState) {
 // State returns the current connection state.
 func (b *DeviceBadge) State() DeviceState { return b.state }
 
+// AccessibilityLabel identifies the backend represented by the nameplate.
+func (b *DeviceBadge) AccessibilityLabel() string {
+	if b.tag == "" {
+		return b.name
+	}
+	return b.name + " " + b.tag
+}
+
+// AccessibilityRole reports that tapping the badge switches the backend.
+func (b *DeviceBadge) AccessibilityRole() fyne.AccessibleRole {
+	return fyne.AccessibleRoleButton
+}
+
 // Tapped runs the toggle action when the plate is tapped (switch backend). Taps
 // on the settings gear are consumed by the gear button and never reach here.
 func (b *DeviceBadge) Tapped(*fyne.PointEvent) {

@@ -215,6 +215,7 @@ type ui struct {
 	root        fyne.CanvasObject
 	status      *widget.Label
 	controlBar  fyne.CanvasObject       // bottom control bar: section toggles + info button
+	jamControls []fyne.CanvasObject     // optional desktop-only controls; empty on mobile/nojam
 	deviceBadge *components.DeviceBadge // pad rack tool row: backlit device nameplate
 	deviceState components.DeviceState  // last-known connection state, re-applied when the badge is rebuilt (float/dock)
 	storeToggle *components.RackToggle  // pad rack tool row: opens the sample-pak store
@@ -416,7 +417,8 @@ func (u *ui) build(w fyne.Window) {
 	u.consoleBtn = components.NewRackToggle("CONSOLE", acc, u.toggleConsole)
 	u.consoleBtn.SetOn(u.fullScreen)
 	toggleObjs := []fyne.CanvasObject{u.playMenuBtn, u.p6Btn, u.fxBtn, u.paksBtn, u.meterBtn, u.consoleBtn}
-	toggleObjs = append(toggleObjs, u.jamToggles()...) // JAM button (absent in -tags nojam / web / mobile builds)
+	u.jamControls = u.jamToggles() // absent in -tags nojam / web / mobile builds
+	toggleObjs = append(toggleObjs, u.jamControls...)
 	toggles := container.NewHBox(toggleObjs...)
 
 	u.status = widget.NewLabel("")

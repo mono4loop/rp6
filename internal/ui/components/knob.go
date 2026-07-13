@@ -121,6 +121,15 @@ func (k *Knob) Object() fyne.CanvasObject { return k }
 // Value returns the current value.
 func (k *Knob) Value() int { return k.value }
 
+// AccessibilityLabel includes the control caption and current formatted value.
+func (k *Knob) AccessibilityLabel() string {
+	return k.cfg.Label + " " + k.cfg.Format(k.value)
+}
+
+// AccessibilityRole reports the knob as a button until Fyne exposes a value or
+// slider role in its accessibility API.
+func (k *Knob) AccessibilityRole() fyne.AccessibleRole { return fyne.AccessibleRoleButton }
+
 // SetValue sets the value (clamped), firing OnChange if it changed.
 func (k *Knob) SetValue(v int) { k.set(v) }
 

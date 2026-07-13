@@ -110,6 +110,12 @@ func (p *Pad) BadgeCount() int { return len(p.badges) }
 // Selected reports whether the pad is highlighted (useful for tests).
 func (p *Pad) Selected() bool { return p.selected }
 
+// AccessibilityLabel returns the pad's current caller-supplied label.
+func (p *Pad) AccessibilityLabel() string { return p.label }
+
+// AccessibilityRole reports that a pad is an actionable button.
+func (p *Pad) AccessibilityRole() fyne.AccessibleRole { return fyne.AccessibleRoleButton }
+
 // Flash briefly lights the pad (the same tap-flash used on a click), e.g. to
 // reflect an external trigger.
 func (p *Pad) Flash() { p.doFlash() }

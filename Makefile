@@ -11,7 +11,7 @@ BINARY_NAME := rp6
 # Tests deliberately run without tags so Fyne's thread-safety checks stay on.
 TAGS ?= capture wayland migrated_fynedo jam
 
-.PHONY: build install run test fmt vet check clean serve web android android-release icon
+.PHONY: build install run test inspect-layouts fmt vet check clean serve web android android-release icon
 
 build:
 	go build -tags "$(TAGS)" -ldflags "-s -w" -o build/$(BINARY_NAME) ./cmd/$(BINARY_NAME)
@@ -122,6 +122,11 @@ android-release:
 # Tests run without build tags so they need no audio backend.
 test:
 	go test ./...
+
+# Regenerate the deterministic clean PNG, annotated PNG and JSON geometry
+# manifests for every device listed in resolutions.txt.
+inspect-layouts:
+	RP6_UPDATE_LAYOUT_ARTIFACTS=1 go test ./cmd/rp6 -run TestCurrentLayoutsAtTargetResolutions -count=1 -v
 
 fmt:
 	gofmt -w .

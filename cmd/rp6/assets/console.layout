@@ -7,9 +7,10 @@
 // default.layout.
 //
 //   ┌───────┬───────────────────────┬───────┐
-//   │ trans │                        │  fx   │
-//   │       │                        │ dlyrev│
-//   │ (gap) │        pads            │  seq  │   right rail
+//   │ trans │                        │       │
+//   │  vu   │                        │  seq  │   right rail when undocked
+//   │ paks  │        pads            │       │
+//   │  fx   │                        │       │
 //   │  vu   │                        │       │
 //   ├───────┴───────────────────────┴───────┤
 //   │                status                 │
@@ -28,31 +29,31 @@ layout console when fullscreen {
       status
     }
 
-    // Left rail: transport + the VU meter (horizontal strip) on top, and the
-    // sample-pak selector filling the rest of the tall rail below them (on by
-    // default in the console — that big empty column is just right for it).
+    // Left rail: transport + the VU meter (horizontal strip) on top, the
+    // sample-pak selector filling the middle, and pad FX at the bottom. Keeping
+    // FX here avoids reserving an otherwise-empty full-height right rail when
+    // the sequencer is docked in the centre split.
     left: Border {
       top: VBox {
         transport
         vu(orientation: horizontal)
       }
       center: paks(show: true)
+      bottom: fx(show: true)
     }
 
-    // Right rail: the effect rack(s) stacked. `show: true` turns FX on when the
-    // console is entered (you can still toggle it off with the FX button while
-    // it's showing). The sequencer joins it unless it's docked as the centre
-    // split pane.
-    right: VBox {
-      fx(show: true)
-      seq if !seq_docked
-    }
+    // Right rail: the sequencer only when it is not docked in the centre split.
+    // When docked this region disappears completely, giving that width back to
+    // the pads and sequencer rather than leaving a mostly-empty FX column.
+    right: seq if !seq_docked
 
     // Centre: the pads fill the space; when the sequencer is docked it shares
     // the centre as the right pane of a split.
     center: Split {
       horizontal: true
-      offset: 0.65
+      // Keep enough width for 16 touchable sequencer steps on a 1920px laptop
+      // while the six-column pad grid remains comfortably finger-sized.
+      offset: 0.58
       leading: pads if pads_visible
       trailing: seq if seq_docked
     }

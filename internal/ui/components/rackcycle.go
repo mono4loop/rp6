@@ -41,6 +41,19 @@ func NewRackCycle(icons []fyne.Resource, accent color.NRGBA, onChange func(int))
 // State returns the current state index.
 func (c *RackCycle) State() int { return c.state }
 
+// AccessibilityLabel identifies the active selector icon and state.
+func (c *RackCycle) AccessibilityLabel() string {
+	if icon := c.currentIcon(); icon != nil {
+		return icon.Name()
+	}
+	return "Rack selector"
+}
+
+// AccessibilityRole reports that a cycle selector is an actionable button.
+func (c *RackCycle) AccessibilityRole() fyne.AccessibleRole {
+	return fyne.AccessibleRoleButton
+}
+
 // SetState sets the current state (clamped/wrapped into range) without firing
 // OnChange.
 func (c *RackCycle) SetState(i int) {

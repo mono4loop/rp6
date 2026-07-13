@@ -146,6 +146,24 @@ func (t *RackToggle) SetDisabled(on bool) {
 // Disabled reports whether the toggle is inert.
 func (t *RackToggle) Disabled() bool { return t.disabled }
 
+// AccessibilityLabel returns the visible caption in text mode and a stable
+// icon resource name in icon mode. Callers should prefer text captions where an
+// action cannot otherwise be inferred from the icon name.
+func (t *RackToggle) AccessibilityLabel() string {
+	if t.label != "" {
+		return t.label
+	}
+	if t.icon != nil {
+		return t.icon.Name()
+	}
+	return "Rack control"
+}
+
+// AccessibilityRole reports that rack toggles are actionable buttons.
+func (t *RackToggle) AccessibilityRole() fyne.AccessibleRole {
+	return fyne.AccessibleRoleButton
+}
+
 // SetLabel updates the caption (text mode).
 func (t *RackToggle) SetLabel(s string) {
 	t.label = s

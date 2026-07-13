@@ -233,6 +233,66 @@ first).
   full-screen gotcha in §8 was found that way — instrument `selectLayout` and
   read `adb logcat`).
 
+### Inspection artifacts
+
+`make inspect-layouts` runs the current UI through every device in
+`resolutions.txt` and regenerates three checked-in artifacts per scenario under
+`cmd/rp6/testdata/layout-inspection/`:
+
+- `<scenario>.png` — the clean software-rendered canvas,
+- `<scenario>-annotated.png` — the same scene with stable semantic rack IDs and
+  colored bounds, and
+- `<scenario>.json` — logical/pixel canvas sizes, scale, selected variant,
+  backend/form-factor state, and every registered element's rect, visible rect,
+  minimum size, effective layout visibility, clipping and component state.
+
+The semantic registry is `cmd/rp6/inspection.go`; the generic capture and
+contract implementation is `internal/ui/inspect`. Tests assert required/omitted
+racks, containment, minimum size, non-overlap and touch-target size before a
+visual review of the clean and annotated images. IDs describe RP6 concepts
+(`rack.pads`, `sequencer.track.1.step.1`) rather than renderer primitives, so
+they remain stable across drawing refactors and will also identify future pages.
+
+Phone native resolutions are converted to Fyne logical units with the Android
+driver's DPI bucket: both Pixel targets in `resolutions.txt` fall in Fyne's 3x
+bucket. The JSON retains both coordinate spaces and the PNG is native-pixel
+sized. Desktop captures use scale 1 because `resolutions.txt` does not specify
+desktop DPI/scaling; add explicit scale scenarios if those displays run at a
+different OS scale.
+
+Fyne 2.8 exposes `fyne.Accessible` (label + button/container/link/text role) but
+no stable automation ID or public accessibility-tree traversal. RP6 custom
+interactive controls implement those labels/roles where useful, while the RP6
+inspection manifest remains the authoritative automation interface. Fyne's
+platform accessibility bridge is experimental, requires the `accessibility`
+build tag, and is not implemented on Linux. Its current platform collectors
+also recurse through `fyne.Container` children but not custom-widget renderer
+children, so controls nested inside RP6's custom `RackPanel` do not yet form a
+complete native screen-reader tree. The labels are groundwork, not a claim of
+end-to-end assistive-technology support.
+
+The headless software renderer is deterministic and exercises real Fyne layout,
+but it does not validate a compositor, GPU, OS window chrome, device safe-area
+insets or multi-window canvas ownership. Layout visibility means shown by the
+object and its ancestors with non-empty bounds through known clip containers; it
+does not attempt arbitrary opaque-sibling occlusion. Keep real Wayland and
+physical Android smoke checks for those driver-specific behaviors.
+
+Current validated rack sets:
+
+| target | active racks |
+|---|---|
+| ThinkPad X13 1920x1200 | transport, VU, paks, pad FX, pads, docked sequencer, keyboard, navigation, status |
+| Pixel 10 Pro XL 1344x2992 | transport, pads, VU, navigation, status |
+| Pixel 10 Pro 1280x2856 | transport, pads, VU, navigation, status |
+| Asus ROG 3440x1440 | transport, VU, paks, pad FX, pads, docked sequencer, keyboard, navigation, status |
+
+The phone scenarios intentionally leave the sequencer, keyboard, effects and
+sample-pak browser off; they do not fit while preserving the 32-unit touch
+contract. Desktop console layout puts pad FX at the bottom of the existing left
+rail instead of reserving a mostly-empty full-height right rail, and its active
+sequencer track/bar rows expand to consume available height.
+
 ## 11. Ideas / not built
 
 - More component properties (grid density, knob ranges) via `configureComponent`.

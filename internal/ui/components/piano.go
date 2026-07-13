@@ -109,6 +109,16 @@ func NewPianoKeyboard(cfg PianoConfig) *PianoKeyboard {
 	return p
 }
 
+// AccessibilityLabel names the composite keyboard. Individual keys are drawn
+// inside this widget, so the current Fyne accessibility API cannot expose them
+// as separately actionable nodes.
+func (p *PianoKeyboard) AccessibilityLabel() string { return "Piano keyboard" }
+
+// AccessibilityRole reports that the keyboard is an actionable control.
+func (p *PianoKeyboard) AccessibilityRole() fyne.AccessibleRole {
+	return fyne.AccessibleRoleButton
+}
+
 // Tapped plays the key under the tap. The keyboard hit-tests taps itself (rather
 // than making each key a tappable widget) so overlapping black keys reliably
 // take precedence over the white keys beneath them — the standard piano

@@ -70,6 +70,19 @@ func (s *StepButton) SetOn(on bool) {
 // On reports the programmed state.
 func (s *StepButton) On() bool { return s.on }
 
+// AccessibilityLabel describes whether this sequencer step is programmed.
+func (s *StepButton) AccessibilityLabel() string {
+	if s.on {
+		return "Sequencer step on"
+	}
+	return "Sequencer step off"
+}
+
+// AccessibilityRole reports that a sequencer step is an actionable button.
+func (s *StepButton) AccessibilityRole() fyne.AccessibleRole {
+	return fyne.AccessibleRoleButton
+}
+
 // SetPlaying marks the cell as under the playhead.
 func (s *StepButton) SetPlaying(p bool) {
 	if s.playing == p {
@@ -109,7 +122,7 @@ type stepRenderer struct{ s *StepButton }
 
 func (r *stepRenderer) Destroy() {}
 
-func (r *stepRenderer) MinSize() fyne.Size { return fyne.NewSize(26, 34) }
+func (r *stepRenderer) MinSize() fyne.Size { return fyne.NewSize(32, 34) }
 
 func (r *stepRenderer) Layout(size fyne.Size) {
 	r.s.body.Resize(size)

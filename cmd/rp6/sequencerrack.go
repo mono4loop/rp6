@@ -150,8 +150,8 @@ func newSequencerRack(seq *sequencer.Engine, onLayout func(), onDock func(bool),
 	r.armMuteBtn = components.NewRackToggleIcon(theme.VolumeUpIcon(), deviceHwAccent, r.toggleArmedMute)
 	r.armBarsBtn = components.NewRackToggle("BARS", deviceHwAccent, r.cycleArmedBars)
 	header2 := container.NewHBox(
-		container.NewGridWrap(fyne.NewSize(44, 32), r.armMuteBtn),
-		container.NewGridWrap(fyne.NewSize(80, 32), r.armBarsBtn),
+		container.NewGridWrap(fyne.NewSize(44, 34), r.armMuteBtn),
+		container.NewGridWrap(fyne.NewSize(80, 34), r.armBarsBtn),
 	)
 	r.header2 = header2
 
@@ -169,7 +169,7 @@ func newSequencerRack(seq *sequencer.Engine, onLayout func(), onDock func(bool),
 		tb.SetOn(!seq.Muted(t)) // lit as a label; goes dark while the track is muted
 		r.trackBtns[t] = tb
 
-		headerCol := container.NewGridWrap(fyne.NewSize(64, 34), tb)
+		headerCol := container.New(&fixedWidthFillLayout{width: 64}, tb)
 
 		r.cells[t] = make([]*components.StepButton, maxB*spb)
 		r.barRows[t] = make([]*fyne.Container, maxB)
@@ -191,7 +191,7 @@ func newSequencerRack(seq *sequencer.Engine, onLayout func(), onDock func(bool),
 			}
 			r.barRows[t][b] = row
 		}
-		barsCol := container.NewVBox(toObjs(r.barRows[t])...)
+		barsCol := container.New(&fillRowsLayout{}, toObjs(r.barRows[t])...)
 
 		block := container.NewBorder(nil, nil, headerCol, nil, barsCol)
 		r.blocks[t] = block
@@ -210,7 +210,7 @@ func newSequencerRack(seq *sequencer.Engine, onLayout func(), onDock func(bool),
 	// docked as a side column). The transport + armed-track control rows stay
 	// pinned above it. A modest min height keeps a few tracks visible even when
 	// the rack is stacked in an unbounded VBox.
-	tracks := container.NewVBox(trackObjs...)
+	tracks := container.New(&fillRowsLayout{fixedLast: true}, trackObjs...)
 	scroll := container.NewVScroll(tracks)
 	scroll.SetMinSize(fyne.NewSize(tracks.MinSize().Width, 240))
 	r.trackBox = scroll
@@ -240,6 +240,91 @@ func toObjs(rows []*fyne.Container) []fyne.CanvasObject {
 		objs[i] = r
 	}
 	return objs
+}
+
+// fillRowsLayout preserves every visible child's minimum height, then shares
+// any extra height evenly. This lets the sequencer's active tracks and bars grow
+// into a tall rack instead of leaving a large dead area beneath 34px step rows;
+// when their minimums exceed the viewport the enclosing Scroll still scrolls.
+// fixedLast keeps the trailing breathing-room object at its small minimum size.
+type fillRowsLayout struct{ fixedLast bool }
+
+func (l *fillRowsLayout) MinSize(objects []fyne.CanvasObject) fyne.Size {
+	visible := visibleObjects(objects)
+	var size fyne.Size
+	for _, object := range visible {
+		min := object.MinSize()
+		size.Width = fyne.Max(size.Width, min.Width)
+		size.Height += min.Height
+	}
+	if len(visible) > 1 {
+		size.Height += float32(len(visible)-1) * theme.Padding()
+	}
+	return size
+}
+
+func (l *fillRowsLayout) Layout(objects []fyne.CanvasObject, size fyne.Size) {
+	visible := visibleObjects(objects)
+	if len(visible) == 0 {
+		return
+	}
+	padding := theme.Padding()
+	available := size.Height - float32(len(visible)-1)*padding
+	for _, object := range visible {
+		available -= object.MinSize().Height
+	}
+	if available < 0 {
+		available = 0
+	}
+	grow := len(visible)
+	if l.fixedLast && grow > 1 {
+		grow--
+	}
+	extra := float32(0)
+	if grow > 0 {
+		extra = available / float32(grow)
+	}
+	y := float32(0)
+	for i, object := range visible {
+		height := object.MinSize().Height
+		if !l.fixedLast || i < len(visible)-1 {
+			height += extra
+		}
+		object.Move(fyne.NewPos(0, y))
+		object.Resize(fyne.NewSize(size.Width, height))
+		y += height + padding
+	}
+}
+
+func visibleObjects(objects []fyne.CanvasObject) []fyne.CanvasObject {
+	visible := make([]fyne.CanvasObject, 0, len(objects))
+	for _, object := range objects {
+		if object != nil && object.Visible() {
+			visible = append(visible, object)
+		}
+	}
+	return visible
+}
+
+// fixedWidthFillLayout gives a single control a stable minimum width while
+// allowing it to fill the row height. Track assignment keys therefore grow with
+// their step rows instead of remaining as small caps at the top of each track.
+type fixedWidthFillLayout struct{ width float32 }
+
+func (l *fixedWidthFillLayout) MinSize(objects []fyne.CanvasObject) fyne.Size {
+	var size fyne.Size
+	for _, object := range visibleObjects(objects) {
+		size = size.Max(object.MinSize())
+	}
+	size.Width = fyne.Max(size.Width, l.width)
+	return size
+}
+
+func (*fixedWidthFillLayout) Layout(objects []fyne.CanvasObject, size fyne.Size) {
+	for _, object := range visibleObjects(objects) {
+		object.Move(fyne.Position{})
+		object.Resize(size)
+	}
 }
 
 // Object returns the CanvasObject to place in a layout.

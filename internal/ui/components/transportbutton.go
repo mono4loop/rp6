@@ -170,6 +170,25 @@ func (b *TransportButton) SetLit(lit bool) {
 	}
 }
 
+// AccessibilityLabel describes the action represented by the current state.
+func (b *TransportButton) AccessibilityLabel() string {
+	if b.toggle {
+		if b.running {
+			return "Stop"
+		}
+		return "Play"
+	}
+	if b.kind == kindTriangle {
+		return "Play"
+	}
+	return "Stop"
+}
+
+// AccessibilityRole reports that transport keys are actionable buttons.
+func (b *TransportButton) AccessibilityRole() fyne.AccessibleRole {
+	return fyne.AccessibleRoleButton
+}
+
 // Tapped fires the callback and flashes the key.
 func (b *TransportButton) Tapped(_ *fyne.PointEvent) {
 	if b.onTap != nil {
