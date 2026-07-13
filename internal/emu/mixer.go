@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/mono4loop/rp6/internal/audiofx"
+	"github.com/mono4loop/rp6/internal/recorder"
 )
 
 // maxVoices caps simultaneous playing samples, mirroring the P-6's 16-voice
@@ -52,6 +53,9 @@ type mixer struct {
 	keysBuf     []float32
 	keysFXOn    atomic.Bool
 	keysFXReset atomic.Bool
+	rec         *recorder.Engine
+	finalLimit  *peakLimiter
+	tap         func([]float32)
 
 	renderMu sync.Mutex // serializes audio callbacks and limiter reset
 	mu       sync.Mutex // protects voices and timing from concurrent triggers
@@ -136,6 +140,21 @@ func (m *mixer) setKeyboardFXEnabled(enabled bool) {
 	m.keysFXOn.Store(enabled)
 }
 
+// setRecorder attaches host recording/playback to this mixer's existing output.
+// It runs off the audio callback and serializes against render.
+func (m *mixer) setRecorder(rec *recorder.Engine, tap func([]float32)) {
+	m.renderMu.Lock()
+	m.rec = rec
+	m.tap = tap
+	if rec != nil {
+		rec.SetFormat(m.channels, m.rate)
+		m.finalLimit = newPeakLimiter(m.channels, m.rate)
+	} else {
+		m.finalLimit = nil
+	}
+	m.renderMu.Unlock()
+}
+
 // active reports the number of currently playing voices.
 func (m *mixer) active() int {
 	m.mu.Lock()
@@ -179,6 +198,13 @@ func (m *mixer) renderBlock(out []float32) {
 		out[i] += keys[i]
 	}
 	m.limiter.process(out)
+	if m.tap != nil {
+		m.tap(out) // the emulator's own final signal, before recorder playback
+	}
+	if m.rec != nil {
+		m.rec.Mix(out)
+		m.finalLimit.process(out)
+	}
 }
 
 func (m *mixer) mixVoices(out, keys []float32) {
@@ -242,5 +268,8 @@ func (m *mixer) reset() {
 	m.keysFXOn.Store(false)
 	m.keysFXReset.Store(false)
 	m.limiter.reset()
+	if m.finalLimit != nil {
+		m.finalLimit.reset()
+	}
 	m.renderMu.Unlock()
 }

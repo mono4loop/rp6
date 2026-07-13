@@ -23,6 +23,7 @@ layout compact when compact {
       keysfx if !p6_active
       keys
       paks
+      rec
       seq if !seq_docked
     }
     center: Split {
@@ -54,6 +55,7 @@ layout default {
       keysfx if !p6_active
       keys
       paks
+      rec
       seq if !seq_docked
     }
     center: Split {
@@ -142,6 +144,15 @@ rack seq {
     Border {
       top: VBox { seqHeader; seqControls }
       center: seqGrid
+    }
+  }
+}
+
+rack rec {
+  RackPanel {
+    Border {
+      top: VBox { recHeader; recControls }
+      center: recTracks
     }
   }
 }

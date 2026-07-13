@@ -49,27 +49,23 @@ func OpenCapture(nameMatch string) (Capturer, error) {
 	log.Printf("audio: capture devices: %q", names)
 
 	// Match on alphanumerics only so "P-6" matches "Roland P-6", "P-6 ", etc.
-	// Skip PulseAudio/PipeWire "Monitor of ..." sources (those capture what the
-	// computer plays TO the device, not the device's own output); fall back to
-	// a monitor only if nothing else matches.
+	// Skip PulseAudio/PipeWire "Monitor of ..." sources: those capture host
+	// playback and would let recorder playback feed back into a new recording.
 	want := normalize(nameMatch)
-	pick := func(allowMonitor bool) *malgo.DeviceInfo {
+	pick := func() *malgo.DeviceInfo {
 		for i := range infos {
 			n := normalize(infos[i].Name())
 			if !strings.Contains(n, want) {
 				continue
 			}
-			if !allowMonitor && strings.Contains(n, "monitor") {
+			if strings.Contains(n, "monitor") {
 				continue
 			}
 			return &infos[i]
 		}
 		return nil
 	}
-	chosen := pick(false)
-	if chosen == nil {
-		chosen = pick(true)
-	}
+	chosen := pick()
 	if chosen == nil {
 		_ = ctx.Uninit()
 		ctx.Free()

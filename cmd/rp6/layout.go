@@ -113,6 +113,8 @@ func (u *ui) configureComponent(id string, props map[string]string) {
 		u.applyRackShow("keys", props, u.keyboardRack.Object(), u.keysBtn)
 	case "paks":
 		u.applyRackShow("paks", props, u.paksRack.Object(), u.paksBtn)
+	case "rec":
+		u.applyRackShow("rec", props, u.recRack.Object(), u.recBtn)
 	}
 }
 

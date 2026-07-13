@@ -124,7 +124,7 @@ func TestPlayButtonFloatsVerticalRackChoices(t *testing.T) {
 	require.False(t, u.playMenu.Visible())
 	choices, ok := u.playMenu.Content.(*fyne.Container)
 	require.True(t, ok)
-	assert.Equal(t, []fyne.CanvasObject{u.padBtn, u.seqBtn, u.keysBtn}, choices.Objects)
+	assert.Equal(t, []fyne.CanvasObject{u.padBtn, u.seqBtn, u.recBtn, u.keysBtn}, choices.Objects)
 	assert.True(t, u.playMenuBtn.On(), "pads and sequencer are visible by default")
 
 	u.togglePlayMenu()
@@ -139,12 +139,34 @@ func TestPlayButtonFloatsVerticalRackChoices(t *testing.T) {
 	u.togglePlayMenu()
 	u.seqBtn.Tapped(nil)
 	assert.False(t, u.seqRack.Object().Visible())
-	assert.False(t, u.playMenuBtn.On(), "parent greys when all three racks are hidden")
+	assert.False(t, u.playMenuBtn.On(), "parent greys when all play racks are hidden")
 
 	u.togglePlayMenu()
 	u.keysBtn.Tapped(nil)
 	assert.True(t, u.keyboardRack.Object().Visible())
 	assert.True(t, u.playMenuBtn.On())
+}
+
+func TestRecorderRackArmsFromLivePadAndControlsTrack(t *testing.T) {
+	u := newTestUI(t)
+	var buf bytes.Buffer
+	u.dev = p6.New(&buf, p6.DefaultConfig())
+
+	u.recRack.toggleRecord(2)
+	require.Equal(t, 2, u.rec.ArmedTrack())
+	u.onPadTrigger(0, 1)
+	assert.Equal(t, 2, u.rec.RecordPendingTrack(), "a live screen pad starts the armed audio take")
+	u.rec.Capture([]float32{0.1, 0.2, 0.3, 0.4})
+	u.rec.StopRecordingImmediate()
+	assert.True(t, u.rec.HasClip(2))
+
+	u.recRack.togglePlay(2)
+	assert.True(t, u.rec.PlayPending(2))
+	u.recRack.muteBtns[2].Tapped(nil)
+	assert.True(t, u.rec.Muted(2))
+	u.recRack.selectTrack(2)
+	u.recRack.level.SetValue(50)
+	assert.InDelta(t, 0.5, u.rec.Level(2), 0.001)
 }
 
 func TestFXButtonExpandsIndependentChoices(t *testing.T) {

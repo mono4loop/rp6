@@ -45,6 +45,7 @@ import (
 	"time"
 
 	"github.com/mono4loop/rp6/internal/audiofx"
+	"github.com/mono4loop/rp6/internal/recorder"
 	"github.com/mono4loop/rp6/p6"
 )
 
@@ -448,6 +449,18 @@ func (e *Emulator) SetKeyboardFXEnabled(enabled bool) {
 	e.mix.setKeyboardFXEnabled(enabled)
 }
 
+// RecorderFormat reports the emulator output format used for host recording.
+func (e *Emulator) RecorderFormat() (channels, sampleRate int) {
+	return e.sink.Channels(), e.sink.SampleRate()
+}
+
+// SetRecorder attaches the host recorder to the emulator's existing audio
+// callback. tap receives emulator audio only, so recorder playback cannot feed
+// back into a new recording.
+func (e *Emulator) SetRecorder(rec *recorder.Engine, tap func([]float32)) {
+	e.mix.setRecorder(rec, tap)
+}
+
 // ControlChange is accepted but has no effect (no emulated FX engine).
 func (e *Emulator) ControlChange(channel int, cc, value uint8) error { return nil }
 
@@ -481,6 +494,7 @@ func (e *Emulator) Listen(handler func(p6.Event)) error { return p6.ErrNoInput }
 
 // Close stops all playing voices and releases the audio device.
 func (e *Emulator) Close() error {
+	e.mix.setRecorder(nil, nil)
 	e.mix.reset()
 	_ = e.sink.Stop()
 	return e.sink.Close()

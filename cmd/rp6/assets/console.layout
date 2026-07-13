@@ -45,6 +45,7 @@ layout console when fullscreen {
     // split pane.
     right: VBox {
       fx(show: true)
+      rec(show: true)
       seq if !seq_docked
     }
 

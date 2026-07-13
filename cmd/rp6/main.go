@@ -39,6 +39,7 @@ import (
 	"github.com/mono4loop/rp6/internal/midiin"
 	_ "github.com/mono4loop/rp6/internal/midiin/arturia"  // register the Arturia keyboard input drivers
 	_ "github.com/mono4loop/rp6/internal/midiin/macropad" // register the MacroPad input driver
+	"github.com/mono4loop/rp6/internal/recorder"
 	"github.com/mono4loop/rp6/internal/sequencer"
 	"github.com/mono4loop/rp6/internal/store"
 	"github.com/mono4loop/rp6/internal/ui/components"
@@ -103,6 +104,7 @@ type ui struct {
 	clock   *p6.Clocker
 	fx      *effects.Engine
 	seq     *sequencer.Engine
+	rec     *recorder.Engine
 	store   *store.Store
 	seqSlot int
 	// pendingSlot is a slot change queued while the sequencer plays, applied at
@@ -110,12 +112,15 @@ type ui struct {
 	pendingSlot int
 	selPad      int // padID of the selected pad, or -1
 
-	activity    *activitySource
-	meterSrc    meterSource
-	meterStop   chan struct{} // closed to stop the meter animator on shutdown
-	audioMeter  *audio.Meter
-	audioDevice string
-	win         fyne.Window
+	activity     *activitySource
+	meterSrc     meterSource
+	meterStop    chan struct{} // closed to stop the meter animator on shutdown
+	audioMeter   *audio.Meter
+	audioCap     audio.Capturer
+	recOutput    audio.Output
+	audioStarted bool
+	audioDevice  string
+	win          fyne.Window
 
 	// relayoutReq coalesces resize-driven relayout requests (from onCanvasResize)
 	// onto a single watcher goroutine started in main() (relayoutWatch), which
@@ -142,6 +147,7 @@ type ui struct {
 	fxRack         *effectsRack
 	keyboardFXRack *keyboardFXRack
 	seqRack        *sequencerRack
+	recRack        *recorderRack
 	keyboardRack   *keyboardRack
 	paksRack       *paksRack
 	meter          *components.LevelMeter
@@ -205,6 +211,7 @@ type ui struct {
 	keysFXBtn   *components.RackToggle
 	fxChoices   *widget.PopUp
 	seqBtn      *components.RackToggle
+	recBtn      *components.RackToggle
 	keysBtn     *components.RackToggle
 	paksBtn     *components.RackToggle
 	meterBtn    *components.RackToggle
@@ -223,9 +230,10 @@ type ui struct {
 	// devGen tags the live connection so a background failure (mid-session
 	// unplug) is reported once and stale goroutines from an old connection
 	// can't clobber the current UI state.
-	connecting atomic.Bool
-	devGen     atomic.Uint64
-	devLost    atomic.Bool
+	connecting  atomic.Bool
+	devGen      atomic.Uint64
+	devLost     atomic.Bool
+	recUIQueued atomic.Bool
 
 	// emuFallback is true while we're on the emulator only because a P-6 was
 	// absent/lost (auto-fallback). A background watcher polls for a P-6 and
@@ -236,6 +244,7 @@ type ui struct {
 	watchStop   chan struct{} // closed to stop the device watcher on shutdown
 
 	keyboardFX audiofx.Settings // retained across emulator kit/backend switches
+	recProfile string
 }
 
 func newUI() *ui {
@@ -245,6 +254,7 @@ func newUI() *ui {
 	u.relayoutReq = make(chan struct{}, 1) // buffered: coalesces resize relayout requests
 	u.fx = effects.New(u.firePad)
 	u.seq = sequencer.New(8, seqMaxBars, u.firePadVel)
+	u.rec = recorder.New(2, 48000)
 	return u
 }
 
@@ -291,6 +301,23 @@ func (u *ui) build(w fyne.Window) {
 			u.seqRack.setPlayhead(tick)
 		})
 	}
+	u.recRack = newRecorderRack(u.rec, u.setStatus, u.exportRecorderTrack)
+	u.recRack.obj = u.composeRack("rec", layoutspec.Registry{
+		"recHeader":   u.recRack.header,
+		"recControls": u.recRack.controls,
+		"recTracks":   u.recRack.trackBox,
+	}, u.recRack.defaultObject)
+	u.rec.SetOnChange(func(track int) {
+		if !u.recUIQueued.CompareAndSwap(false, true) {
+			return
+		}
+		fyne.Do(func() {
+			if u.recRack != nil {
+				u.recRack.syncAll()
+			}
+			u.recUIQueued.Store(false)
+		})
+	})
 
 	// Keyboard rack: a P-6-style chromatic keyboard for the selected sample.
 	u.keyboardRack = newKeyboardRack(func(note uint8) { u.playNote(note, p6.DefaultVelocity) })
@@ -402,12 +429,16 @@ func (u *ui) build(w fyne.Window) {
 		u.hidePlayMenu()
 		u.toggleSeqView()
 	})
+	u.recBtn = components.NewRackToggle("REC", recorderAccent, func() {
+		u.hidePlayMenu()
+		u.toggleVisible(u.recRack.Object(), u.recBtn)
+	})
 	u.keysBtn = components.NewRackToggle("KEYS", acc, func() {
 		u.hidePlayMenu()
 		u.toggleVisible(u.keyboardRack.Object(), u.keysBtn)
 	})
 	u.playMenuBtn = components.NewRackToggleIcon(theme.GridIcon(), acc, u.togglePlayMenu)
-	u.playMenu = widget.NewPopUp(popupChoices(u.padBtn, u.seqBtn, u.keysBtn), w.Canvas())
+	u.playMenu = widget.NewPopUp(popupChoices(u.padBtn, u.seqBtn, u.recBtn, u.keysBtn), w.Canvas())
 	u.playMenu.Hide()
 	u.paksBtn = components.NewRackToggle("PAKS", acc, func() { u.toggleVisible(u.paksRack.Object(), u.paksBtn) })
 	u.meterBtn = components.NewRackToggle("VU", acc, func() { u.toggleVisible(u.meterArea, u.meterBtn) })
@@ -439,6 +470,7 @@ func (u *ui) build(w fyne.Window) {
 	u.addRackShortcut(w, fyne.KeyD, u.toggleP6Rack)
 	u.addRackShortcut(w, fyne.KeyF, u.toggleFXChoices)
 	u.addRackShortcut(w, fyne.KeyS, u.toggleSeqView)
+	u.addRackShortcut(w, fyne.KeyR, func() { u.toggleVisible(u.recRack.Object(), u.recBtn) })
 	u.addRackShortcut(w, fyne.KeyK, func() { u.toggleVisible(u.keyboardRack.Object(), u.keysBtn) })
 	u.addRackShortcut(w, fyne.KeyA, func() { u.toggleVisible(u.paksRack.Object(), u.paksBtn) })
 	u.addRackShortcut(w, fyne.KeyM, func() { u.toggleVisible(u.meterArea, u.meterBtn) })
@@ -467,6 +499,7 @@ func (u *ui) build(w fyne.Window) {
 	u.setVisible(u.fxRack.Object(), u.padFXBtn, false)
 	u.setVisible(u.keyboardFXRack.Object(), u.keysFXBtn, false)
 	u.setVisible(u.seqRack.Object(), u.seqBtn, true)
+	u.setVisible(u.recRack.Object(), u.recBtn, false)
 	u.setVisible(u.keyboardRack.Object(), u.keysBtn, false)
 	u.updatePlayMenuButton()
 	u.setVisible(u.paksRack.Object(), u.paksBtn, false)
@@ -505,6 +538,7 @@ func (u *ui) relayout() {
 		"fx":        u.fxRack.Object(),
 		"keysfx":    u.keyboardFXRack.Object(),
 		"seq":       u.seqRack.Object(),
+		"rec":       u.recRack.Object(),
 		"keys":      u.keyboardRack.Object(),
 		"paks":      u.paksRack.Object(),
 		"pads":      u.padRackObj,
@@ -855,10 +889,10 @@ func (u *ui) hidePlayMenu() {
 }
 
 func (u *ui) updatePlayMenuButton() {
-	if u.playMenuBtn == nil || u.padRackObj == nil || u.seqRack == nil || u.keyboardRack == nil {
+	if u.playMenuBtn == nil || u.padRackObj == nil || u.seqRack == nil || u.recRack == nil || u.keyboardRack == nil {
 		return
 	}
-	u.playMenuBtn.SetOn(u.padRackObj.Visible() || u.seqRack.Object().Visible() || u.keyboardRack.Object().Visible())
+	u.playMenuBtn.SetOn(u.padRackObj.Visible() || u.seqRack.Object().Visible() || u.recRack.Object().Visible() || u.keyboardRack.Object().Visible())
 }
 
 // toggleFXChoices floats the PAD FX / KEYS FX selectors vertically above the
@@ -1078,6 +1112,11 @@ func (u *ui) setKeyboardFX(settings audiofx.Settings) {
 type keyboardFXController interface {
 	SetKeyboardFX(audiofx.Settings)
 	SetKeyboardFXEnabled(bool)
+}
+
+type recorderController interface {
+	RecorderFormat() (channels, sampleRate int)
+	SetRecorder(*recorder.Engine, func([]float32))
 }
 
 func (u *ui) applyKeyboardFXEnabled() {
@@ -1390,8 +1429,11 @@ func (u *ui) setEmuSamples(dir string) {
 func (u *ui) reconnectProfile() {
 	t := time.Now()
 	u.seq.Stop()
+	u.rec.StopRecordingImmediate()
+	u.rec.StopAllImmediate()
 	u.playBtn.SetRunning(false)
 	u.autosaveSeq() // persist under the still-open outgoing profile
+	u.autosaveRecorder()
 	perfLap("reconnect: autosave", &t)
 	if u.store != nil {
 		_ = u.store.Close()
@@ -1408,6 +1450,10 @@ func (u *ui) reconnectProfile() {
 	u.openStore() // re-scope persistence to the new profile
 	perfLap("reconnect: openStore", &t)
 	u.loadInitialSequence() // load that profile's last sequence
+	u.loadRecorder()
+	if u.audioStarted {
+		u.startAudio()
+	}
 	perfLap("reconnect: loadInitialSequence", &t)
 	u.applyBackendGating() // show/hide the P-6-only rack for the new backend
 	perfLap("reconnect: applyBackendGating", &t)
@@ -1652,7 +1698,7 @@ func (u *ui) setVisible(o fyne.CanvasObject, btn *components.RackToggle, visible
 		o.Hide()
 	}
 	btn.SetOn(visible)
-	if btn == u.padBtn || btn == u.seqBtn || btn == u.keysBtn {
+	if btn == u.padBtn || btn == u.seqBtn || btn == u.recBtn || btn == u.keysBtn {
 		u.updatePlayMenuButton()
 	}
 	if btn == u.padFXBtn || btn == u.keysFXBtn {
@@ -1943,25 +1989,87 @@ func (u *ui) startDiagnostics() {
 	}()
 }
 
-// If capture is unavailable (no "portaudio" build tag, no device, or an error),
-// it silently leaves the activity-based meter in place.
+// startAudio attaches the recorder to the active backend. Hardware uses one
+// strict P-6 capture stream plus a host output; the emulator shares its existing
+// output callback, avoiding duplicate devices and feedback.
 func (u *ui) startAudio() {
+	u.audioStarted = true
+	u.stopAudio()
+	u.devMu.Lock()
+	dev := u.dev
+	u.devMu.Unlock()
+	if target, ok := dev.(recorderController); ok {
+		channels, rate := target.RecorderFormat()
+		u.rec.SetFormat(channels, rate)
+		m := audio.NewMeter(nil)
+		target.SetRecorder(u.rec, func(samples []float32) {
+			m.Process(samples)
+			u.rec.Capture(samples)
+		})
+		u.audioMeter = m
+		u.meterSrc = &audioSource{m: m}
+		u.audioDevice = "emulator output"
+		return
+	}
+
+	output, err := audio.OpenOutput()
+	if err == nil {
+		format := output.Format()
+		u.rec.SetFormat(format.Channels, format.SampleRate)
+		if err := output.Start(u.rec.Mix); err != nil {
+			_ = output.Close()
+			log.Printf("rp6: recorder output unavailable: %v", err)
+		} else {
+			u.recOutput = output
+		}
+	} else {
+		log.Printf("rp6: recorder output unavailable: %v", err)
+	}
+
 	cap, err := audio.OpenCapture("P-6")
 	if err != nil {
 		log.Printf("rp6: audio capture unavailable: %v (using activity meter)", err)
 		return
 	}
-	m := audio.NewMeter(cap)
-	if err := m.Start(); err != nil {
-		log.Printf("rp6: audio meter start failed: %v", err)
+	format := cap.Format()
+	u.rec.SetFormat(format.Channels, format.SampleRate)
+	m := audio.NewMeter(nil)
+	if err := cap.Start(func(samples []float32) {
+		m.Process(samples)
+		u.rec.Capture(samples)
+	}); err != nil {
+		log.Printf("rp6: audio capture start failed: %v", err)
 		_ = cap.Close()
 		return
 	}
 	u.audioMeter = m
+	u.audioCap = cap
 	u.meterSrc = &audioSource{m: m}
-	u.audioDevice = m.Name()
+	u.audioDevice = cap.Name()
 	log.Printf("rp6: metering P-6 audio output (%s)", u.audioDevice)
 	u.setStatus("metering P-6 audio output")
+}
+
+func (u *ui) stopAudio() {
+	if u.audioCap != nil {
+		_ = u.audioCap.Stop()
+		_ = u.audioCap.Close()
+		u.audioCap = nil
+	}
+	if u.recOutput != nil {
+		_ = u.recOutput.Stop()
+		_ = u.recOutput.Close()
+		u.recOutput = nil
+	}
+	u.devMu.Lock()
+	dev := u.dev
+	u.devMu.Unlock()
+	if target, ok := dev.(recorderController); ok {
+		target.SetRecorder(nil, nil)
+	}
+	u.audioMeter = nil
+	u.audioDevice = ""
+	u.meterSrc = u.activity
 }
 
 // padSelected records a pad as the current selection (for the effects rack) and
@@ -1988,6 +2096,7 @@ func (u *ui) bumpMeter(velocity uint8) {
 // fires the note, possibly starting/stopping a roll), and reports status.
 func (u *ui) onPadTrigger(bank, number int) {
 	id := padID(bank, number)
+	u.rec.TriggerRecord()
 	u.padSelected(id)
 	u.jamBroadcastPad(id, p6.DefaultVelocity) // share this live hit with jam peers (no-op in -tags nojam / web / mobile builds)
 
@@ -2102,6 +2211,7 @@ func (u *ui) onTempoChange(bpm int) {
 	}
 	u.fx.SetTempo(u.bpm)
 	u.seq.SetTempo(u.bpm)
+	u.rec.SetTempo(u.bpm)
 	u.setStatus(fmt.Sprintf("tempo %d BPM", bpm))
 }
 
@@ -2186,6 +2296,9 @@ func (u *ui) connect() {
 	defer u.connecting.Store(false)
 
 	u.fx.StopAll() // stop any rolls before swapping the device out
+	if u.audioStarted {
+		u.stopAudio()
+	}
 	if u.clock != nil {
 		_ = u.clock.Stop()
 		u.clock = nil
@@ -2310,6 +2423,7 @@ func (u *ui) onMIDIIn(dev p6.Controller, ev p6.Event) {
 		return // not a pad note
 	}
 	id := padID(bank, number)
+	u.rec.TriggerRecord()
 	page, row, col := u.gridPos(bank, number)
 	u.bumpMeter(ev.Data2)           // meter reacts to hardware hits (any goroutine)
 	u.jamBroadcastPad(id, ev.Data2) // share the hardware hit with jam peers (no-op in -tags nojam / web / mobile builds)
@@ -2406,6 +2520,7 @@ func (u *ui) fireExternalPad(id int, velocity uint8) {
 	if !u.listenMIDI.Load() {
 		return
 	}
+	u.rec.TriggerRecord()
 	u.firePadVel(id, velocity)      // sound (also bumps the meter); concurrency-safe
 	u.jamBroadcastPad(id, velocity) // share this live hit with jam peers (no-op in -tags nojam / web / mobile builds)
 	bank, number := padBankNumber(id)
@@ -2536,15 +2651,15 @@ func (u *ui) close() {
 	u.stopJam()
 	u.fx.StopAll()
 	u.seq.Stop()
+	u.rec.StopRecordingImmediate()
+	u.rec.StopAllImmediate()
 	u.seqRack.setSlotPending(false) // stop the SEQ knob flash goroutine
 	u.autosaveSeq()
+	u.autosaveRecorder()
 	if u.store != nil {
 		_ = u.store.Close()
 	}
-	if u.audioMeter != nil {
-		_ = u.audioMeter.Stop()
-		_ = u.audioMeter.Close()
-	}
+	u.stopAudio()
 	if u.statusLED != nil {
 		u.statusLED.StopPulse()
 	}
@@ -2648,9 +2763,8 @@ func main() {
 	// mobile) — desktop only. External MIDI controllers (MacroPad) and the P-6
 	// device watcher use ALSA (desktop) or Web MIDI (web); Android reaches USB
 	// MIDI a different way (see startAndroidMIDI); iOS has no MIDI path.
-	if !onWeb && !onMobile {
-		u.startAudio()
-	}
+	u.loadRecorder()
+	u.startAudio()
 	if !onMobile {
 		u.startMIDIInput()
 		u.startDeviceWatch()
