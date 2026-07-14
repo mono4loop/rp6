@@ -21,6 +21,7 @@ layout phone when mobile {
       keysfx if !p6_active
       keys
       paks
+      rec
       seq if !seq_docked
     }
     center: Split {
@@ -52,6 +53,7 @@ layout window {
       keysfx if !p6_active
       keys
       paks
+      rec
       seq(show: true, tracks: 4, expand: horizontal) if !seq_docked
     }
     center: Split {
@@ -137,6 +139,15 @@ rack seq {
     Border {
       top: VBox { seqHeader; seqControls }
       center: seqGrid
+    }
+  }
+}
+
+rack rec {
+  RackPanel {
+    Border {
+      top: VBox { recHeader; recControls }
+      center: recTracks
     }
   }
 }

@@ -25,6 +25,7 @@ layout tablet when mobile && tablet {
   Border {
     bottom: VBox {
       fx(show: false)
+      rec(show: false)
       keysfx(show: false) if !p6_active
       keys(show: true)
       toggles

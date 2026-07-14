@@ -18,7 +18,7 @@ import (
 // embedded layout can be built without a running UI.
 func rp6Registry() layoutspec.Registry {
 	r := layoutspec.Registry{}
-	for _, id := range []string{"transport", "p6", "fx", "keysfx", "seq", "keys", "paks", "pads", "vu", "toggles", "status"} {
+	for _, id := range []string{"transport", "p6", "fx", "keysfx", "seq", "rec", "keys", "paks", "pads", "vu", "toggles", "status"} {
 		r[id] = canvas.NewRectangle(color.White)
 	}
 	return r
@@ -97,7 +97,7 @@ func TestFullScreenSelectsConsole(t *testing.T) {
 func TestDefaultRackBlocks(t *testing.T) {
 	doc, err := layoutlang.Parse(layoutSource())
 	require.NoError(t, err)
-	assert.ElementsMatch(t, []string{"transport", "p6", "fx", "keysfx", "pads", "seq", "keys", "paks"}, doc.RackNames())
+	assert.ElementsMatch(t, []string{"transport", "p6", "fx", "keysfx", "pads", "seq", "rec", "keys", "paks"}, doc.RackNames())
 
 	racks := map[string][]string{
 		"transport": {"tempo"},
@@ -106,6 +106,7 @@ func TestDefaultRackBlocks(t *testing.T) {
 		"keysfx":    {"keysFXTone", "keysFXComp", "keysFXChorus", "keysFXDelay", "keysFXReverb"},
 		"pads":      {"padFloat", "padListen", "padDensity", "badge", "padGrid"},
 		"seq":       {"seqHeader", "seqControls", "seqGrid"},
+		"rec":       {"recHeader", "recControls", "recTracks"},
 		"keys":      {"keyboardOct", "keyboardKeys"},
 		"paks":      {"paksHeader", "paksList"},
 	}
@@ -227,10 +228,11 @@ func TestConsoleRepeatedRoundTripKeepsSequencerAvailable(t *testing.T) {
 // default rack in the window variant, so it stays on across the round trip.
 func TestConsolePreservesRackState(t *testing.T) {
 	u := newTestUI(t)
-	// Default window state: fx / keys / paks are off; pads + sequencer on.
+	// Default window state: fx / keys / paks / recorder are off; pads + sequencer on.
 	require.False(t, u.fxRack.Object().Visible())
 	require.False(t, u.keyboardRack.Object().Visible())
 	require.False(t, u.paksRack.Object().Visible())
+	require.False(t, u.recRack.Object().Visible())
 	require.True(t, u.seqRack.Object().Visible(), "sequencer shown by default in windowed mode")
 	require.True(t, u.padRackObj.Visible())
 
@@ -239,16 +241,19 @@ func TestConsolePreservesRackState(t *testing.T) {
 	assert.True(t, u.keyboardRack.Object().Visible(), "console reveals the keyboard")
 	assert.True(t, u.paksRack.Object().Visible(), "console reveals the paks rack")
 	assert.True(t, u.seqRack.Object().Visible(), "console shows the sequencer")
+	assert.False(t, u.recRack.Object().Visible(), "recorder stays off in the console (toggle-only)")
 
 	u.toggleConsole() // back to windowed — restore the prior FX/KEYS/PAKS (off) state
 	assert.False(t, u.fxRack.Object().Visible(), "FX restored to off")
 	assert.False(t, u.keyboardRack.Object().Visible(), "KEYS restored to off")
 	assert.False(t, u.paksRack.Object().Visible(), "PAKS restored to off")
 	assert.True(t, u.seqRack.Object().Visible(), "SEQ stays on (windowed default)")
+	assert.False(t, u.recRack.Object().Visible(), "REC restored to off")
 	assert.False(t, u.padFXBtn.On())
 	assert.False(t, u.keysBtn.On())
 	assert.False(t, u.paksBtn.On())
 	assert.True(t, u.seqBtn.On())
+	assert.False(t, u.recBtn.On())
 	assert.True(t, u.padRackObj.Visible(), "pads still visible")
 }
 

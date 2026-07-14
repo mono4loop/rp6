@@ -60,6 +60,15 @@ func TestMeterTracksLevel(t *testing.T) {
 	assert.True(t, fc.closed)
 }
 
+func TestMeterCanConsumeSharedStream(t *testing.T) {
+	m := NewMeter(nil)
+	require.NoError(t, m.Start())
+	m.Process([]float32{1, -1})
+	assert.Greater(t, m.Level(), 0.4)
+	require.NoError(t, m.Stop())
+	require.NoError(t, m.Close())
+}
+
 func TestNormDB(t *testing.T) {
 	// 0 dB (full scale) -> 1; silence -> 0; at/below floor -> 0.
 	assert.Equal(t, 1.0, NormDB(1.0, -42))

@@ -44,10 +44,13 @@ layout console when fullscreen && desktop {
       bottom: fx(show: true)
     }
 
-    // Right rail: the sequencer only when it is not docked in the centre split.
-    // When docked this region disappears completely, giving that width back to
-    // the pads and sequencer rather than leaving a mostly-empty FX column.
-    right: seq(show: true, tracks: 6) if !seq_docked
+    // Right rail: the recorder (looper) on top — placed but off by default so it
+    // doesn't crowd the console; toggle it on with the REC button — and the
+    // sequencer below it when it is not docked in the centre split.
+    right: VBox {
+      rec
+      seq(show: true, tracks: 6) if !seq_docked
+    }
 
     // Centre: the pads fill the space; when the sequencer is docked it shares
     // the centre as the right pane of a split.

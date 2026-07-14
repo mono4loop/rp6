@@ -11,8 +11,8 @@ import (
 	"sync"
 )
 
-// ErrUnavailable is returned by OpenCapture when no capture backend is compiled
-// in (build without the "portaudio" tag) or no matching device is found.
+// ErrUnavailable is returned when no requested audio backend is compiled in or
+// no matching device is found.
 var ErrUnavailable = errors.New("audio: capture unavailable")
 
 // Format describes a capture stream's PCM layout.
@@ -99,13 +99,28 @@ func NewMeter(c Capturer) *Meter {
 }
 
 // Start begins capturing and metering.
-func (m *Meter) Start() error { return m.cap.Start(m.onFrames) }
+func (m *Meter) Start() error {
+	if m.cap == nil {
+		return nil
+	}
+	return m.cap.Start(m.Process)
+}
 
 // Stop halts capturing.
-func (m *Meter) Stop() error { return m.cap.Stop() }
+func (m *Meter) Stop() error {
+	if m.cap == nil {
+		return nil
+	}
+	return m.cap.Stop()
+}
 
 // Close releases the underlying device.
-func (m *Meter) Close() error { return m.cap.Close() }
+func (m *Meter) Close() error {
+	if m.cap == nil {
+		return nil
+	}
+	return m.cap.Close()
+}
 
 // Level returns the current smoothed level (0..1).
 func (m *Meter) Level() float64 {
@@ -114,7 +129,9 @@ func (m *Meter) Level() float64 {
 	return m.level
 }
 
-func (m *Meter) onFrames(samples []float32) {
+// Process consumes one PCM block. It lets a caller fan one capture stream out
+// to both the meter and other consumers such as the recorder.
+func (m *Meter) Process(samples []float32) {
 	p := Peak(samples)
 	if p < m.gate {
 		p = 0 // gate the noise floor so silence reads as zero
@@ -132,4 +149,9 @@ func (m *Meter) onFrames(samples []float32) {
 }
 
 // Name returns the underlying device name.
-func (m *Meter) Name() string { return m.cap.Name() }
+func (m *Meter) Name() string {
+	if m.cap == nil {
+		return "audio stream"
+	}
+	return m.cap.Name()
+}
