@@ -16,6 +16,7 @@ import (
 	"github.com/mono4loop/rp6/internal/audiofx"
 	"github.com/mono4loop/rp6/internal/effects"
 	"github.com/mono4loop/rp6/internal/midiin"
+	"github.com/mono4loop/rp6/internal/recorder"
 	"github.com/mono4loop/rp6/internal/sequencer"
 	"github.com/mono4loop/rp6/internal/store"
 	"github.com/mono4loop/rp6/internal/ui/components"
@@ -124,7 +125,7 @@ func TestPlayButtonFloatsVerticalRackChoices(t *testing.T) {
 	require.False(t, u.playMenu.Visible())
 	choices, ok := u.playMenu.Content.(*fyne.Container)
 	require.True(t, ok)
-	assert.Equal(t, []fyne.CanvasObject{u.padBtn, u.seqBtn, u.recBtn, u.keysBtn}, choices.Objects)
+	assert.Equal(t, []fyne.CanvasObject{u.padBtn, u.seqBtn, u.keysBtn}, choices.Objects)
 	assert.True(t, u.playMenuBtn.On(), "pads and sequencer are visible by default")
 
 	u.togglePlayMenu()
@@ -147,6 +148,125 @@ func TestPlayButtonFloatsVerticalRackChoices(t *testing.T) {
 	u.keysBtn.Tapped(nil)
 	assert.True(t, u.keyboardRack.Object().Visible())
 	assert.True(t, u.playMenuBtn.On())
+}
+
+// TestPageNavigationSwitchesAndPreservesState drives the PLAY/LOOP page
+// navigation: switching pages swaps the variant and reveals the recorder on the
+// LOOP page while leaving live state (pad selection) untouched, and cycling wraps.
+func TestPageNavigationSwitchesAndPreservesState(t *testing.T) {
+	u := newTestUI(t)
+
+	// Two pages, PLAY active by default; its nav key is lit.
+	require.Equal(t, "play", u.activePage)
+	require.Contains(t, u.pageBtns, "play")
+	require.Contains(t, u.pageBtns, "loop")
+	assert.True(t, u.pageBtns["play"].On(), "PLAY key lit on the play page")
+	assert.False(t, u.pageBtns["loop"].On())
+	require.Equal(t, "window", u.activeVariant)
+	require.False(t, u.recRack.Object().Visible(), "recorder is off on the play page")
+
+	// Some live state navigation must not disturb.
+	u.padSelected(padID(0, 3))
+	selBefore := u.selPad
+
+	// Switch to the LOOP page: the recorder appears, the variant swaps to
+	// loop-window, and the nav keys track the active page.
+	u.setPage("loop")
+	assert.Equal(t, "loop", u.activePage)
+	assert.Equal(t, "loop-window", u.activeVariant)
+	assert.True(t, u.recRack.Object().Visible(), "recorder shown on the loop page")
+	assert.True(t, u.pageBtns["loop"].On())
+	assert.False(t, u.pageBtns["play"].On())
+	assert.Equal(t, selBefore, u.selPad, "pad selection preserved across navigation")
+
+	// Back to PLAY: the recorder's forced visibility is restored to off, and the
+	// sequencer (a window default) returns.
+	u.setPage("play")
+	assert.Equal(t, "play", u.activePage)
+	assert.Equal(t, "window", u.activeVariant)
+	assert.False(t, u.recRack.Object().Visible(), "recorder hidden again on the play page")
+	assert.True(t, u.seqRack.Object().Visible(), "sequencer returns on the play page")
+
+	// cyclePage wraps in both directions.
+	u.cyclePage(1)
+	assert.Equal(t, "loop", u.activePage)
+	u.cyclePage(1)
+	assert.Equal(t, "play", u.activePage, "cycling forward wraps to the first page")
+	u.cyclePage(-1)
+	assert.Equal(t, "loop", u.activePage, "cycling backward wraps to the last page")
+}
+
+// TestRecorderTrackCountFromLayout verifies the looper defaults to 4 tracks and
+// that the `rec(tracks: N)` layout property drives the visible count per variant
+// (loop-window = 4, loop-console = 8), while the engine keeps its full capacity.
+func TestRecorderTrackCountFromLayout(t *testing.T) {
+	u := newTestUI(t)
+	require.Equal(t, defaultRecorderTracks, u.recRack.visibleTracks, "recorder defaults to 4 tracks")
+	require.Equal(t, 4, defaultRecorderTracks)
+
+	// LOOP window variant declares rec(tracks: 4).
+	u.setPage("loop")
+	require.Equal(t, "loop-window", u.activeVariant)
+	assert.Equal(t, 4, u.recRack.visibleTracks, "loop-window shows 4 recorder tracks")
+	for i := range recorder.TrackCount {
+		assert.Equal(t, i < 4, u.recRack.rows[i].Visible(), "track %d visibility at 4", i+1)
+	}
+
+	// LOOP console variant also declares rec(tracks: 4): full screen on the loop page.
+	u.setConsole(true)
+	require.Equal(t, "loop-console", u.activeVariant)
+	assert.Equal(t, 4, u.recRack.visibleTracks, "loop-console also shows 4 recorder tracks")
+	for i := range recorder.TrackCount {
+		assert.Equal(t, i < 4, u.recRack.rows[i].Visible(), "track %d visibility in the console", i+1)
+	}
+
+	// The engine keeps full capacity regardless of the visible count.
+	assert.Equal(t, 8, recorder.TrackCount)
+
+	// SetTrackCount clamps out-of-range values (and can still reach full capacity).
+	u.recRack.SetTrackCount(99)
+	assert.Equal(t, recorder.TrackCount, u.recRack.visibleTracks)
+	u.recRack.SetTrackCount(0)
+	assert.Equal(t, 1, u.recRack.visibleTracks)
+}
+
+// TestPerPageRackVisibility verifies rack show/hide is remembered per application
+// page: the KEYS rack can be shown on LOOP independently of PLAY, and each page
+// starts fresh (from the factory defaults) on its first visit rather than
+// inheriting the other page's toggles.
+func TestPerPageRackVisibility(t *testing.T) {
+	u := newTestUI(t)
+	keys := u.keyboardRack.Object()
+	require.Equal(t, "play", u.activePage)
+	require.False(t, keys.Visible(), "keys off by default on PLAY")
+
+	// Show keys on PLAY.
+	u.setVisible(keys, u.keysBtn, true)
+	u.relayout()
+	require.True(t, keys.Visible())
+
+	// Switch to LOOP: keys starts from the defaults (off), not inherited from PLAY.
+	u.setPage("loop")
+	assert.False(t, keys.Visible(), "keys off on LOOP's first visit (not inherited from PLAY)")
+
+	// Show keys on LOOP; it renders there (the loop variants place `keys`).
+	u.setVisible(keys, u.keysBtn, true)
+	u.relayout()
+	require.True(t, keys.Visible())
+
+	// Back to PLAY: keys is still on (PLAY remembered its own state).
+	u.setPage("play")
+	assert.True(t, keys.Visible(), "PLAY remembers keys shown")
+
+	// Hide keys on PLAY, then return to LOOP: LOOP still has keys shown.
+	u.setVisible(keys, u.keysBtn, false)
+	u.relayout()
+	u.setPage("loop")
+	assert.True(t, keys.Visible(), "LOOP remembers keys shown, independent of PLAY")
+
+	// And PLAY still remembers keys hidden.
+	u.setPage("play")
+	assert.False(t, keys.Visible(), "PLAY remembers keys hidden")
 }
 
 func TestRecorderRackArmsFromLivePadAndControlsTrack(t *testing.T) {

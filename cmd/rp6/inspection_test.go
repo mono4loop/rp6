@@ -23,6 +23,7 @@ const layoutArtifactEnv = "RP6_UPDATE_LAYOUT_ARTIFACTS"
 type layoutScenario struct {
 	name         string
 	formFactor   string
+	page         string // active application page ("" = the default PLAY page)
 	pixel        uiinspect.PixelSize
 	scale        float32
 	initialScale float32
@@ -165,6 +166,70 @@ var layoutScenarios = []layoutScenario{
 		stepPixels: [2]int{40, 50},
 	},
 	{
+		name:       "thinkpad-x13-loop-window-850x950",
+		formFactor: "desktop-window-loop",
+		page:       "loop",
+		pixel:      uiinspect.PixelSize{Width: 850, Height: 950},
+		scale:      1,
+		configure:  loopScene,
+		required:   []string{"rack.transport", "rack.recorder", "rack.pads", "rack.vu", "rack.navigation", "rack.status"},
+		hidden:     []string{"rack.p6", "rack.pad-fx", "rack.keys-fx", "rack.sequencer", "rack.keyboard", "rack.paks"},
+		fit:        []string{"rack.transport", "rack.recorder", "rack.vu", "rack.navigation", "rack.status"},
+		overlaps:   []string{"rack.transport", "rack.recorder", "rack.pads", "rack.vu", "rack.navigation", "rack.status"},
+		touch:      loopTouchTargets(),
+		notes:      []string{"LOOP page in the fixed 850x950 window: the eight-track recorder + TEMPO/VU on top, the two-bank pads below. The second application page (see loop.layout)."},
+		padPixels:  [2]int{80, 130},
+	},
+	{
+		name:       "thinkpad-x13-loop-fullscreen-1920x1200",
+		formFactor: "laptop-fullscreen-loop",
+		page:       "loop",
+		pixel:      uiinspect.PixelSize{Width: 1920, Height: 1200},
+		scale:      1,
+		console:    true,
+		configure:  loopScene,
+		required:   []string{"rack.transport", "rack.recorder", "rack.pads", "rack.vu", "rack.navigation", "rack.status"},
+		hidden:     []string{"rack.p6", "rack.pad-fx", "rack.keys-fx", "rack.sequencer", "rack.keyboard", "rack.paks"},
+		fit:        []string{"rack.transport", "rack.recorder", "rack.pads", "rack.vu", "rack.navigation", "rack.status", "pads.grid"},
+		overlaps:   []string{"rack.transport", "rack.recorder", "rack.pads", "rack.vu", "rack.navigation", "rack.status"},
+		touch:      loopTouchTargets(),
+		notes:      []string{"LOOP page full screen (ThinkPad 1920x1200): TEMPO/VU on the left rail, the pads and the recorder sharing the centre split."},
+		padPixels:  [2]int{80, 130},
+	},
+	{
+		name:       "pixel-10-pro-xl-loop-1344x2992",
+		formFactor: "phone-portrait-loop",
+		page:       "loop",
+		pixel:      uiinspect.PixelSize{Width: 1344, Height: 2992},
+		scale:      3,
+		mobile:     true,
+		configure:  loopScene,
+		required:   []string{"rack.transport", "rack.recorder", "rack.pads", "rack.vu", "rack.navigation", "rack.status"},
+		hidden:     []string{"rack.p6", "rack.pad-fx", "rack.keys-fx", "rack.sequencer", "rack.keyboard", "rack.paks"},
+		fit:        []string{"rack.transport", "rack.recorder", "rack.pads", "rack.vu", "rack.navigation", "rack.status", "pads.grid"},
+		overlaps:   []string{"rack.transport", "rack.recorder", "rack.pads", "rack.vu", "rack.navigation", "rack.status"},
+		touch:      loopTouchTargets(),
+		notes:      []string{"LOOP page on a phone (Pixel 10 Pro XL): the recorder above the pads, VU + page nav + toggles along the bottom."},
+		padPixels:  [2]int{80, 130},
+	},
+	{
+		name:       "oneplus-pad-3-loop-3392x2400",
+		formFactor: "tablet-landscape-loop",
+		page:       "loop",
+		pixel:      uiinspect.PixelSize{Width: 3392, Height: 2400},
+		scale:      2,
+		mobile:     true,
+		tablet:     true,
+		configure:  loopScene,
+		required:   []string{"rack.transport", "rack.recorder", "rack.pads", "rack.vu", "rack.navigation", "rack.status"},
+		hidden:     []string{"rack.p6", "rack.pad-fx", "rack.keys-fx", "rack.sequencer", "rack.keyboard", "rack.paks"},
+		fit:        []string{"rack.transport", "rack.recorder", "rack.pads", "rack.vu", "rack.navigation", "rack.status", "pads.grid"},
+		overlaps:   []string{"rack.transport", "rack.recorder", "rack.pads", "rack.vu", "rack.navigation", "rack.status"},
+		touch:      loopTouchTargets(),
+		notes:      []string{"LOOP page on a tablet (OnePlus Pad 3): the recorder stacked over the pads in the centre column, TEMPO/VU on top."},
+		padPixels:  [2]int{80, 130},
+	},
+	{
 		name:         "regression-scale-transition-3072x1920",
 		formFactor:   "desktop-hidpi-fullscreen",
 		pixel:        uiinspect.PixelSize{Width: 3072, Height: 1920},
@@ -203,12 +268,14 @@ func TestCurrentLayoutsAtTargetResolutions(t *testing.T) {
 	for _, scenario := range layoutScenarios {
 		t.Run(scenario.name, func(t *testing.T) {
 			bundle := captureLayoutScenario(t, scenario)
+			// The page-navigation strip and its keys are present in every scenario
+			// (the document declares PLAY + LOOP), so validate them universally.
 			contract := uiinspect.Contract{
-				Required:       scenario.required,
+				Required:       append([]string{"rack.pagenav"}, scenario.required...),
 				Hidden:         scenario.hidden,
-				Fit:            scenario.fit,
-				NonOverlapping: scenario.overlaps,
-				TouchTargets:   scenario.touch,
+				Fit:            append([]string{"rack.pagenav"}, scenario.fit...),
+				NonOverlapping: append([]string{"rack.pagenav"}, scenario.overlaps...),
+				TouchTargets:   append([]string{"navigation.page.play", "navigation.page.loop"}, scenario.touch...),
 				MinTouch:       uiinspect.Size{Width: 32, Height: 32},
 			}
 			contract.Contained = append(contract.Contained, rackContainmentContracts()...)
@@ -239,6 +306,10 @@ func captureLayoutScenario(t *testing.T, scenario layoutScenario) uiinspect.Bund
 	u.mobileForTest = &mobile
 	u.tabletForTest = &tablet
 	u.fullScreen = scenario.console
+	if scenario.page != "" {
+		u.activePage = scenario.page // navigate to the scenario's page before the first relayout
+		u.updatePageNav()            // light the active page's key (setPage does this in the app)
+	}
 	logical := fyne.NewSize(float32(scenario.pixel.Width)/scenario.scale, float32(scenario.pixel.Height)/scenario.scale)
 	u.relayout()
 	if scenario.configure != nil {
@@ -354,6 +425,33 @@ func phoneScene(u *ui) {
 	u.setVisible(u.meterArea, u.meterBtn, true)
 	u.setConnected(true)
 	u.setStatus("emulator online")
+}
+
+// loopScene sets up the LOOP page (the recorder is force-shown by the loop
+// variant; the pads stay visible as its record source). The active page itself
+// is set from the scenario (see captureLayoutScenario).
+func loopScene(u *ui) {
+	// JAM is desktop-only and not compiled into mobile builds; hide the test
+	// process's contribution on the mobile loop scenes so the bar measures the
+	// real mobile control set (matches phoneScene).
+	if u.mobileForTest != nil && *u.mobileForTest {
+		for _, control := range u.jamControls {
+			control.Hide()
+		}
+	}
+	u.setConnected(true)
+	u.setStatus("emulator online - loop page")
+}
+
+// loopTouchTargets are the LOOP page's finger targets: the page nav (added
+// globally), the rack toggles, the pad tools + cells, and the recorder's header
+// transport. The sequencer's controls are omitted — it's off on this page.
+func loopTouchTargets() []string {
+	return append([]string{
+		"navigation.play", "navigation.p6", "navigation.fx", "navigation.paks", "navigation.vu", "navigation.console",
+		"pads.float", "pads.listen", "pads.layout", "pads.store", "pads.device",
+		"recorder.play", "recorder.quant", "recorder.export",
+	}, activePadIDs(24)...)
 }
 
 func inspectionPakItems() []pakItem {

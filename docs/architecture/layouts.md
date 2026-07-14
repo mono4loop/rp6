@@ -57,13 +57,20 @@ Layering: `layoutlang` → `layoutspec` → `components`. The application
 
 ## 3. The language
 
-A document is a sequence of **`layout`** variants and **`rack`** blocks. C-style
-`//` and `/* */` comments; `;` entry terminators are optional.
+A document is a sequence of **`layout`** variants, **`rack`** blocks, and
+**`page`** blocks. C-style `//` and `/* */` comments; `;` entry terminators are
+optional.
 
 ```
-layout <name> [when <condition>] { <node> }   // a whole-window arrangement
-rack   <name>                  { <node> }     // a rack's internal arrangement
+layout <name> [when <condition>] { <node> }    // a whole-window arrangement
+rack   <name>                    { <node> }     // a rack's internal arrangement
+page   <id> <Label> { <layout variants…> }      // an application page (see §12)
 ```
+
+A `page` block groups the `layout` variants that make up one application page;
+the app selects a page by id and then the first matching variant within it (§12).
+Variants written at the top level (outside any page) form an implicit default
+page.
 
 **Nodes** are one of:
 
@@ -135,10 +142,17 @@ predicates (best-effort): an unlisted desktop full-screen size still gets
 Android device gets `phone` or `tablet` by size, and any desktop window is the
 fixed `window` size. See §9 for the files.
 
+**Pages are a second selection axis** (see §12). Variants are grouped into
+first-class `page <id> <Label> { … }` blocks; the app selects a page by id
+(`SelectForPage`) and then the first matching variant *within* that page. The four
+`window`/`console`/`phone`/`tablet` variants live in the **PLAY** page block; the
+**LOOP** page block adds `loop-window`/`loop-console`/`loop-phone`/`loop-tablet`.
+There's no page flag — each page's arrangement is defined entirely by its block.
+
 ## 5. Widget IDs
 
 Top-level racks: `transport` · `p6` · `fx` · `keysfx` · `seq` · `keys` · `paks` · `pads` · `vu` ·
-`status`. Rack-internal sub-widgets (see §6): `play`/`tempo`/`pattern` (transport);
+`rec` · `pagenav` · `toggles` · `status`. Rack-internal sub-widgets (see §6): `play`/`tempo`/`pattern` (transport);
 `delayTime`/`delayLevel`/`reverbTime`/`reverbLevel` (p6); `fxRoll`/`fxRate`
 (fx); `keysFXTone`/`keysFXComp`/`keysFXChorus`/`keysFXDelay`/`keysFXReverb`
 (keysfx); `keyboardOct`/`keyboardKeys` (keys); `padFloat`/`padListen`/`padDensity`/`badge`/`padGrid`
@@ -195,6 +209,11 @@ what they mean:
 - **`seq(tracks: N)`** — the sequencer's default track count for the variant
   (`applyDefaultTracks` → `sequencerRack.SetTrackCount`). Variant-entry only, like
   `show:`. The window variant uses `tracks: 4`; console/tablet use `6`.
+- **`rec(tracks: N)`** — the recorder/looper's default number of **visible** track
+  rows for the variant (`applyDefaultRecorderTracks` → `recorderRack.SetTrackCount`;
+  the engine keeps its full `recorder.TrackCount` capacity). Variant-entry only,
+  like `seq(tracks:)`. Defaults to `defaultRecorderTracks` (4); the LOOP variants
+  use `4` (window/phone), `6` (tablet) and `8` (console).
 - **`pads(layout: paged|twobank|dense)`** — the pad grid's default paging for the
   variant (`applyDefaultPadLayout` → `applyPadLayout` **without persisting**, so it
   doesn't clobber the user's density-button preference). Variant-entry only. The
@@ -234,17 +253,17 @@ and `onCanvasResize` only rebuilds if the discrete variant actually changes (see
 
 ## 9. Files & app wiring
 
-- **`cmd/rp6/assets/console-tablet.layout`** — the `tablet` variant (paks rail +
-  seq-over-pads column for large touch screens; `when mobile && tablet`).
-- **`cmd/rp6/assets/console.layout`** — the `console` (desktop full-screen)
-  variant (`when fullscreen && desktop`).
-- **`cmd/rp6/assets/default.layout`** — the `phone` (`when mobile`) + `window`
-  (default, fixed desktop) variants **and the shared `rack` blocks**.
+- **`cmd/rp6/assets/default.layout`** — the **PLAY page** (`page play PLAY { … }`
+  with the `tablet` · `console` · `phone` · `window` variants, specific-first)
+  **and the shared top-level `rack` blocks**.
+- **`cmd/rp6/assets/loop.layout`** — the **LOOP page** (`page loop LOOP { … }`
+  with the four `loop-*` variants; see §12).
 
-`layoutSource()` concatenates them **tablet-first, then console, then the
-default file**, so the more specific `when mobile && tablet` guard is matched
-before `when mobile` (a document is just a sequence of blocks, so concatenation
-is valid). `loadLayout()` parses it in `build()` — pure, no I/O, safe in tests.
+`layoutSource()` concatenates them **PLAY page first, then LOOP page**, so
+`Document.Pages()` reports them in that order (the nav shows PLAY then LOOP). Each
+page is a self-contained block, so concatenation just appends pages; rack blocks
+are top-level and shared. `loadLayout()` parses it in `build()` (pure, no I/O,
+safe in tests) and records the declared pages.
 
 Flow: `build()` → `loadLayout()`; each rack composed once via `composeRack`;
 `relayout()` builds the registry, calls `selectLayout` (→ `Document.Select` +
@@ -384,3 +403,61 @@ it is a rendering regression guard, not a supported resolution.
 - A `rp6 -check-layout <file>` CLI to validate a layout without a display.
 - If runtime editing is ever wanted again, layer a file loader over
   `layoutlang.Parse` — the parser is already file-agnostic.
+
+## 12. Application pages (PLAY / LOOP)
+
+RP6 divides its major work areas into named **application pages** so racks no
+longer compete for one viewport. Only one page's layout tree is attached to the
+canvas at a time; switching pages **rebuilds only the container scaffolding
+around the same wired rack objects** — no rack object is ever parented into two
+trees. State (pad selection, sequencer, recorder, audio, MIDI, console intent) is
+untouched by navigation. Fyne `AppTabs` is deliberately **not** used: it retains
+every page, sizes all pages from the largest, and makes reusing a rack across
+alternative arrangements unsafe.
+
+**A page is a first-class `page … { … }` block** that holds its own variants, so
+it's defined entirely in the layout file. The mechanism, end to end:
+
+1. **Definition.** The document defines a page with a block:
+   `page <id> <Label> { <layout variants…> }` (`page play PLAY { … }`,
+   `page loop LOOP { … }`) — see `layoutlang`. The variants inside are the page's
+   per-form-factor arrangements, ordered specific-first. A page may be **reopened**
+   (declared again with the same id) to append variants; `Document.Pages()` returns
+   the ordered id+label metadata for navigation.
+2. **Selection.** The app tracks the active page (`ui.activePage`) and selects
+   with `Document.SelectForPage(activePage, env)` — it finds the page block by id
+   and picks the first variant inside whose `when` matches the form factor. There
+   is **no page flag**: the page is chosen by id, the variant by form factor, so a
+   page's whole arrangement lives in its block. Variants declared outside any
+   block form an implicit default page (the single-page path).
+3. **Shipped pages.** `default.layout` holds `page play PLAY { tablet; console;
+   phone; window }` (plus the shared rack blocks); `loop.layout` holds
+   `page loop LOOP { loop-tablet; loop-console; loop-phone; loop-window }` (see
+   §4/§9). PLAY is first, so it's the default page.
+4. **Navigation.** `buildPageNav` builds one backlit `RackToggle` per page (the
+   active one lit), framed as its own `pagenav` rack the layout positions —
+   *left of* the section toggles where there's room (desktop/tablet), on its
+   **own row** on the narrow phone bar. `setPage(id)` restores the outgoing
+   page's `show:` overrides (like leaving the console), sets `activePage`,
+   persists it (`ui.page` preference), relights the nav, and relays out.
+   Keyboard: **Ctrl+Shift+Left/Right** cycle pages.
+5. **Rack visibility across pages.** Rack show/hide is **per-page**: each page
+   remembers its own content-rack visibility (`ui.pageVis`), saved when leaving a
+   page and restored on return (`savePageVis`/`loadPageVis`), so the visibility
+   toggles configure each page independently — e.g. KEYS shown on LOOP but not
+   PLAY (both pages place `keys`; each remembers its own toggle). A page's first
+   visit falls back to the captured build defaults (`defaultVis`) so it starts
+   fresh rather than inheriting the previous page. On top of that, a rack a page
+   places but that defaults hidden can be force-shown with `rec(show: true)`
+   (variant-entry only, restored on leave — the same `applyRackShow`/
+   `restoreForcedRacks` machinery the console uses); a rack a page simply doesn't
+   reference is absent regardless of its `Visible()` flag.
+
+Shipped pages: **PLAY** (pads, sequencer, effects, sample-paks — the default) and
+**LOOP** (the recorder/looper — `defaultRecorderTracks` = 4 tracks by default,
+raised per variant with `rec(tracks: N)`, up to the engine's 8-track capacity —
+with the pads as a record source, plus TEMPO and the VU meter). Adding a page is a
+`.layout` edit: write a `page <id> <Label> { … }` block with its variants and
+rebuild — the nav key follows the declaration. Inspection carries the active page
+in the manifest metadata plus `rack.pagenav` and `navigation.page.<id>` targets;
+the `-loop-*` scenarios in `inspection_test.go` validate every LOOP form factor.

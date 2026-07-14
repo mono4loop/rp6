@@ -32,6 +32,13 @@
 // `Type { … }`, the bare keyword `Spacer`, or a widget reference — any other
 // bare identifier, resolved against the Registry at build time.
 //
+// A document may also declare ordered application pages with
+// `page <id> <Label> { <layout variants…> }` (e.g. `page play PLAY { … }`). Each
+// page block holds its own `layout` variants; the host selects a page by id
+// (SelectForPage) and then the first matching variant within it, so a page's
+// arrangement is fully defined in the layout file (no external flag). Variants
+// declared outside any page block form an implicit default page. See Pages/Page.
+//
 // Container bodies hold entries terminated by `;`. Box/Stack/Grid take
 // positional children; Border and Split take named regions (top/bottom/left/
 // right/center and leading/trailing). Grid takes a `cols:` number; Split takes
@@ -58,11 +65,31 @@ var containerKinds = map[string]bool{
 	"RackPanel": true,
 }
 
-// Document is a parsed layout program: an ordered set of named variants plus
-// named rack blocks (per-rack internal arrangements).
+// Document is a parsed layout program: top-level (default-page) variants, named
+// application page blocks (each holding its own variants), and named rack blocks
+// (per-rack internal arrangements).
 type Document struct {
-	variants []variant
+	variants []variant   // top-level variants (the implicit default page)
+	pages    []pageBlock // named `page … { … }` blocks, in declaration order
 	racks    map[string]*nodeAST
+}
+
+// Page is the public metadata for a declared application page: a stable id and a
+// display label, in declaration order (see Pages). The page's actual layout is
+// the set of `layout` variants inside its `page <id> <Label> { … }` block —
+// selected by SelectForPage against the active page.
+type Page struct {
+	ID    string
+	Label string
+}
+
+// pageBlock is a named page and the variants declared inside its block. A page
+// may be reopened (declared again with the same id) to append more variants; the
+// label is taken from the first declaration.
+type pageBlock struct {
+	id       string
+	label    string
+	variants []variant
 }
 
 // variant is one form-factor arrangement.
@@ -114,20 +141,59 @@ func Parse(src string) (*Document, error) {
 	return p.parseDocument()
 }
 
-// Names returns the variant names in document order (handy for logging).
-func (d *Document) Names() []string {
-	out := make([]string, len(d.variants))
-	for i, v := range d.variants {
-		out[i] = v.name
+// Pages returns the declared application pages in document order. It's empty
+// when the document declares none — the application then runs as a single page.
+// The returned slice is a copy, safe for the caller to keep.
+func (d *Document) Pages() []Page {
+	out := make([]Page, len(d.pages))
+	for i, p := range d.pages {
+		out[i] = Page{ID: p.id, Label: p.label}
 	}
 	return out
 }
 
-// Select evaluates each variant's `when` against env and compiles the first
-// match to a layoutspec.Node, applying every inline `if` condition. It returns
-// nil if no variant matches (callers should treat that as "no content").
-func (d *Document) Select(env Env) layoutspec.Node {
+// Names returns every variant name in document order: the top-level variants
+// first, then each page's variants (handy for logging/tests).
+func (d *Document) Names() []string {
+	var out []string
 	for _, v := range d.variants {
+		out = append(out, v.name)
+	}
+	for _, p := range d.pages {
+		for _, v := range p.variants {
+			out = append(out, v.name)
+		}
+	}
+	return out
+}
+
+// variantsForPage returns the variants to select among for a page id: the named
+// page's own variants, or — when pageID is empty or unknown — the top-level
+// variants, falling back to the first page's variants when there are no top-level
+// ones (so a pages-only document still resolves without an explicit page).
+func (d *Document) variantsForPage(pageID string) []variant {
+	if pageID != "" {
+		for _, p := range d.pages {
+			if p.id == pageID {
+				return p.variants
+			}
+		}
+	}
+	if len(d.variants) > 0 {
+		return d.variants
+	}
+	if len(d.pages) > 0 {
+		return d.pages[0].variants
+	}
+	return nil
+}
+
+// SelectForPage evaluates each of the page's variants' `when` against env and
+// compiles the first match to a layoutspec.Node, applying every inline `if`
+// condition. Returns nil if no variant matches. See variantsForPage for how the
+// page id resolves (empty = the default/top-level variants).
+func (d *Document) SelectForPage(pageID string, env Env) layoutspec.Node {
+	for _, v := range d.variantsForPage(pageID) {
 		if v.when == nil || v.when.eval(env) {
 			return v.root.resolve(env)
 		}
@@ -135,16 +201,24 @@ func (d *Document) Select(env Env) layoutspec.Node {
 	return nil
 }
 
-// SelectedName returns the name of the variant Select would choose for env, and
-// whether any variant matched. Useful for diagnostics and tests.
-func (d *Document) SelectedName(env Env) (string, bool) {
-	for _, v := range d.variants {
+// SelectedNameForPage returns the name of the variant SelectForPage would choose
+// for the page + env, and whether any matched. Useful for diagnostics and tests.
+func (d *Document) SelectedNameForPage(pageID string, env Env) (string, bool) {
+	for _, v := range d.variantsForPage(pageID) {
 		if v.when == nil || v.when.eval(env) {
 			return v.name, true
 		}
 	}
 	return "", false
 }
+
+// Select is SelectForPage on the default (top-level) variants — the single-page
+// path for documents that declare no page blocks.
+func (d *Document) Select(env Env) layoutspec.Node { return d.SelectForPage("", env) }
+
+// SelectedName returns the name of the variant Select would choose for env, and
+// whether any variant matched. Useful for diagnostics and tests.
+func (d *Document) SelectedName(env Env) (string, bool) { return d.SelectedNameForPage("", env) }
 
 // Rack compiles the named `rack` block (a per-rack internal arrangement) to a
 // layoutspec.Node, applying inline `if` conditions against env. It returns nil
@@ -305,7 +379,7 @@ func (p *parser) parseDocument() (*Document, error) {
 	for p.peek().kind != tEOF {
 		kw := p.peek()
 		if kw.kind != tIdent {
-			return nil, p.errf(kw, "expected `layout` or `rack`, got %s", kw)
+			return nil, p.errf(kw, "expected `layout`, `rack` or `page`, got %s", kw)
 		}
 		switch kw.text {
 		case "layout":
@@ -320,14 +394,35 @@ func (p *parser) parseDocument() (*Document, error) {
 				return nil, err
 			}
 			d.racks[name] = node
+		case "page":
+			pg, err := p.parsePage()
+			if err != nil {
+				return nil, err
+			}
+			d.addPage(pg)
 		default:
-			return nil, p.errf(kw, "expected `layout` or `rack`, got %s", kw)
+			return nil, p.errf(kw, "expected `layout`, `rack` or `page`, got %s", kw)
 		}
 	}
-	if len(d.variants) == 0 {
+	if len(d.Names()) == 0 {
 		return nil, &parseError{1, 1, "empty layout document: expected at least one `layout` block"}
 	}
 	return d, nil
+}
+
+// addPage records a parsed page block, merging into an existing page of the same
+// id (reopening: variants are appended, the first label wins).
+func (d *Document) addPage(pg pageBlock) {
+	for i := range d.pages {
+		if d.pages[i].id == pg.id {
+			d.pages[i].variants = append(d.pages[i].variants, pg.variants...)
+			if d.pages[i].label == "" {
+				d.pages[i].label = pg.label
+			}
+			return
+		}
+	}
+	d.pages = append(d.pages, pg)
 }
 
 // parseRack parses a `rack NAME { node }` block: a per-rack internal
@@ -351,6 +446,45 @@ func (p *parser) parseRack() (string, *nodeAST, error) {
 		return "", nil, err
 	}
 	return name.text, node, nil
+}
+
+// parsePage parses a `page <id> <Label> { <layout variants…> }` block: a named
+// application page (a stable id + display label) that holds the `layout` variants
+// making up its per-form-factor arrangements. The brace body is optional — a bare
+// `page <id> <Label>` just declares the page (no variants) — and a page may be
+// reopened with the same id to append more variants (see addPage). A page block
+// contains only `layout` variants; rack blocks stay top-level (shared).
+func (p *parser) parsePage() (pageBlock, error) {
+	p.advance() // `page`
+	id, err := p.expect(tIdent)
+	if err != nil {
+		return pageBlock{}, err
+	}
+	label, err := p.expect(tIdent)
+	if err != nil {
+		return pageBlock{}, err
+	}
+	pg := pageBlock{id: id.text, label: label.text}
+	if p.peek().kind != tLBrace {
+		p.optSemi()
+		return pg, nil
+	}
+	p.advance() // `{`
+	for p.peek().kind != tRBrace {
+		if p.peek().kind == tEOF {
+			return pageBlock{}, p.errf(p.peek(), "unexpected end of input inside page %q (missing `}`?)", id.text)
+		}
+		if p.peek().kind != tIdent || p.peek().text != "layout" {
+			return pageBlock{}, p.errf(p.peek(), "a page block contains only `layout` variants, got %s", p.peek())
+		}
+		v, err := p.parseVariant()
+		if err != nil {
+			return pageBlock{}, err
+		}
+		pg.variants = append(pg.variants, v)
+	}
+	p.advance() // `}`
+	return pg, nil
 }
 
 func (p *parser) parseVariant() (variant, error) {

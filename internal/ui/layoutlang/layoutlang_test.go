@@ -178,6 +178,9 @@ func TestParseErrors(t *testing.T) {
 		"empty document":      ``,
 		"bad condition":       `layout m when { pads; }`,
 		"if on scalar prop":   `layout m { Grid { cols: 2 if compact; a; } }`,
+		"page missing label":  `page play`,
+		"non-layout in page":  `page p L { rack x { a } }`,
+		"unclosed page block": `page p L { layout m { a }`,
 	}
 	for name, src := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -275,4 +278,75 @@ func TestRefPropertiesMultiple(t *testing.T) {
 		func(_ string, p map[string]string) { props = p },
 		doc.Select(Env{}))
 	assert.Equal(t, map[string]string{"a": "1", "b": "two", "c": "true"}, props)
+}
+
+// TestPagesDeclared parses `page <id> <Label> { … }` blocks into ordered pages,
+// each holding its own variants, while leaving rack parsing untouched.
+func TestPagesDeclared(t *testing.T) {
+	doc, err := Parse(`
+page play PLAY {
+  layout main { pads }
+}
+page loop LOOP {
+  layout loop-main { rec }
+}
+rack pads { RackPanel { grid } }`)
+	require.NoError(t, err)
+	assert.Equal(t, []Page{{ID: "play", Label: "PLAY"}, {ID: "loop", Label: "LOOP"}}, doc.Pages())
+	assert.Equal(t, []string{"main", "loop-main"}, doc.Names(), "variants flatten in page order")
+	assert.ElementsMatch(t, []string{"pads"}, doc.RackNames())
+}
+
+// TestPageBlocksSelect drives the page mechanism: SelectForPage picks the first
+// matching variant *within* the named page by form factor, and an unknown page
+// falls back to the default/first-page variants.
+func TestPageBlocksSelect(t *testing.T) {
+	doc, err := Parse(`
+page play PLAY {
+  layout wide when width >= 500 { pads }
+  layout narrow { vu }
+}
+page loop LOOP {
+  layout main { rec }
+}`)
+	require.NoError(t, err)
+
+	wide, ok := doc.SelectedNameForPage("play", Env{Nums: map[string]float64{"width": 600}})
+	require.True(t, ok)
+	assert.Equal(t, "wide", wide, "play page picks its wide variant")
+
+	narrow, ok := doc.SelectedNameForPage("play", Env{Nums: map[string]float64{"width": 100}})
+	require.True(t, ok)
+	assert.Equal(t, "narrow", narrow, "play page falls to its default variant")
+
+	loop, ok := doc.SelectedNameForPage("loop", Env{})
+	require.True(t, ok)
+	assert.Equal(t, "main", loop, "loop page picks its own variant")
+
+	fallback, ok := doc.SelectedNameForPage("nope", Env{Nums: map[string]float64{"width": 600}})
+	require.True(t, ok)
+	assert.Equal(t, "wide", fallback, "unknown page falls back to the first page")
+}
+
+// TestPageBlockReopens checks a page declared twice with the same id merges its
+// variants (in order) and appears once in Pages().
+func TestPageBlockReopens(t *testing.T) {
+	doc, err := Parse(`
+page play PLAY { layout tablet when tablet { pads } }
+page play PLAY { layout window { vu } }`)
+	require.NoError(t, err)
+	assert.Equal(t, []Page{{ID: "play", Label: "PLAY"}}, doc.Pages(), "reopened page appears once")
+	assert.Equal(t, []string{"tablet", "window"}, doc.Names(), "variants merged in declaration order")
+
+	name, ok := doc.SelectedNameForPage("play", Env{Bools: map[string]bool{"tablet": true}})
+	require.True(t, ok)
+	assert.Equal(t, "tablet", name)
+}
+
+// TestPagesEmptyByDefault confirms a document without `page` blocks has no pages
+// (the app then runs single-page over the top-level variants).
+func TestPagesEmptyByDefault(t *testing.T) {
+	doc, err := Parse(`layout main { pads }`)
+	require.NoError(t, err)
+	assert.Empty(t, doc.Pages())
 }

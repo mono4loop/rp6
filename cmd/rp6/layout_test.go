@@ -18,18 +18,53 @@ import (
 // embedded layout can be built without a running UI.
 func rp6Registry() layoutspec.Registry {
 	r := layoutspec.Registry{}
-	for _, id := range []string{"transport", "p6", "fx", "keysfx", "seq", "rec", "keys", "paks", "pads", "vu", "toggles", "status"} {
+	for _, id := range []string{"transport", "p6", "fx", "keysfx", "seq", "rec", "keys", "paks", "pads", "vu", "toggles", "pagenav", "status"} {
 		r[id] = canvas.NewRectangle(color.White)
 	}
 	return r
 }
 
 // TestDefaultLayoutParses guards that the embedded layout always parses and
-// exposes the expected variants — a broken layout would blank the UI.
+// exposes the expected variants + pages — a broken layout would blank the UI.
 func TestDefaultLayoutParses(t *testing.T) {
 	doc, err := layoutlang.Parse(layoutSource())
 	require.NoError(t, err, "embedded layout must parse")
-	assert.Equal(t, []string{"tablet", "console", "phone", "window"}, doc.Names())
+	assert.Equal(t, []string{
+		"tablet", "console", "phone", "window",
+		"loop-tablet", "loop-console", "loop-phone", "loop-window",
+	}, doc.Names())
+	assert.Equal(t, []layoutlang.Page{{ID: "play", Label: "PLAY"}, {ID: "loop", Label: "LOOP"}}, doc.Pages(),
+		"PLAY and LOOP pages are declared, in order")
+}
+
+// TestPageVariantsSelectByFormFactor verifies each page's own variants are
+// selected by form factor: the PLAY page block yields window/console/phone/tablet
+// and the LOOP page block yields the matching loop-* variant.
+func TestPageVariantsSelectByFormFactor(t *testing.T) {
+	doc, err := layoutlang.Parse(layoutSource())
+	require.NoError(t, err)
+
+	cases := []struct {
+		name       string
+		bools      map[string]bool
+		play, loop string
+	}{
+		{"window", map[string]bool{"desktop": true}, "window", "loop-window"},
+		{"console", map[string]bool{"desktop": true, "fullscreen": true}, "console", "loop-console"},
+		{"phone", map[string]bool{"mobile": true}, "phone", "loop-phone"},
+		{"tablet", map[string]bool{"mobile": true, "tablet": true}, "tablet", "loop-tablet"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got, ok := doc.SelectedNameForPage("play", layoutlang.Env{Bools: c.bools})
+			require.True(t, ok)
+			assert.Equal(t, c.play, got, "PLAY page variant")
+
+			got, ok = doc.SelectedNameForPage("loop", layoutlang.Env{Bools: c.bools})
+			require.True(t, ok)
+			assert.Equal(t, c.loop, got, "LOOP page variant")
+		})
+	}
 }
 
 // TestDefaultLayoutBuilds checks the embedded layout builds a non-empty tree in

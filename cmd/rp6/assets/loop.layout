@@ -1,0 +1,116 @@
+// RP6 "LOOP" page — a self-contained loop station: the host audio recorder (the
+// "looper") with the pads (an audio source to record + layer), the TEMPO
+// transport and the master VU meter. It's the app's SECOND page; the PLAY page
+// (default.layout) keeps the pads, sequencer, effects and sample-pak browser so
+// the recorder no longer has to crowd them.
+//
+// A page is a first-class block: `page loop LOOP { … }` holds the `layout`
+// variants that make up the LOOP page's per-form-factor arrangements. The app
+// selects the page by id, then the first matching variant within it (specific-
+// first: tablet, console, phone, then the unguarded window). Because each page's
+// variants live inside its own block, there's no page flag on the guards — the
+// `when` conditions are just the form factor. See docs/architecture/layouts.md §12.
+//
+// The recorder's internals come from the shared `rack rec { … }` block in
+// default.layout — only its placement is here. `rec(show: true)` force-reveals it
+// on page entry (it defaults hidden on PLAY); leaving the page restores its prior
+// visibility (see restoreForcedRacks). `rec(tracks: N)` sets how many of the
+// recorder's tracks this variant shows (defaultRecorderTracks = 4; raise it where
+// there's room — the tablet's tall split shows 6, up to the engine's 8 capacity).
+//
+// The `keys` (keyboard) rack is placed here too (hidden by default), so the KEYS
+// toggle works on the LOOP page as an extra sound source. Rack show/hide is
+// per-page (see setPage / savePageVis), so KEYS on LOOP is independent of PLAY.
+
+page loop LOOP {
+
+  // LOOP on a large touch screen (tablet): the recorder stacked over the pads in a
+  // single centre column, with TEMPO carrying the VU strip across the top.
+  layout loop-tablet when mobile && tablet {
+    Border {
+      bottom: VBox {
+        keys
+        Border {
+          left:   pagenav
+          center: toggles
+        }
+        status
+      }
+      top: Border {
+        left:   transport
+        center: vu(orientation: horizontal)
+      }
+      center: Split {
+        horizontal: false
+        offset: 0.5
+        leading:  rec(show: true, tracks: 6)
+        trailing: pads(layout: paged) if pads_visible
+      }
+    }
+  }
+
+  // LOOP full screen (desktop console): TEMPO + VU on a slim left rail, the pads
+  // and the recorder sharing the centre split (pads left so a source is to hand).
+  layout loop-console when fullscreen && desktop {
+    Border {
+      bottom: VBox {
+        keys
+        Border {
+          left:   pagenav
+          center: toggles
+        }
+        status
+      }
+      left:   VBox { transport; vu(orientation: horizontal); Spacer }
+      center: Split {
+        horizontal: true
+        offset: 0.5
+        leading:  pads(layout: paged) if pads_visible
+        trailing: rec(show: true, tracks: 4)
+      }
+    }
+  }
+
+  // LOOP on a phone (mobile portrait): the recorder above the pads, with the VU
+  // strip, page nav + toggles and status stacked along the bottom.
+  layout loop-phone when mobile {
+    Border {
+      top: VBox {
+        transport
+        rec(show: true, tracks: 4)
+      }
+      center: pads if pads_visible
+      bottom: VBox {
+        keys
+        vu(orientation: horizontal)
+        pagenav
+        toggles
+        status
+      }
+    }
+  }
+
+  // LOOP in the fixed desktop window (850x950): a TEMPO + VU strip and the
+  // recorder on top, the two-bank pad grid filling the space below. The unguarded
+  // default variant for this page.
+  layout loop-window {
+    Border {
+      top: VBox {
+        Border {
+          left:   transport
+          center: vu(orientation: horizontal)
+        }
+        rec(show: true, tracks: 4)
+      }
+      center: pads(layout: twobank, expand: horizontal) if pads_visible
+      bottom: VBox {
+        keys
+        Border {
+          left:   pagenav
+          center: toggles
+        }
+        status
+      }
+    }
+  }
+}

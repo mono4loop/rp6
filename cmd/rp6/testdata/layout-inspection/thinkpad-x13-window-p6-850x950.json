@@ -8,6 +8,7 @@
     "state": {
       "console": false,
       "padFloating": false,
+      "page": "play",
       "sequencerDocked": false
     },
     "notes": [
@@ -25,7 +26,7 @@
     },
     "scale": 1
   },
-  "imageSHA256": "f9c3377f8e03a492e4f063f33bff2f0e78028584bc7b74236665d85b77c06995",
+  "imageSHA256": "cf68f18580c73d5d71f2e0aa4e05f38e1b6117aea33ee5fab56b5d41eb763429",
   "elements": [
     {
       "id": "layout.root",
@@ -248,6 +249,47 @@
       }
     },
     {
+      "id": "rack.recorder",
+      "kind": "rack",
+      "label": "Recorder",
+      "role": "group",
+      "present": false,
+      "selfVisible": false,
+      "effectiveVisible": false,
+      "occurrences": 0,
+      "duplicate": false,
+      "rect": {
+        "x": 0,
+        "y": 0,
+        "width": 0,
+        "height": 0
+      },
+      "visibleRect": {
+        "x": 0,
+        "y": 0,
+        "width": 0,
+        "height": 0
+      },
+      "pixelRect": {
+        "x": 0,
+        "y": 0,
+        "width": 0,
+        "height": 0
+      },
+      "minSize": {
+        "width": 0,
+        "height": 0
+      },
+      "underMin": false,
+      "clipped": false,
+      "annotated": true,
+      "state": {
+        "capacity": 8,
+        "selected": 0,
+        "tracks": 4
+      }
+    },
+    {
       "id": "rack.keyboard",
       "kind": "rack",
       "label": "Keyboard",
@@ -407,21 +449,21 @@
       "occurrences": 1,
       "duplicate": false,
       "rect": {
-        "x": 4,
+        "x": 175.75,
         "y": 836.9219,
-        "width": 842,
+        "width": 670.25,
         "height": 60
       },
       "visibleRect": {
-        "x": 4,
+        "x": 175.75,
         "y": 836.9219,
-        "width": 842,
+        "width": 670.25,
         "height": 60
       },
       "pixelRect": {
-        "x": 4,
+        "x": 175,
         "y": 836,
-        "width": 842,
+        "width": 671,
         "height": 60
       },
       "minSize": {
@@ -1295,6 +1337,119 @@
       "clipped": true
     },
     {
+      "id": "recorder.play",
+      "kind": "button",
+      "label": "Play or stop all takes",
+      "role": "button",
+      "present": false,
+      "selfVisible": false,
+      "effectiveVisible": false,
+      "occurrences": 0,
+      "duplicate": false,
+      "rect": {
+        "x": 0,
+        "y": 0,
+        "width": 0,
+        "height": 0
+      },
+      "visibleRect": {
+        "x": 0,
+        "y": 0,
+        "width": 0,
+        "height": 0
+      },
+      "pixelRect": {
+        "x": 0,
+        "y": 0,
+        "width": 0,
+        "height": 0
+      },
+      "minSize": {
+        "width": 0,
+        "height": 0
+      },
+      "underMin": false,
+      "clipped": false
+    },
+    {
+      "id": "recorder.quant",
+      "kind": "knob",
+      "label": "Recorder quantization",
+      "role": "button",
+      "present": false,
+      "selfVisible": false,
+      "effectiveVisible": false,
+      "occurrences": 0,
+      "duplicate": false,
+      "rect": {
+        "x": 0,
+        "y": 0,
+        "width": 0,
+        "height": 0
+      },
+      "visibleRect": {
+        "x": 0,
+        "y": 0,
+        "width": 0,
+        "height": 0
+      },
+      "pixelRect": {
+        "x": 0,
+        "y": 0,
+        "width": 0,
+        "height": 0
+      },
+      "minSize": {
+        "width": 0,
+        "height": 0
+      },
+      "underMin": false,
+      "clipped": false,
+      "state": {
+        "value": 0
+      }
+    },
+    {
+      "id": "recorder.export",
+      "kind": "button",
+      "label": "Export selected take",
+      "role": "button",
+      "present": false,
+      "selfVisible": false,
+      "effectiveVisible": false,
+      "occurrences": 0,
+      "duplicate": false,
+      "rect": {
+        "x": 0,
+        "y": 0,
+        "width": 0,
+        "height": 0
+      },
+      "visibleRect": {
+        "x": 0,
+        "y": 0,
+        "width": 0,
+        "height": 0
+      },
+      "pixelRect": {
+        "x": 0,
+        "y": 0,
+        "width": 0,
+        "height": 0
+      },
+      "minSize": {
+        "width": 0,
+        "height": 0
+      },
+      "underMin": false,
+      "clipped": false,
+      "state": {
+        "armed": false,
+        "disabled": false,
+        "on": false
+      }
+    },
+    {
       "id": "pads.float",
       "kind": "button",
       "label": "Float or dock pads",
@@ -1571,19 +1726,19 @@
       "occurrences": 1,
       "duplicate": false,
       "rect": {
-        "x": 26,
+        "x": 197.75,
         "y": 848.9219,
         "width": 32,
         "height": 36
       },
       "visibleRect": {
-        "x": 26,
+        "x": 197.75,
         "y": 848.9219,
         "width": 32,
         "height": 36
       },
       "pixelRect": {
-        "x": 26,
+        "x": 197,
         "y": 848,
         "width": 32,
         "height": 36
@@ -1611,21 +1766,21 @@
       "occurrences": 1,
       "duplicate": false,
       "rect": {
-        "x": 62,
+        "x": 233.75,
         "y": 848.9219,
         "width": 45.78125,
         "height": 36
       },
       "visibleRect": {
-        "x": 62,
+        "x": 233.75,
         "y": 848.9219,
         "width": 45.78125,
         "height": 36
       },
       "pixelRect": {
-        "x": 62,
+        "x": 233,
         "y": 848,
-        "width": 45,
+        "width": 46,
         "height": 36
       },
       "minSize": {
@@ -1651,19 +1806,19 @@
       "occurrences": 1,
       "duplicate": false,
       "rect": {
-        "x": 111.78125,
+        "x": 283.53125,
         "y": 848.9219,
         "width": 41.8125,
         "height": 36
       },
       "visibleRect": {
-        "x": 111.78125,
+        "x": 283.53125,
         "y": 848.9219,
         "width": 41.8125,
         "height": 36
       },
       "pixelRect": {
-        "x": 111,
+        "x": 283,
         "y": 848,
         "width": 42,
         "height": 36
@@ -1691,19 +1846,19 @@
       "occurrences": 1,
       "duplicate": false,
       "rect": {
-        "x": 157.59375,
+        "x": 329.34375,
         "y": 848.9219,
         "width": 58.265625,
         "height": 36
       },
       "visibleRect": {
-        "x": 157.59375,
+        "x": 329.34375,
         "y": 848.9219,
         "width": 58.265625,
         "height": 36
       },
       "pixelRect": {
-        "x": 157,
+        "x": 329,
         "y": 848,
         "width": 58,
         "height": 36
@@ -1731,21 +1886,21 @@
       "occurrences": 1,
       "duplicate": false,
       "rect": {
-        "x": 219.85938,
+        "x": 391.60938,
         "y": 848.9219,
         "width": 44.28125,
         "height": 36
       },
       "visibleRect": {
-        "x": 219.85938,
+        "x": 391.60938,
         "y": 848.9219,
         "width": 44.28125,
         "height": 36
       },
       "pixelRect": {
-        "x": 219,
+        "x": 391,
         "y": 848,
-        "width": 45,
+        "width": 44,
         "height": 36
       },
       "minSize": {
@@ -1771,19 +1926,19 @@
       "occurrences": 1,
       "duplicate": false,
       "rect": {
-        "x": 268.14062,
+        "x": 439.89062,
         "y": 848.9219,
         "width": 87.0625,
         "height": 36
       },
       "visibleRect": {
-        "x": 268.14062,
+        "x": 439.89062,
         "y": 848.9219,
         "width": 87.0625,
         "height": 36
       },
       "pixelRect": {
-        "x": 268,
+        "x": 439,
         "y": 848,
         "width": 87,
         "height": 36
@@ -1791,6 +1946,1087 @@
       "minSize": {
         "width": 87.0625,
         "height": 33.703125
+      },
+      "underMin": false,
+      "clipped": false,
+      "state": {
+        "armed": false,
+        "disabled": false,
+        "on": false
+      }
+    },
+    {
+      "id": "rack.pagenav",
+      "kind": "rack",
+      "label": "Page navigation",
+      "role": "group",
+      "present": true,
+      "selfVisible": true,
+      "effectiveVisible": true,
+      "occurrences": 1,
+      "duplicate": false,
+      "rect": {
+        "x": 4,
+        "y": 836.9219,
+        "width": 167.75,
+        "height": 60
+      },
+      "visibleRect": {
+        "x": 4,
+        "y": 836.9219,
+        "width": 167.75,
+        "height": 60
+      },
+      "pixelRect": {
+        "x": 4,
+        "y": 836,
+        "width": 167,
+        "height": 60
+      },
+      "minSize": {
+        "width": 167.75,
+        "height": 57.703125
+      },
+      "underMin": false,
+      "clipped": false,
+      "annotated": true,
+      "state": {
+        "active": "play"
+      }
+    },
+    {
+      "id": "navigation.page.play",
+      "kind": "button",
+      "label": "PLAY page",
+      "role": "button",
+      "present": true,
+      "selfVisible": true,
+      "effectiveVisible": true,
+      "occurrences": 1,
+      "duplicate": false,
+      "rect": {
+        "x": 26,
+        "y": 848.9219,
+        "width": 57.8125,
+        "height": 36
+      },
+      "visibleRect": {
+        "x": 26,
+        "y": 848.9219,
+        "width": 57.8125,
+        "height": 36
+      },
+      "pixelRect": {
+        "x": 26,
+        "y": 848,
+        "width": 57,
+        "height": 36
+      },
+      "minSize": {
+        "width": 57.8125,
+        "height": 33.703125
+      },
+      "underMin": false,
+      "clipped": false,
+      "state": {
+        "active": true,
+        "armed": false,
+        "disabled": false,
+        "on": true
+      }
+    },
+    {
+      "id": "navigation.page.loop",
+      "kind": "button",
+      "label": "LOOP page",
+      "role": "button",
+      "present": true,
+      "selfVisible": true,
+      "effectiveVisible": true,
+      "occurrences": 1,
+      "duplicate": false,
+      "rect": {
+        "x": 87.8125,
+        "y": 848.9219,
+        "width": 61.9375,
+        "height": 36
+      },
+      "visibleRect": {
+        "x": 87.8125,
+        "y": 848.9219,
+        "width": 61.9375,
+        "height": 36
+      },
+      "pixelRect": {
+        "x": 87,
+        "y": 848,
+        "width": 62,
+        "height": 36
+      },
+      "minSize": {
+        "width": 61.9375,
+        "height": 33.703125
+      },
+      "underMin": false,
+      "clipped": false,
+      "state": {
+        "active": false,
+        "armed": false,
+        "disabled": false,
+        "on": false
+      }
+    },
+    {
+      "id": "recorder.track.1.select",
+      "kind": "button",
+      "label": "Select take 1",
+      "role": "button",
+      "present": false,
+      "selfVisible": false,
+      "effectiveVisible": false,
+      "occurrences": 0,
+      "duplicate": false,
+      "rect": {
+        "x": 0,
+        "y": 0,
+        "width": 0,
+        "height": 0
+      },
+      "visibleRect": {
+        "x": 0,
+        "y": 0,
+        "width": 0,
+        "height": 0
+      },
+      "pixelRect": {
+        "x": 0,
+        "y": 0,
+        "width": 0,
+        "height": 0
+      },
+      "minSize": {
+        "width": 0,
+        "height": 0
+      },
+      "underMin": false,
+      "clipped": false,
+      "state": {
+        "armed": true,
+        "disabled": false,
+        "on": false
+      }
+    },
+    {
+      "id": "recorder.track.1.record",
+      "kind": "button",
+      "label": "Record take 1",
+      "role": "button",
+      "present": false,
+      "selfVisible": false,
+      "effectiveVisible": false,
+      "occurrences": 0,
+      "duplicate": false,
+      "rect": {
+        "x": 0,
+        "y": 0,
+        "width": 0,
+        "height": 0
+      },
+      "visibleRect": {
+        "x": 0,
+        "y": 0,
+        "width": 0,
+        "height": 0
+      },
+      "pixelRect": {
+        "x": 0,
+        "y": 0,
+        "width": 0,
+        "height": 0
+      },
+      "minSize": {
+        "width": 0,
+        "height": 0
+      },
+      "underMin": false,
+      "clipped": false,
+      "state": {
+        "armed": false,
+        "disabled": false,
+        "on": false
+      }
+    },
+    {
+      "id": "recorder.track.1.play",
+      "kind": "button",
+      "label": "Play take 1",
+      "role": "button",
+      "present": false,
+      "selfVisible": false,
+      "effectiveVisible": false,
+      "occurrences": 0,
+      "duplicate": false,
+      "rect": {
+        "x": 0,
+        "y": 0,
+        "width": 0,
+        "height": 0
+      },
+      "visibleRect": {
+        "x": 0,
+        "y": 0,
+        "width": 0,
+        "height": 0
+      },
+      "pixelRect": {
+        "x": 0,
+        "y": 0,
+        "width": 0,
+        "height": 0
+      },
+      "minSize": {
+        "width": 0,
+        "height": 0
+      },
+      "underMin": false,
+      "clipped": false,
+      "state": {
+        "armed": false,
+        "disabled": false,
+        "on": false
+      }
+    },
+    {
+      "id": "recorder.track.2.select",
+      "kind": "button",
+      "label": "Select take 2",
+      "role": "button",
+      "present": false,
+      "selfVisible": false,
+      "effectiveVisible": false,
+      "occurrences": 0,
+      "duplicate": false,
+      "rect": {
+        "x": 0,
+        "y": 0,
+        "width": 0,
+        "height": 0
+      },
+      "visibleRect": {
+        "x": 0,
+        "y": 0,
+        "width": 0,
+        "height": 0
+      },
+      "pixelRect": {
+        "x": 0,
+        "y": 0,
+        "width": 0,
+        "height": 0
+      },
+      "minSize": {
+        "width": 0,
+        "height": 0
+      },
+      "underMin": false,
+      "clipped": false,
+      "state": {
+        "armed": false,
+        "disabled": false,
+        "on": false
+      }
+    },
+    {
+      "id": "recorder.track.2.record",
+      "kind": "button",
+      "label": "Record take 2",
+      "role": "button",
+      "present": false,
+      "selfVisible": false,
+      "effectiveVisible": false,
+      "occurrences": 0,
+      "duplicate": false,
+      "rect": {
+        "x": 0,
+        "y": 0,
+        "width": 0,
+        "height": 0
+      },
+      "visibleRect": {
+        "x": 0,
+        "y": 0,
+        "width": 0,
+        "height": 0
+      },
+      "pixelRect": {
+        "x": 0,
+        "y": 0,
+        "width": 0,
+        "height": 0
+      },
+      "minSize": {
+        "width": 0,
+        "height": 0
+      },
+      "underMin": false,
+      "clipped": false,
+      "state": {
+        "armed": false,
+        "disabled": false,
+        "on": false
+      }
+    },
+    {
+      "id": "recorder.track.2.play",
+      "kind": "button",
+      "label": "Play take 2",
+      "role": "button",
+      "present": false,
+      "selfVisible": false,
+      "effectiveVisible": false,
+      "occurrences": 0,
+      "duplicate": false,
+      "rect": {
+        "x": 0,
+        "y": 0,
+        "width": 0,
+        "height": 0
+      },
+      "visibleRect": {
+        "x": 0,
+        "y": 0,
+        "width": 0,
+        "height": 0
+      },
+      "pixelRect": {
+        "x": 0,
+        "y": 0,
+        "width": 0,
+        "height": 0
+      },
+      "minSize": {
+        "width": 0,
+        "height": 0
+      },
+      "underMin": false,
+      "clipped": false,
+      "state": {
+        "armed": false,
+        "disabled": false,
+        "on": false
+      }
+    },
+    {
+      "id": "recorder.track.3.select",
+      "kind": "button",
+      "label": "Select take 3",
+      "role": "button",
+      "present": false,
+      "selfVisible": false,
+      "effectiveVisible": false,
+      "occurrences": 0,
+      "duplicate": false,
+      "rect": {
+        "x": 0,
+        "y": 0,
+        "width": 0,
+        "height": 0
+      },
+      "visibleRect": {
+        "x": 0,
+        "y": 0,
+        "width": 0,
+        "height": 0
+      },
+      "pixelRect": {
+        "x": 0,
+        "y": 0,
+        "width": 0,
+        "height": 0
+      },
+      "minSize": {
+        "width": 0,
+        "height": 0
+      },
+      "underMin": false,
+      "clipped": false,
+      "state": {
+        "armed": false,
+        "disabled": false,
+        "on": false
+      }
+    },
+    {
+      "id": "recorder.track.3.record",
+      "kind": "button",
+      "label": "Record take 3",
+      "role": "button",
+      "present": false,
+      "selfVisible": false,
+      "effectiveVisible": false,
+      "occurrences": 0,
+      "duplicate": false,
+      "rect": {
+        "x": 0,
+        "y": 0,
+        "width": 0,
+        "height": 0
+      },
+      "visibleRect": {
+        "x": 0,
+        "y": 0,
+        "width": 0,
+        "height": 0
+      },
+      "pixelRect": {
+        "x": 0,
+        "y": 0,
+        "width": 0,
+        "height": 0
+      },
+      "minSize": {
+        "width": 0,
+        "height": 0
+      },
+      "underMin": false,
+      "clipped": false,
+      "state": {
+        "armed": false,
+        "disabled": false,
+        "on": false
+      }
+    },
+    {
+      "id": "recorder.track.3.play",
+      "kind": "button",
+      "label": "Play take 3",
+      "role": "button",
+      "present": false,
+      "selfVisible": false,
+      "effectiveVisible": false,
+      "occurrences": 0,
+      "duplicate": false,
+      "rect": {
+        "x": 0,
+        "y": 0,
+        "width": 0,
+        "height": 0
+      },
+      "visibleRect": {
+        "x": 0,
+        "y": 0,
+        "width": 0,
+        "height": 0
+      },
+      "pixelRect": {
+        "x": 0,
+        "y": 0,
+        "width": 0,
+        "height": 0
+      },
+      "minSize": {
+        "width": 0,
+        "height": 0
+      },
+      "underMin": false,
+      "clipped": false,
+      "state": {
+        "armed": false,
+        "disabled": false,
+        "on": false
+      }
+    },
+    {
+      "id": "recorder.track.4.select",
+      "kind": "button",
+      "label": "Select take 4",
+      "role": "button",
+      "present": false,
+      "selfVisible": false,
+      "effectiveVisible": false,
+      "occurrences": 0,
+      "duplicate": false,
+      "rect": {
+        "x": 0,
+        "y": 0,
+        "width": 0,
+        "height": 0
+      },
+      "visibleRect": {
+        "x": 0,
+        "y": 0,
+        "width": 0,
+        "height": 0
+      },
+      "pixelRect": {
+        "x": 0,
+        "y": 0,
+        "width": 0,
+        "height": 0
+      },
+      "minSize": {
+        "width": 0,
+        "height": 0
+      },
+      "underMin": false,
+      "clipped": false,
+      "state": {
+        "armed": false,
+        "disabled": false,
+        "on": false
+      }
+    },
+    {
+      "id": "recorder.track.4.record",
+      "kind": "button",
+      "label": "Record take 4",
+      "role": "button",
+      "present": false,
+      "selfVisible": false,
+      "effectiveVisible": false,
+      "occurrences": 0,
+      "duplicate": false,
+      "rect": {
+        "x": 0,
+        "y": 0,
+        "width": 0,
+        "height": 0
+      },
+      "visibleRect": {
+        "x": 0,
+        "y": 0,
+        "width": 0,
+        "height": 0
+      },
+      "pixelRect": {
+        "x": 0,
+        "y": 0,
+        "width": 0,
+        "height": 0
+      },
+      "minSize": {
+        "width": 0,
+        "height": 0
+      },
+      "underMin": false,
+      "clipped": false,
+      "state": {
+        "armed": false,
+        "disabled": false,
+        "on": false
+      }
+    },
+    {
+      "id": "recorder.track.4.play",
+      "kind": "button",
+      "label": "Play take 4",
+      "role": "button",
+      "present": false,
+      "selfVisible": false,
+      "effectiveVisible": false,
+      "occurrences": 0,
+      "duplicate": false,
+      "rect": {
+        "x": 0,
+        "y": 0,
+        "width": 0,
+        "height": 0
+      },
+      "visibleRect": {
+        "x": 0,
+        "y": 0,
+        "width": 0,
+        "height": 0
+      },
+      "pixelRect": {
+        "x": 0,
+        "y": 0,
+        "width": 0,
+        "height": 0
+      },
+      "minSize": {
+        "width": 0,
+        "height": 0
+      },
+      "underMin": false,
+      "clipped": false,
+      "state": {
+        "armed": false,
+        "disabled": false,
+        "on": false
+      }
+    },
+    {
+      "id": "recorder.track.5.select",
+      "kind": "button",
+      "label": "Select take 5",
+      "role": "button",
+      "present": false,
+      "selfVisible": false,
+      "effectiveVisible": false,
+      "occurrences": 0,
+      "duplicate": false,
+      "rect": {
+        "x": 0,
+        "y": 0,
+        "width": 0,
+        "height": 0
+      },
+      "visibleRect": {
+        "x": 0,
+        "y": 0,
+        "width": 0,
+        "height": 0
+      },
+      "pixelRect": {
+        "x": 0,
+        "y": 0,
+        "width": 0,
+        "height": 0
+      },
+      "minSize": {
+        "width": 0,
+        "height": 0
+      },
+      "underMin": false,
+      "clipped": false,
+      "state": {
+        "armed": false,
+        "disabled": false,
+        "on": false
+      }
+    },
+    {
+      "id": "recorder.track.5.record",
+      "kind": "button",
+      "label": "Record take 5",
+      "role": "button",
+      "present": false,
+      "selfVisible": false,
+      "effectiveVisible": false,
+      "occurrences": 0,
+      "duplicate": false,
+      "rect": {
+        "x": 0,
+        "y": 0,
+        "width": 0,
+        "height": 0
+      },
+      "visibleRect": {
+        "x": 0,
+        "y": 0,
+        "width": 0,
+        "height": 0
+      },
+      "pixelRect": {
+        "x": 0,
+        "y": 0,
+        "width": 0,
+        "height": 0
+      },
+      "minSize": {
+        "width": 0,
+        "height": 0
+      },
+      "underMin": false,
+      "clipped": false,
+      "state": {
+        "armed": false,
+        "disabled": false,
+        "on": false
+      }
+    },
+    {
+      "id": "recorder.track.5.play",
+      "kind": "button",
+      "label": "Play take 5",
+      "role": "button",
+      "present": false,
+      "selfVisible": false,
+      "effectiveVisible": false,
+      "occurrences": 0,
+      "duplicate": false,
+      "rect": {
+        "x": 0,
+        "y": 0,
+        "width": 0,
+        "height": 0
+      },
+      "visibleRect": {
+        "x": 0,
+        "y": 0,
+        "width": 0,
+        "height": 0
+      },
+      "pixelRect": {
+        "x": 0,
+        "y": 0,
+        "width": 0,
+        "height": 0
+      },
+      "minSize": {
+        "width": 0,
+        "height": 0
+      },
+      "underMin": false,
+      "clipped": false,
+      "state": {
+        "armed": false,
+        "disabled": false,
+        "on": false
+      }
+    },
+    {
+      "id": "recorder.track.6.select",
+      "kind": "button",
+      "label": "Select take 6",
+      "role": "button",
+      "present": false,
+      "selfVisible": false,
+      "effectiveVisible": false,
+      "occurrences": 0,
+      "duplicate": false,
+      "rect": {
+        "x": 0,
+        "y": 0,
+        "width": 0,
+        "height": 0
+      },
+      "visibleRect": {
+        "x": 0,
+        "y": 0,
+        "width": 0,
+        "height": 0
+      },
+      "pixelRect": {
+        "x": 0,
+        "y": 0,
+        "width": 0,
+        "height": 0
+      },
+      "minSize": {
+        "width": 0,
+        "height": 0
+      },
+      "underMin": false,
+      "clipped": false,
+      "state": {
+        "armed": false,
+        "disabled": false,
+        "on": false
+      }
+    },
+    {
+      "id": "recorder.track.6.record",
+      "kind": "button",
+      "label": "Record take 6",
+      "role": "button",
+      "present": false,
+      "selfVisible": false,
+      "effectiveVisible": false,
+      "occurrences": 0,
+      "duplicate": false,
+      "rect": {
+        "x": 0,
+        "y": 0,
+        "width": 0,
+        "height": 0
+      },
+      "visibleRect": {
+        "x": 0,
+        "y": 0,
+        "width": 0,
+        "height": 0
+      },
+      "pixelRect": {
+        "x": 0,
+        "y": 0,
+        "width": 0,
+        "height": 0
+      },
+      "minSize": {
+        "width": 0,
+        "height": 0
+      },
+      "underMin": false,
+      "clipped": false,
+      "state": {
+        "armed": false,
+        "disabled": false,
+        "on": false
+      }
+    },
+    {
+      "id": "recorder.track.6.play",
+      "kind": "button",
+      "label": "Play take 6",
+      "role": "button",
+      "present": false,
+      "selfVisible": false,
+      "effectiveVisible": false,
+      "occurrences": 0,
+      "duplicate": false,
+      "rect": {
+        "x": 0,
+        "y": 0,
+        "width": 0,
+        "height": 0
+      },
+      "visibleRect": {
+        "x": 0,
+        "y": 0,
+        "width": 0,
+        "height": 0
+      },
+      "pixelRect": {
+        "x": 0,
+        "y": 0,
+        "width": 0,
+        "height": 0
+      },
+      "minSize": {
+        "width": 0,
+        "height": 0
+      },
+      "underMin": false,
+      "clipped": false,
+      "state": {
+        "armed": false,
+        "disabled": false,
+        "on": false
+      }
+    },
+    {
+      "id": "recorder.track.7.select",
+      "kind": "button",
+      "label": "Select take 7",
+      "role": "button",
+      "present": false,
+      "selfVisible": false,
+      "effectiveVisible": false,
+      "occurrences": 0,
+      "duplicate": false,
+      "rect": {
+        "x": 0,
+        "y": 0,
+        "width": 0,
+        "height": 0
+      },
+      "visibleRect": {
+        "x": 0,
+        "y": 0,
+        "width": 0,
+        "height": 0
+      },
+      "pixelRect": {
+        "x": 0,
+        "y": 0,
+        "width": 0,
+        "height": 0
+      },
+      "minSize": {
+        "width": 0,
+        "height": 0
+      },
+      "underMin": false,
+      "clipped": false,
+      "state": {
+        "armed": false,
+        "disabled": false,
+        "on": false
+      }
+    },
+    {
+      "id": "recorder.track.7.record",
+      "kind": "button",
+      "label": "Record take 7",
+      "role": "button",
+      "present": false,
+      "selfVisible": false,
+      "effectiveVisible": false,
+      "occurrences": 0,
+      "duplicate": false,
+      "rect": {
+        "x": 0,
+        "y": 0,
+        "width": 0,
+        "height": 0
+      },
+      "visibleRect": {
+        "x": 0,
+        "y": 0,
+        "width": 0,
+        "height": 0
+      },
+      "pixelRect": {
+        "x": 0,
+        "y": 0,
+        "width": 0,
+        "height": 0
+      },
+      "minSize": {
+        "width": 0,
+        "height": 0
+      },
+      "underMin": false,
+      "clipped": false,
+      "state": {
+        "armed": false,
+        "disabled": false,
+        "on": false
+      }
+    },
+    {
+      "id": "recorder.track.7.play",
+      "kind": "button",
+      "label": "Play take 7",
+      "role": "button",
+      "present": false,
+      "selfVisible": false,
+      "effectiveVisible": false,
+      "occurrences": 0,
+      "duplicate": false,
+      "rect": {
+        "x": 0,
+        "y": 0,
+        "width": 0,
+        "height": 0
+      },
+      "visibleRect": {
+        "x": 0,
+        "y": 0,
+        "width": 0,
+        "height": 0
+      },
+      "pixelRect": {
+        "x": 0,
+        "y": 0,
+        "width": 0,
+        "height": 0
+      },
+      "minSize": {
+        "width": 0,
+        "height": 0
+      },
+      "underMin": false,
+      "clipped": false,
+      "state": {
+        "armed": false,
+        "disabled": false,
+        "on": false
+      }
+    },
+    {
+      "id": "recorder.track.8.select",
+      "kind": "button",
+      "label": "Select take 8",
+      "role": "button",
+      "present": false,
+      "selfVisible": false,
+      "effectiveVisible": false,
+      "occurrences": 0,
+      "duplicate": false,
+      "rect": {
+        "x": 0,
+        "y": 0,
+        "width": 0,
+        "height": 0
+      },
+      "visibleRect": {
+        "x": 0,
+        "y": 0,
+        "width": 0,
+        "height": 0
+      },
+      "pixelRect": {
+        "x": 0,
+        "y": 0,
+        "width": 0,
+        "height": 0
+      },
+      "minSize": {
+        "width": 0,
+        "height": 0
+      },
+      "underMin": false,
+      "clipped": false,
+      "state": {
+        "armed": false,
+        "disabled": false,
+        "on": false
+      }
+    },
+    {
+      "id": "recorder.track.8.record",
+      "kind": "button",
+      "label": "Record take 8",
+      "role": "button",
+      "present": false,
+      "selfVisible": false,
+      "effectiveVisible": false,
+      "occurrences": 0,
+      "duplicate": false,
+      "rect": {
+        "x": 0,
+        "y": 0,
+        "width": 0,
+        "height": 0
+      },
+      "visibleRect": {
+        "x": 0,
+        "y": 0,
+        "width": 0,
+        "height": 0
+      },
+      "pixelRect": {
+        "x": 0,
+        "y": 0,
+        "width": 0,
+        "height": 0
+      },
+      "minSize": {
+        "width": 0,
+        "height": 0
+      },
+      "underMin": false,
+      "clipped": false,
+      "state": {
+        "armed": false,
+        "disabled": false,
+        "on": false
+      }
+    },
+    {
+      "id": "recorder.track.8.play",
+      "kind": "button",
+      "label": "Play take 8",
+      "role": "button",
+      "present": false,
+      "selfVisible": false,
+      "effectiveVisible": false,
+      "occurrences": 0,
+      "duplicate": false,
+      "rect": {
+        "x": 0,
+        "y": 0,
+        "width": 0,
+        "height": 0
+      },
+      "visibleRect": {
+        "x": 0,
+        "y": 0,
+        "width": 0,
+        "height": 0
+      },
+      "pixelRect": {
+        "x": 0,
+        "y": 0,
+        "width": 0,
+        "height": 0
+      },
+      "minSize": {
+        "width": 0,
+        "height": 0
       },
       "underMin": false,
       "clipped": false,

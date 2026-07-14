@@ -1,70 +1,184 @@
 // RP6 UI layout — compiled into the binary (edit and `make build` to change).
 //
-// This file holds two fixed variants: `phone` (mobile portrait) and `window`
-// (the desktop windowed layout — a single fixed, non-resizable 850x950 window;
-// see resolutions.txt). Desktop full screen switches to the "mixing console"
-// layout in console.layout; a tablet uses the dedicated `tablet` variant in
-// console-tablet.layout. The loader parses tablet + console first, so their
-// guards win; otherwise `phone` (mobile) or the unguarded `window` is used.
+// This file defines the **PLAY page** (the default application page) and the
+// shared `rack` blocks. A page is a first-class block — `page <id> <Label> { … }`
+// — holding the `layout` variants that make up its per-form-factor arrangements;
+// the app selects a page by id, then the first matching variant within it (see
+// layoutlang SelectForPage). The LOOP page lives in loop.layout. See
+// docs/architecture/layouts.md §12.
 //
-// A widget reference may carry properties: `name(key: value, …)`. The app
-// applies them to the widget — currently `vu(orientation: horizontal|vertical)`
-// sets the VU meter's orientation.
+// Variants inside the page are ordered specific-first (the first matching `when`
+// wins): `tablet` (mobile && tablet), `console` (desktop full screen), `phone`
+// (mobile), then the unguarded `window` default (fixed desktop). A widget
+// reference may carry properties: `name(key: value, …)` (e.g.
+// `vu(orientation: horizontal)`, `seq(tracks: 4)`).
 
-// Phone (mobile portrait): the VU meter sits in a strip along the bottom.
-layout phone when mobile {
-  Border {
-    top: VBox {
-      transport
-      p6 if p6_active
-      fx
-      keysfx if !p6_active
-      keys
-      paks
-      rec
-      seq if !seq_docked
-    }
-    center: Split {
-      horizontal: true
-      offset: 0.5
-      leading: pads if pads_visible
-      trailing: seq if seq_docked
-    }
-    bottom: VBox {
-      vu(orientation: horizontal)
-      toggles
-      status
+page play PLAY {
+
+  // Tablet (large touch screen, e.g. the OnePlus Pad 3): the sample-pak selector
+  // gets its own left rail beside a centre column stacking the sequencer over the
+  // pads; TEMPO carries the VU strip across the top and FX is hidden by default.
+  //
+  //   ┌───────┬─────────────────────────────┐
+  //   │       │ transport | vu (strip)      │
+  //   │       ├─────────────────────────────┤
+  //   │ paks  │            seq              │
+  //   │       │─────────────────────────────│
+  //   │       │            pads             │
+  //   │       ├─────────────────────────────┤
+  //   │       │        keyboard / status    │
+  //   └───────┴─────────────────────────────┘
+  layout tablet when mobile && tablet {
+    Border {
+      bottom: VBox {
+        fx(show: false)
+        keysfx(show: false) if !p6_active
+        keys(show: true)
+        Border {
+          left:   pagenav
+          center: toggles
+        }
+        status
+      }
+
+      // Full-width top: the transport (TEMPO) with the VU meter as a horizontal
+      // strip to its right, and — when the P-6 is the active backend — its
+      // hardware rack below (usually absent on a tablet, which runs the emulator).
+      top: VBox {
+        Border {
+          left:   transport
+          center: vu(orientation: horizontal)
+        }
+        p6 if p6_active
+      }
+
+      // Left rail: the sample-pak selector, filling the tall rail beside the
+      // pad/sequencer column (on by default here).
+      left: paks(show: true)
+
+      // Centre column: the sequencer on top, the pads stacked underneath it.
+      center: Split {
+        horizontal: false
+        offset: 0.5
+        leading:  seq(tracks: 6) if !seq_docked
+        trailing: pads(layout: paged) if pads_visible
+      }
     }
   }
-}
 
-// Desktop windowed (fixed 850x950): TEMPO and the VU meter share a strip along
-// the top (the meter fills the width beside the small TEMPO rack), saving the
-// right-hand column for the pads.
-layout window {
-  Border {
-    top: VBox {
-      Border {
-        left: transport
-        center: vu(orientation: horizontal)
+  // Console (desktop full screen — press F11 / Ctrl+Shift+Enter, or the bottom-bar
+  // CONSOLE toggle). `when fullscreen && desktop`: mobile devices use phone/tablet.
+  //
+  //   ┌───────┬───────────────────────┬───────┐
+  //   │ trans │                        │       │
+  //   │  vu   │                        │  seq  │   right rail when undocked
+  //   │ paks  │        pads            │       │
+  //   │  fx   │                        │       │
+  //   ├───────┴───────────────────────┴───────┤
+  //   │        pagenav | toggles / status     │
+  //   └───────────────────────────────────────┘
+  layout console when fullscreen && desktop {
+    Border {
+      // Bottom: the P-6-only rack (full width, only with the P-6 active) or the
+      // emulator's Keys FX rack, above the keyboard (on by default, twice as
+      // tall), the page nav + toggles row, and a full-width status bar.
+      bottom: VBox {
+        p6 if p6_active
+        keysfx(show: true) if !p6_active
+        keys(show: true)
+        Border {
+          left:   pagenav
+          center: toggles
+        }
+        status
       }
-      p6 if p6_active
-      fx
-      keysfx if !p6_active
-      keys
-      paks
-      rec
-      seq(show: true, tracks: 4, expand: horizontal) if !seq_docked
+
+      // Left rail: transport + the VU meter (horizontal strip) on top, the
+      // sample-pak selector filling the middle, and pad FX at the bottom. Keeping
+      // FX here avoids reserving an otherwise-empty full-height right rail when
+      // the sequencer is docked in the centre split.
+      left: Border {
+        top: VBox {
+          transport
+          vu(orientation: horizontal)
+        }
+        center: paks(show: true)
+        bottom: fx(show: true)
+      }
+
+      // Right rail: the sequencer when it is not docked in the centre split.
+      right: seq(show: true, tracks: 6) if !seq_docked
+
+      // Centre: the pads fill the space; when the sequencer is docked it shares
+      // the centre as the right pane of a split. The 0.517 offset keeps enough
+      // width for 16 touchable sequencer steps on a 1920px laptop.
+      center: Split {
+        horizontal: true
+        offset: 0.517
+        leading:  pads(layout: paged) if pads_visible
+        trailing: seq(show: true, tracks: 6) if seq_docked
+      }
     }
-    center: Split {
-      horizontal: true
-      offset: 0.5
-      leading: pads(layout: twobank, expand: horizontal) if pads_visible
-      trailing: seq(show: true, tracks: 4, expand: horizontal) if seq_docked
+  }
+
+  // Phone (mobile portrait): the VU strip, page nav and toggles sit along the
+  // bottom; the racks stack down the top.
+  layout phone when mobile {
+    Border {
+      top: VBox {
+        transport
+        p6 if p6_active
+        fx
+        keysfx if !p6_active
+        keys
+        paks
+        seq if !seq_docked
+      }
+      center: Split {
+        horizontal: true
+        offset: 0.5
+        leading:  pads if pads_visible
+        trailing: seq if seq_docked
+      }
+      bottom: VBox {
+        vu(orientation: horizontal)
+        pagenav
+        toggles
+        status
+      }
     }
-    bottom: VBox {
-      toggles
-      status
+  }
+
+  // Desktop windowed (fixed 850x950): TEMPO and the VU meter share a strip along
+  // the top (the meter fills the width beside the small TEMPO rack), saving the
+  // right-hand column for the pads. The unguarded default variant.
+  layout window {
+    Border {
+      top: VBox {
+        Border {
+          left:   transport
+          center: vu(orientation: horizontal)
+        }
+        p6 if p6_active
+        fx
+        keysfx if !p6_active
+        keys
+        paks
+        seq(show: true, tracks: 4, expand: horizontal) if !seq_docked
+      }
+      center: Split {
+        horizontal: true
+        offset: 0.5
+        leading:  pads(layout: twobank, expand: horizontal) if pads_visible
+        trailing: seq(show: true, tracks: 4, expand: horizontal) if seq_docked
+      }
+      bottom: VBox {
+        Border {
+          left:   pagenav
+          center: toggles
+        }
+        status
+      }
     }
   }
 }
@@ -74,8 +188,8 @@ layout window {
 // primitives as the top level. The IDs here are the rack's own sub-widgets; the
 // dynamically-generated parts (pad cells, sequencer track rows) are exposed as a
 // single holder ID (padGrid / seqGrid) that Go fills in. Omit a block and the
-// rack keeps its built-in Go arrangement. These apply to every layout variant,
-// including the console layout in console.layout.
+// rack keeps its built-in Go arrangement. Rack blocks are top-level (outside any
+// page) and shared by every variant of every page, including the LOOP page.
 
 rack transport {
   RackPanel { HBox { tempo } }

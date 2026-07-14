@@ -5,6 +5,7 @@ import (
 
 	"fyne.io/fyne/v2"
 
+	"github.com/mono4loop/rp6/internal/recorder"
 	"github.com/mono4loop/rp6/internal/ui/components"
 	uiinspect "github.com/mono4loop/rp6/internal/ui/inspect"
 )
@@ -21,6 +22,9 @@ func (u *ui) inspectionTargets() []uiinspect.Target {
 		inspectionTarget("rack.keys-fx", "rack", "Keyboard effects", "group", u.keyboardFXRack.Object(), true, nil),
 		inspectionTarget("rack.sequencer", "rack", "Sequencer", "group", fittedContent(u.seqRack.Object()), true, map[string]any{
 			"tracks": u.seq.Tracks(), "docked": u.seqSide,
+		}),
+		inspectionTarget("rack.recorder", "rack", "Recorder", "group", u.recRack.Object(), true, map[string]any{
+			"tracks": u.recRack.visibleTracks, "capacity": recorder.TrackCount, "selected": u.recRack.selected,
 		}),
 		inspectionTarget("rack.keyboard", "rack", "Keyboard", "group", u.keyboardRack.Object(), true, nil),
 		inspectionTarget("rack.paks", "rack", "Sample paks", "group", u.paksRack.Object(), true, nil),
@@ -57,6 +61,10 @@ func (u *ui) inspectionTargets() []uiinspect.Target {
 		inspectionTarget("paks.filter", "input", "Filter sample paks", "text", u.paksRack.search, false, map[string]any{"value": u.paksRack.search.Text}),
 		inspectionTarget("paks.list", "list", "Installed sample paks", "group", u.paksRack.scroll, false, nil),
 
+		inspectionTarget("recorder.play", "button", "Play or stop all takes", "button", u.recRack.playAll, false, nil),
+		inspectionTarget("recorder.quant", "knob", "Recorder quantization", "button", u.recRack.quant.Object(), false, map[string]any{"value": u.recRack.quant.Value()}),
+		inspectionTarget("recorder.export", "button", "Export selected take", "button", u.recRack.export, false, rackToggleState(u.recRack.export)),
+
 		inspectionTarget("pads.float", "button", "Float or dock pads", "button", u.padFloatBtn, false, rackToggleState(u.padFloatBtn)),
 		inspectionTarget("pads.listen", "button", "Listen to MIDI input", "button", u.midiInBtn, false, rackToggleState(u.midiInBtn)),
 		inspectionTarget("pads.layout", "button", "Pad layout", "button", u.layoutBtn, false, map[string]any{"state": u.layoutBtn.State()}),
@@ -71,6 +79,31 @@ func (u *ui) inspectionTargets() []uiinspect.Target {
 		inspectionTarget("navigation.paks", "button", "Toggle sample-paks rack", "button", u.paksBtn, false, rackToggleState(u.paksBtn)),
 		inspectionTarget("navigation.vu", "button", "Toggle VU meter", "button", u.meterBtn, false, rackToggleState(u.meterBtn)),
 		inspectionTarget("navigation.console", "button", "Toggle console layout", "button", u.consoleBtn, false, rackToggleState(u.consoleBtn)),
+	}
+
+	// Page navigation (present only when the document declares more than one
+	// page). The active page also rides in the manifest metadata (see below).
+	if u.pageNav != nil {
+		targets = append(targets, inspectionTarget("rack.pagenav", "rack", "Page navigation", "group", u.pageNav, true, map[string]any{"active": u.activePage}))
+	}
+	for _, pg := range u.pages {
+		if btn := u.pageBtns[pg.ID]; btn != nil {
+			targets = append(targets, inspectionTarget(
+				"navigation.page."+pg.ID, "button", pg.Label+" page", "button", btn, false,
+				map[string]any{"on": btn.On(), "armed": btn.Armed(), "disabled": btn.Disabled(), "active": pg.ID == u.activePage}))
+		}
+	}
+	// Recorder per-track live controls — the LOOP page's primary surface.
+	for i := range recorder.TrackCount {
+		if i >= len(u.recRack.selectBtns) {
+			break
+		}
+		n := i + 1
+		targets = append(targets,
+			inspectionTarget(fmt.Sprintf("recorder.track.%d.select", n), "button", fmt.Sprintf("Select take %d", n), "button", u.recRack.selectBtns[i], false, rackToggleState(u.recRack.selectBtns[i])),
+			inspectionTarget(fmt.Sprintf("recorder.track.%d.record", n), "button", fmt.Sprintf("Record take %d", n), "button", u.recRack.recordBtns[i], false, rackToggleState(u.recRack.recordBtns[i])),
+			inspectionTarget(fmt.Sprintf("recorder.track.%d.play", n), "button", fmt.Sprintf("Play take %d", n), "button", u.recRack.playBtns[i], false, rackToggleState(u.recRack.playBtns[i])),
+		)
 	}
 
 	for i, pad := range u.grid.Pads() {
@@ -131,7 +164,7 @@ func (u *ui) inspectionMetadata(scenario, formFactor string, notes ...string) ui
 		Backend:    backend,
 		State: map[string]any{
 			"console": u.fullScreen, "padFloating": u.padFloating,
-			"sequencerDocked": u.seqSide,
+			"sequencerDocked": u.seqSide, "page": u.activePage,
 		},
 		Notes: notes,
 	}

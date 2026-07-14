@@ -17,13 +17,25 @@ import (
 
 var recorderAccent = color.NRGBA{R: 0xE8, G: 0x45, B: 0x45, A: 0xFF}
 
-// recorderRack is the eight-track host audio recorder. Track rows carry live
-// actions; the selected track's mixer/effect macros share one compact strip.
+// defaultRecorderTracks is how many recorder track rows the rack shows out of the
+// engine's recorder.TrackCount capacity when a layout variant doesn't override it
+// with a `rec(tracks: N)` property. Kept low so the looper stays compact by
+// default; roomy variants (the console) raise it via the layout.
+const defaultRecorderTracks = 4
+
+// recorderRack is the host audio recorder (up to recorder.TrackCount tracks; the
+// rack shows a configurable subset, defaultRecorderTracks by default). Track rows
+// carry live actions; the selected track's mixer/effect macros share one compact
+// strip.
 type recorderRack struct {
 	rec      *recorder.Engine
 	onStatus func(string)
 	onExport func(track int)
 	selected int
+	// visibleTracks is how many track rows are shown (<= recorder.TrackCount); set
+	// by SetTrackCount from the layout `rec(tracks: N)` property (default
+	// defaultRecorderTracks). The engine keeps its full capacity regardless.
+	visibleTracks int
 
 	playAll *components.TransportButton
 	quant   *components.Knob
@@ -36,6 +48,7 @@ type recorderRack struct {
 	soloBtns   []*components.RackToggle
 	loopBtns   []*components.RackToggle
 	durations  []*widget.Label
+	rows       []fyne.CanvasObject // per-track row containers, shown/hidden by SetTrackCount
 
 	level  *components.Knob
 	pan    *components.Knob
@@ -102,7 +115,7 @@ func newRecorderRack(rec *recorder.Engine, onStatus func(string), onExport func(
 	r.controls = container.NewHScroll(controlRow)
 	r.controls.SetMinSize(fyne.NewSize(0, controlRow.MinSize().Height))
 
-	rows := make([]fyne.CanvasObject, recorder.TrackCount)
+	r.rows = make([]fyne.CanvasObject, recorder.TrackCount)
 	for i := range recorder.TrackCount {
 		track := i
 		r.selectBtns[i] = components.NewRackToggle(fmt.Sprintf("T%d", i+1), deviceHwAccent, func() { r.selectTrack(track) })
@@ -121,7 +134,7 @@ func newRecorderRack(rec *recorder.Engine, onStatus func(string), onExport func(
 			r.syncTrack(track)
 		})
 		r.durations[i] = widget.NewLabel("EMPTY")
-		rows[i] = container.NewHBox(
+		r.rows[i] = container.NewHBox(
 			container.NewGridWrap(fyne.NewSize(54, 34), r.selectBtns[i]),
 			container.NewGridWrap(fyne.NewSize(42, 34), r.recordBtns[i]),
 			container.NewGridWrap(fyne.NewSize(42, 34), r.playBtns[i]),
@@ -131,11 +144,45 @@ func newRecorderRack(rec *recorder.Engine, onStatus func(string), onExport func(
 			r.durations[i],
 		)
 	}
-	r.trackBox = container.NewVScroll(container.NewVBox(rows...))
-	r.trackBox.SetMinSize(fyne.NewSize(340, 210))
+	r.trackBox = container.NewVScroll(container.NewVBox(r.rows...))
 	r.selectTrack(0)
+	r.SetTrackCount(defaultRecorderTracks) // compact by default; a variant may raise it
 	r.syncAll()
 	return r
+}
+
+// SetTrackCount sets how many track rows the rack shows (clamped to
+// 1..recorder.TrackCount). The recorder engine keeps its full capacity; this only
+// governs the visible rows, so a compact variant shows fewer and a roomy one
+// more. Used by the layout `rec(tracks: N)` property (variant-entry only, via
+// applyDefaultRecorderTracks) and the constructor's default. The track scroller's
+// minimum height follows the visible rows (capped) so a small count doesn't leave
+// an empty scroll area, while a large count still expands to fill a tall pane.
+func (r *recorderRack) SetTrackCount(n int) {
+	n = max(1, min(n, recorder.TrackCount))
+	r.visibleTracks = n
+	for i, row := range r.rows {
+		if row == nil {
+			continue
+		}
+		if want := i < n; row.Visible() != want {
+			if want {
+				row.Show()
+			} else {
+				row.Hide()
+			}
+		}
+	}
+	// Keep the selection (which drives the mixer strip) on a visible track.
+	if r.selected >= n {
+		r.selectTrack(n - 1)
+	}
+	if r.trackBox != nil {
+		// Size the scroller to the visible rows, capped so eight tracks still
+		// scroll within a reasonable height (a taller pane expands past the min).
+		h := min(r.trackBox.Content.MinSize().Height, 210)
+		r.trackBox.SetMinSize(fyne.NewSize(340, h))
+	}
 }
 
 func (r *recorderRack) knob(label string, min, max int, update func(int, *audiofx.Settings)) *components.Knob {

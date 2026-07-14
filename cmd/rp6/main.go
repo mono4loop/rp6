@@ -174,6 +174,25 @@ type ui struct {
 	activeVariant  string
 	variantChanged bool
 
+	// activePage is the id of the application page currently attached to the
+	// canvas (e.g. "play" or "loop"); pages holds the ordered set declared in the
+	// layout document (`page <id> <Label> { … }` blocks). selectLayout resolves the
+	// layout via layoutDoc.SelectForPage(activePage, env) — it picks the page block
+	// by id, then a variant within it by form factor — and the wired rack objects
+	// are reused across page switches (no rack is parented into two trees). See
+	// docs/architecture/layouts.md §12 (Pages).
+	activePage string
+	pages      []layoutlang.Page
+	// pageVis remembers each page's content-rack show/hide configuration
+	// (pageVis[pageID][rackID] = visible), so the visibility toggles are
+	// per-page: showing KEYS on the LOOP page doesn't affect PLAY, etc. Saved
+	// when leaving a page and re-applied on return (see savePageVis/loadPageVis).
+	// defaultVis is the factory default (captured at build) a page falls back to
+	// on its first visit, so a page starts fresh rather than inheriting the
+	// previous page's toggles.
+	pageVis    map[string]map[string]bool
+	defaultVis map[string]bool
+
 	// mobileForTest/tabletForTest override the compile-time platform for the
 	// headless layout-inspection harness only (the real platform is a build-tag
 	// constant, so a desktop test binary can't otherwise exercise the phone/
@@ -223,6 +242,13 @@ type ui struct {
 	paksBtn     *components.RackToggle
 	meterBtn    *components.RackToggle
 	consoleBtn  *components.RackToggle
+
+	// pageBtns are the page-navigation keys (one backlit RackToggle per declared
+	// page, the active page lit), keyed by page id. pageNav frames them as a rack
+	// strip the layout positions (`pagenav` id). Both nil with <2 pages. Built
+	// from u.pages so navigation is data-driven off the layout document.
+	pageBtns map[string]*components.RackToggle
+	pageNav  fyne.CanvasObject
 
 	statusLED   *components.LED
 	p6LED       *components.LED // P-6 connection LED seated in the P-6 rack plate
@@ -457,7 +483,10 @@ func (u *ui) build(w fyne.Window) {
 		u.toggleVisible(u.keyboardRack.Object(), u.keysBtn)
 	})
 	u.playMenuBtn = components.NewRackToggleIcon(theme.GridIcon(), acc, u.togglePlayMenu)
-	u.playMenu = widget.NewPopUp(popupChoices(u.padBtn, u.seqBtn, u.recBtn, u.keysBtn), w.Canvas())
+	// The recorder is reached via the LOOP page (see buildPageNav), not a rack
+	// toggle, so the PADS/SEQ/KEYS "play menu" no longer lists REC. u.recBtn stays
+	// as the state holder the loop variant's `rec(show: true)` drives.
+	u.playMenu = widget.NewPopUp(popupChoices(u.padBtn, u.seqBtn, u.keysBtn), w.Canvas())
 	u.playMenu.Hide()
 	u.paksBtn = components.NewRackToggle("PAKS", acc, func() { u.toggleVisible(u.paksRack.Object(), u.paksBtn) })
 	u.meterBtn = components.NewRackToggle("VU", acc, func() { u.toggleVisible(u.meterArea, u.meterBtn) })
@@ -473,6 +502,11 @@ func (u *ui) build(w fyne.Window) {
 	u.jamControls = u.jamToggles() // absent in -tags nojam / web / mobile builds
 	toggleObjs = append(toggleObjs, u.jamControls...)
 	toggles := container.NewHBox(toggleObjs...)
+	// Page-navigation strip (PLAY / LOOP …): a separate rack the layout places
+	// beside the toggles where there's room (desktop/tablet) or on its own row on
+	// phones, so the narrow phone bar isn't overfilled. Data-driven off the
+	// document's declared pages; nil (and absent from every layout) with <2 pages.
+	u.buildPageNav()
 
 	u.status = widget.NewLabel("")
 	info := widget.NewButtonWithIcon("", theme.InfoIcon(), u.showInfo)
@@ -494,10 +528,14 @@ func (u *ui) build(w fyne.Window) {
 	u.addRackShortcut(w, fyne.KeyD, u.toggleP6Rack)
 	u.addRackShortcut(w, fyne.KeyF, u.toggleFXChoices)
 	u.addRackShortcut(w, fyne.KeyS, u.toggleSeqView)
-	u.addRackShortcut(w, fyne.KeyR, func() { u.toggleVisible(u.recRack.Object(), u.recBtn) })
 	u.addRackShortcut(w, fyne.KeyK, func() { u.toggleVisible(u.keyboardRack.Object(), u.keysBtn) })
 	u.addRackShortcut(w, fyne.KeyA, func() { u.toggleVisible(u.paksRack.Object(), u.paksBtn) })
 	u.addRackShortcut(w, fyne.KeyM, func() { u.toggleVisible(u.meterArea, u.meterBtn) })
+
+	// Ctrl+Shift+Left/Right navigate between application pages (PLAY / LOOP …).
+	// The recorder lives on the LOOP page now, so there's no REC rack shortcut.
+	u.addRackShortcut(w, fyne.KeyLeft, func() { u.cyclePage(-1) })
+	u.addRackShortcut(w, fyne.KeyRight, func() { u.cyclePage(1) })
 
 	// F11 toggles full screen, which switches to the "console" layout (Fyne has
 	// no built-in full-screen key, and a modifier-less key can't be an
@@ -528,6 +566,10 @@ func (u *ui) build(w fyne.Window) {
 	u.updatePlayMenuButton()
 	u.setVisible(u.paksRack.Object(), u.paksBtn, false)
 	u.setVisible(u.meterArea, u.meterBtn, true)
+
+	// Snapshot these defaults as the fallback a page uses on its first visit, so
+	// per-page visibility (savePageVis/loadPageVis) starts each page fresh.
+	u.captureDefaultVis()
 
 	// Gate the P-6-only rack for the current backend (hidden + disabled on the
 	// emulator). No relayout here — the build's own relayout() below covers it.
@@ -568,6 +610,7 @@ func (u *ui) relayout() {
 		"pads":      u.padRackObj,
 		"vu":        u.meterArea,
 		"toggles":   u.controlBar,
+		"pagenav":   u.pageNav,
 		"status":    u.statusBar,
 	}
 
@@ -967,10 +1010,10 @@ func (u *ui) hidePlayMenu() {
 }
 
 func (u *ui) updatePlayMenuButton() {
-	if u.playMenuBtn == nil || u.padRackObj == nil || u.seqRack == nil || u.recRack == nil || u.keyboardRack == nil {
+	if u.playMenuBtn == nil || u.padRackObj == nil || u.seqRack == nil || u.keyboardRack == nil {
 		return
 	}
-	u.playMenuBtn.SetOn(u.padRackObj.Visible() || u.seqRack.Object().Visible() || u.recRack.Object().Visible() || u.keyboardRack.Object().Visible())
+	u.playMenuBtn.SetOn(u.padRackObj.Visible() || u.seqRack.Object().Visible() || u.keyboardRack.Object().Visible())
 }
 
 // toggleFXChoices floats the PAD FX / KEYS FX selectors vertically above the
@@ -1058,6 +1101,147 @@ func (u *ui) toggleFullScreen() { u.setConsole(!u.fullScreen) }
 
 // toggleConsole toggles the console layout via the bottom-bar CONSOLE button.
 func (u *ui) toggleConsole() { u.setConsole(!u.fullScreen) }
+
+// buildPageNav creates the page-navigation strip: one backlit key per declared
+// page (the active page lit), framed as its own rack panel — the epic's
+// rack-style page navigation. It's data-driven off u.pages, so declaring a page
+// in the layout document adds a key here. It leaves u.pageNav nil (and the
+// `pagenav` layout ref unresolved, so it's simply omitted) when the document
+// declares fewer than two pages. Called once from build().
+func (u *ui) buildPageNav() {
+	u.pageBtns = map[string]*components.RackToggle{}
+	u.pageNav = nil
+	if len(u.pages) < 2 {
+		return
+	}
+	objs := make([]fyne.CanvasObject, 0, len(u.pages))
+	for _, pg := range u.pages {
+		id := pg.ID
+		btn := components.NewRackToggle(pg.Label, deviceHwAccent, func() { u.setPage(id) })
+		btn.SetOn(id == u.activePage)
+		u.pageBtns[id] = btn
+		objs = append(objs, btn)
+	}
+	u.pageNav = components.NewRackPanel(container.NewHBox(objs...))
+}
+
+// updatePageNav lights the active page's navigation key and greys the rest.
+func (u *ui) updatePageNav() {
+	for id, btn := range u.pageBtns {
+		btn.SetOn(id == u.activePage)
+	}
+}
+
+// setPage switches the active application page and rebuilds the window around
+// the *same* wired rack objects — only the container scaffolding changes, so no
+// rack is ever parented into two trees (the epic's core constraint). Navigation
+// leaves all live state (pad selection, sequencer, recorder, audio, MIDI,
+// console/full-screen intent) untouched. Rack show/hide is **per-page**: the
+// outgoing page's rack visibility is saved and the incoming page's restored, so
+// the visibility toggles configure each page independently (e.g. KEYS shown on
+// LOOP but not PLAY). Like leaving the console, it also restores the racks the
+// outgoing variant force-showed via `show:`, then relayout applies the incoming
+// page's own `show:` defaults. No-op for the current or an unknown page.
+func (u *ui) setPage(id string) {
+	if id == u.activePage || !u.pageValid(id) {
+		return
+	}
+	u.hidePlayMenu()
+	u.hideFXChoices()
+	u.savePageVis(u.activePage) // remember this page's rack show/hide config
+	u.restoreForcedRacks()      // undo the outgoing page variant's show: overrides
+	u.activePage = id
+	rememberPage(id)  // resume on this page next launch
+	u.loadPageVis(id) // apply the incoming page's remembered show/hide config
+	u.updatePageNav()
+	u.relayout()
+}
+
+// toggleRack pairs a per-page-toggleable content rack with its id + bottom-bar
+// toggle, for the per-page visibility snapshot.
+type toggleRack struct {
+	id  string
+	obj fyne.CanvasObject
+	btn *components.RackToggle
+}
+
+// toggleRacks lists the content racks whose show/hide state is remembered per
+// application page (see savePageVis/loadPageVis). The backend-gated racks (`p6`,
+// `keysfx`) are excluded — their visibility follows the active backend, not the
+// page. Called fresh each time so it reflects a rebuilt pad rack (float/dock).
+func (u *ui) toggleRacks() []toggleRack {
+	return []toggleRack{
+		{"pads", u.padRackObj, u.padBtn},
+		{"seq", u.seqRack.Object(), u.seqBtn},
+		{"keys", u.keyboardRack.Object(), u.keysBtn},
+		{"rec", u.recRack.Object(), u.recBtn},
+		{"fx", u.fxRack.Object(), u.padFXBtn},
+		{"paks", u.paksRack.Object(), u.paksBtn},
+		{"vu", u.meterArea, u.meterBtn},
+	}
+}
+
+// savePageVis records the current show/hide state of the per-page content racks
+// under page, so returning to it restores that configuration. No-op for the
+// empty (single-page) id.
+func (u *ui) savePageVis(page string) {
+	if page == "" {
+		return
+	}
+	if u.pageVis == nil {
+		u.pageVis = map[string]map[string]bool{}
+	}
+	m := make(map[string]bool)
+	for _, r := range u.toggleRacks() {
+		m[r.id] = r.obj.Visible()
+	}
+	u.pageVis[page] = m
+}
+
+// loadPageVis applies a page's remembered rack show/hide state; on a page's
+// first visit it falls back to the factory defaults (defaultVis) so the page
+// starts fresh rather than inheriting the previous page's toggles. The incoming
+// variant's `show:` overrides still apply on top during relayout. A disabled
+// toggle's rack stays hidden.
+func (u *ui) loadPageVis(page string) {
+	m, ok := u.pageVis[page]
+	if !ok {
+		m = u.defaultVis
+	}
+	for _, r := range u.toggleRacks() {
+		if v, ok := m[r.id]; ok {
+			u.setVisible(r.obj, r.btn, v && !r.btn.Disabled())
+		}
+	}
+}
+
+// captureDefaultVis records the current (build-time default) visibility of the
+// per-page content racks as the fallback for a page's first visit. Called once
+// from build() after the default visibility is set.
+func (u *ui) captureDefaultVis() {
+	u.defaultVis = make(map[string]bool)
+	for _, r := range u.toggleRacks() {
+		u.defaultVis[r.id] = r.obj.Visible()
+	}
+}
+
+// cyclePage moves delta pages from the active one, wrapping — the keyboard
+// navigation behind Ctrl+Shift+Left / Ctrl+Shift+Right. No-op with <2 pages.
+func (u *ui) cyclePage(delta int) {
+	n := len(u.pages)
+	if n < 2 {
+		return
+	}
+	idx := 0
+	for i, pg := range u.pages {
+		if pg.ID == u.activePage {
+			idx = i
+			break
+		}
+	}
+	idx = ((idx+delta)%n + n) % n
+	u.setPage(u.pages[idx].ID)
+}
 
 // setConsole enters (on) or leaves (off) the "mixing console" layout, then
 // re-lays out. On desktop it also drives the OS window: the console is full
@@ -1314,6 +1498,25 @@ func rememberConsole(on bool) {
 			v = 1
 		}
 		app.Preferences().SetInt(prefKeyConsole, v)
+	}
+}
+
+// prefKeyPage holds the last active application page id (see setPage), a global
+// UI preference restored on launch so a session resumes on the page it left.
+const prefKeyPage = "ui.page"
+
+// savedPage returns the remembered active-page id, or "" if none was saved.
+func savedPage() string {
+	if app := fyne.CurrentApp(); app != nil {
+		return strings.TrimSpace(app.Preferences().String(prefKeyPage))
+	}
+	return ""
+}
+
+// rememberPage persists the active application page so the next launch restores it.
+func rememberPage(id string) {
+	if app := fyne.CurrentApp(); app != nil {
+		app.Preferences().SetString(prefKeyPage, strings.TrimSpace(id))
 	}
 }
 
@@ -1802,7 +2005,7 @@ func (u *ui) setVisible(o fyne.CanvasObject, btn *components.RackToggle, visible
 		o.Hide()
 	}
 	btn.SetOn(visible)
-	if btn == u.padBtn || btn == u.seqBtn || btn == u.recBtn || btn == u.keysBtn {
+	if btn == u.padBtn || btn == u.seqBtn || btn == u.keysBtn {
 		u.updatePlayMenuButton()
 	}
 	if btn == u.padFXBtn || btn == u.keysFXBtn {

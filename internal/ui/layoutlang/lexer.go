@@ -224,7 +224,7 @@ func isIdentPart(r rune) bool {
 // widget IDs where that would be ambiguous).
 func isKeyword(ident string) bool {
 	switch strings.ToLower(ident) {
-	case "layout", "when", "if", "true", "false":
+	case "layout", "when", "if", "true", "false", "page":
 		return true
 	}
 	return false

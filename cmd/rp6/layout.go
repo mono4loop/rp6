@@ -12,33 +12,29 @@ import (
 	"github.com/mono4loop/rp6/internal/ui/layoutspec"
 )
 
-// defaultLayoutSrc holds the DEFAULT (original top-bar) layout variants plus the
-// shared `rack …` blocks. consoleLayoutSrc holds the full-screen "mixing
-// console" variant; consoleTabletLayoutSrc the tablet console variant. All are
+// defaultLayoutSrc holds the PLAY page (its `page play PLAY { … }` block) plus
+// the shared `rack …` blocks; loopLayoutSrc holds the LOOP page. Both are
 // compiled into the binary (edit the files and rebuild to change the UI); see
 // layoutSource for how they combine.
 //
 //go:embed assets/default.layout
 var defaultLayoutSrc string
 
-//go:embed assets/console.layout
-var consoleLayoutSrc string
+//go:embed assets/loop.layout
+var loopLayoutSrc string
 
-//go:embed assets/console-tablet.layout
-var consoleTabletLayoutSrc string
-
-// layoutSource is the full layout program: the tablet console FIRST (its
-// `when fullscreen && mobile` guard is more specific than the desktop console's
-// `when fullscreen`, and Select takes the first match), then the desktop console,
-// then the default file's variants and the shared rack blocks. Concatenation is
-// valid because a document is just a sequence of `layout`/`rack` blocks.
+// layoutSource is the full layout program: the PLAY page (default.layout) first,
+// then the LOOP page (loop.layout), so Pages() reports them in that order (the
+// nav shows PLAY then LOOP). Each page is a self-contained `page … { … }` block,
+// so concatenation just appends pages; rack blocks are top-level and shared.
 func layoutSource() string {
-	return consoleTabletLayoutSrc + "\n" + consoleLayoutSrc + "\n" + defaultLayoutSrc
+	return defaultLayoutSrc + "\n" + loopLayoutSrc
 }
 
 // loadLayout parses the embedded layout into u.layoutDoc. It does no I/O, so it's
 // safe to call from build() (including tests), and guarantees relayout always has
-// a document to work with.
+// a document to work with. It also records the document's declared pages and
+// resolves the initial active page (remembered, else the first declared page).
 func (u *ui) loadLayout() {
 	doc, err := layoutlang.Parse(layoutSource())
 	if err != nil {
@@ -48,6 +44,40 @@ func (u *ui) loadLayout() {
 		return
 	}
 	u.layoutDoc = doc
+	u.pages = doc.Pages()
+	u.initActivePage()
+}
+
+// initActivePage sets u.activePage to the remembered page when it is still a
+// declared page, otherwise the first declared page (empty when the document
+// declares none — the app then runs single-page). Called from loadLayout, once
+// the page list is known.
+func (u *ui) initActivePage() {
+	if u.pageValid(u.activePage) {
+		return // already a valid page (e.g. preset by an inspection scene)
+	}
+	if saved := savedPage(); u.pageValid(saved) {
+		u.activePage = saved
+		return
+	}
+	if len(u.pages) > 0 {
+		u.activePage = u.pages[0].ID
+		return
+	}
+	u.activePage = ""
+}
+
+// pageValid reports whether id names one of the document's declared pages.
+func (u *ui) pageValid(id string) bool {
+	if id == "" {
+		return false
+	}
+	for _, pg := range u.pages {
+		if pg.ID == id {
+			return true
+		}
+	}
+	return false
 }
 
 // layoutEnv builds the condition environment for variant selection at a given
@@ -67,7 +97,7 @@ func (u *ui) layoutEnv(size fyne.Size) layoutlang.Env {
 	if u.tabletForTest != nil {
 		tablet = *u.tabletForTest
 	}
-	return layoutlang.Env{
+	env := layoutlang.Env{
 		Bools: map[string]bool{
 			// Platform, detected at boot (compile-time build tags).
 			"mobile":  mobile,
@@ -88,6 +118,7 @@ func (u *ui) layoutEnv(size fyne.Size) layoutlang.Env {
 			"height": float64(size.Height),
 		},
 	}
+	return env
 }
 
 // selectLayout compiles the active layout document for the current environment,
@@ -99,11 +130,12 @@ func (u *ui) selectLayout(reg layoutspec.Registry) fyne.CanvasObject {
 	}
 	env := u.layoutEnv(u.canvasSize())
 	// Detect a variant switch so `show:` properties apply only on entry (see
-	// configureComponent). Select and SelectedName evaluate the same variants.
-	name, _ := u.layoutDoc.SelectedName(env)
+	// configureComponent). SelectForPage and SelectedNameForPage evaluate the
+	// active page's variants.
+	name, _ := u.layoutDoc.SelectedNameForPage(u.activePage, env)
 	u.variantChanged = name != u.activeVariant
 	u.activeVariant = name
-	root := layoutspec.BuildConfig(reg, u.configureComponent, u.layoutDoc.Select(env))
+	root := layoutspec.BuildConfig(reg, u.configureComponent, u.layoutDoc.SelectForPage(u.activePage, env))
 	u.variantChanged = false
 	return root
 }
@@ -116,7 +148,7 @@ func (u *ui) variantFor(size fyne.Size) string {
 	if u.layoutDoc == nil {
 		return ""
 	}
-	name, _ := u.layoutDoc.SelectedName(u.layoutEnv(size))
+	name, _ := u.layoutDoc.SelectedNameForPage(u.activePage, u.layoutEnv(size))
 	return name
 }
 
@@ -151,6 +183,7 @@ func (u *ui) configureComponent(id string, props map[string]string) {
 		u.applyRackShow("paks", props, u.paksRack.Object(), u.paksBtn)
 	case "rec":
 		u.applyRackShow("rec", props, u.recRack.Object(), u.recBtn)
+		u.applyDefaultRecorderTracks(props)
 	case "seq":
 		u.applyRackShow("seq", props, u.seqRack.Object(), u.seqBtn)
 		u.applyDefaultTracks(props)
@@ -202,6 +235,25 @@ func (u *ui) applyDefaultTracks(props map[string]string) {
 		return
 	}
 	u.seqRack.SetTrackCount(n)
+}
+
+// applyDefaultRecorderTracks applies a `rec(tracks: N)` property — the variant's
+// default number of visible recorder (looper) tracks — only when the variant is
+// entered, mirroring applyDefaultTracks for the sequencer. The recorder engine
+// keeps its full capacity; this governs how many track rows the rack shows.
+func (u *ui) applyDefaultRecorderTracks(props map[string]string) {
+	if !u.variantChanged {
+		return
+	}
+	v, ok := props["tracks"]
+	if !ok {
+		return
+	}
+	n, err := strconv.Atoi(v)
+	if err != nil {
+		return
+	}
+	u.recRack.SetTrackCount(n)
 }
 
 // applyDefaultPadLayout applies a `pads(layout: …)` property — the variant's
