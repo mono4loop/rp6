@@ -29,7 +29,7 @@ func rp6Registry() layoutspec.Registry {
 func TestDefaultLayoutParses(t *testing.T) {
 	doc, err := layoutlang.Parse(layoutSource())
 	require.NoError(t, err, "embedded layout must parse")
-	assert.Equal(t, []string{"consoletablet", "console", "compact", "default"}, doc.Names())
+	assert.Equal(t, []string{"tablet", "console", "phone", "window"}, doc.Names())
 }
 
 // TestDefaultLayoutBuilds checks the embedded layout builds a non-empty tree in
@@ -43,14 +43,14 @@ func TestDefaultLayoutBuilds(t *testing.T) {
 		name string
 		env  layoutlang.Env
 	}{
-		{"default windowed", layoutlang.Env{Bools: map[string]bool{"pads_visible": true}, Nums: map[string]float64{"width": 900}}},
-		{"default with p6 rack", layoutlang.Env{Bools: map[string]bool{"pads_visible": true, "p6_active": true}, Nums: map[string]float64{"width": 900}}},
-		{"fullscreen console", layoutlang.Env{Bools: map[string]bool{"fullscreen": true, "pads_visible": true}, Nums: map[string]float64{"width": 1920}}},
-		{"fullscreen console with p6", layoutlang.Env{Bools: map[string]bool{"fullscreen": true, "pads_visible": true, "p6_active": true}, Nums: map[string]float64{"width": 1920}}},
-		{"tablet console", layoutlang.Env{Bools: map[string]bool{"fullscreen": true, "mobile": true, "pads_visible": true}, Nums: map[string]float64{"width": 1600}}},
-		{"compact", layoutlang.Env{Bools: map[string]bool{"compact": true, "pads_visible": true}, Nums: map[string]float64{"width": 400}}},
-		{"seq docked", layoutlang.Env{Bools: map[string]bool{"pads_visible": true, "seq_docked": true}}},
-		{"pads hidden", layoutlang.Env{Bools: map[string]bool{"seq_docked": true}}},
+		{"window", layoutlang.Env{Bools: map[string]bool{"desktop": true, "pads_visible": true}, Nums: map[string]float64{"width": 850}}},
+		{"window with p6 rack", layoutlang.Env{Bools: map[string]bool{"desktop": true, "pads_visible": true, "p6_active": true}, Nums: map[string]float64{"width": 850}}},
+		{"fullscreen console", layoutlang.Env{Bools: map[string]bool{"desktop": true, "fullscreen": true, "pads_visible": true}, Nums: map[string]float64{"width": 1920}}},
+		{"fullscreen console with p6", layoutlang.Env{Bools: map[string]bool{"desktop": true, "fullscreen": true, "pads_visible": true, "p6_active": true}, Nums: map[string]float64{"width": 1920}}},
+		{"tablet", layoutlang.Env{Bools: map[string]bool{"mobile": true, "tablet": true, "pads_visible": true}, Nums: map[string]float64{"width": 1600}}},
+		{"phone", layoutlang.Env{Bools: map[string]bool{"mobile": true, "pads_visible": true}, Nums: map[string]float64{"width": 400}}},
+		{"seq docked", layoutlang.Env{Bools: map[string]bool{"desktop": true, "pads_visible": true, "seq_docked": true}}},
+		{"pads hidden", layoutlang.Env{Bools: map[string]bool{"desktop": true, "seq_docked": true}}},
 	}
 	for _, s := range states {
 		t.Run(s.name, func(t *testing.T) {
@@ -62,8 +62,9 @@ func TestDefaultLayoutBuilds(t *testing.T) {
 	}
 }
 
-// TestFullScreenSelectsConsole verifies the fullscreen flag picks the console
-// variant while the windowed states pick default/compact — the F11 behavior.
+// TestFullScreenSelectsConsole verifies the discrete variant selection: desktop
+// full screen picks console, desktop windowed picks window, and mobile picks
+// phone or tablet by device size (never console).
 func TestFullScreenSelectsConsole(t *testing.T) {
 	doc, err := layoutlang.Parse(layoutSource())
 	require.NoError(t, err)
@@ -73,12 +74,12 @@ func TestFullScreenSelectsConsole(t *testing.T) {
 		env  layoutlang.Env
 		want string
 	}{
-		{"fullscreen", layoutlang.Env{Bools: map[string]bool{"fullscreen": true}}, "console"},
-		{"windowed", layoutlang.Env{Bools: map[string]bool{"fullscreen": false}}, "default"},
-		{"narrow windowed", layoutlang.Env{Bools: map[string]bool{"compact": true}}, "compact"},
-		{"fullscreen beats compact", layoutlang.Env{Bools: map[string]bool{"fullscreen": true, "compact": true}}, "console"},
-		{"mobile fullscreen picks tablet console", layoutlang.Env{Bools: map[string]bool{"fullscreen": true, "mobile": true}}, "consoletablet"},
-		{"desktop fullscreen stays console", layoutlang.Env{Bools: map[string]bool{"fullscreen": true, "mobile": false}}, "console"},
+		{"desktop fullscreen", layoutlang.Env{Bools: map[string]bool{"desktop": true, "fullscreen": true}}, "console"},
+		{"desktop windowed", layoutlang.Env{Bools: map[string]bool{"desktop": true, "fullscreen": false}}, "window"},
+		{"phone", layoutlang.Env{Bools: map[string]bool{"mobile": true}}, "phone"},
+		{"tablet", layoutlang.Env{Bools: map[string]bool{"mobile": true, "tablet": true}}, "tablet"},
+		{"phone ignores fullscreen intent", layoutlang.Env{Bools: map[string]bool{"mobile": true, "fullscreen": true}}, "phone"},
+		{"tablet ignores fullscreen intent", layoutlang.Env{Bools: map[string]bool{"mobile": true, "tablet": true, "fullscreen": true}}, "tablet"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -126,16 +127,17 @@ func TestRelayoutUsesDocument(t *testing.T) {
 	u := newTestUI(t) // build() calls loadLayout + an initial relayout
 	require.NotNil(t, u.layoutDoc, "embedded layout parsed in build()")
 	require.NotNil(t, u.root, "relayout produced content")
+	require.Equal(t, "window", u.activeVariant, "desktop windowed variant")
 
-	// Flip to the compact form factor and re-lay out; still non-nil.
-	u.compact = true
-	u.relayout()
+	// Enter the console layout and re-lay out; still non-nil.
+	u.setConsole(true)
 	require.NotNil(t, u.root)
+	require.Equal(t, "console", u.activeVariant, "console variant when full screen")
 }
 
 // TestVUOrientationPerVariant checks the layout file drives the VU meter's
-// orientation via a `vu(orientation: …)` property: horizontal in the console and
-// compact variants, vertical in the default (windowed) variant.
+// orientation via a `vu(orientation: …)` property: horizontal in every shipped
+// variant (console, phone, window).
 func TestVUOrientationPerVariant(t *testing.T) {
 	doc, err := layoutlang.Parse(layoutSource())
 	require.NoError(t, err)
@@ -157,9 +159,9 @@ func TestVUOrientationPerVariant(t *testing.T) {
 		env  layoutlang.Env
 		want string
 	}{
-		{"console", layoutlang.Env{Bools: map[string]bool{"fullscreen": true, "pads_visible": true}}, "horizontal"},
-		{"compact", layoutlang.Env{Bools: map[string]bool{"compact": true, "pads_visible": true}}, "horizontal"},
-		{"default", layoutlang.Env{Bools: map[string]bool{"pads_visible": true}}, "horizontal"},
+		{"console", layoutlang.Env{Bools: map[string]bool{"desktop": true, "fullscreen": true, "pads_visible": true}}, "horizontal"},
+		{"phone", layoutlang.Env{Bools: map[string]bool{"mobile": true, "pads_visible": true}}, "horizontal"},
+		{"window", layoutlang.Env{Bools: map[string]bool{"desktop": true, "pads_visible": true}}, "horizontal"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -188,50 +190,65 @@ func TestConsoleRevealsFx(t *testing.T) {
 	assert.False(t, u.fxRack.Object().Visible(), "manual toggle respected within the console")
 }
 
-// TestConsoleRevealsKeyboard checks the keyboard is off by default (windowed),
-// turns on when the console is entered, is taller there, and — crucially —
-// returns to its prior hidden state when the console is left (via the real
-// setConsole path, not a raw relayout).
-func TestConsoleRevealsKeyboard(t *testing.T) {
+// TestConsoleShowsKeyboard checks the console force-shows the keyboard on entry
+// (taller than windowed) and restores its prior hidden state on leaving.
+func TestConsoleShowsKeyboard(t *testing.T) {
 	u := newTestUI(t)
 	require.False(t, u.keyboardRack.Object().Visible(), "keyboard hidden by default (windowed)")
-	compactH := u.keyboardRack.piano.MinSize().Height
+	windowedH := u.keyboardRack.piano.MinSize().Height
+	u.win.Resize(fyne.NewSize(1920, 1080))
 
 	u.setConsole(true)
 	assert.True(t, u.keyboardRack.Object().Visible(), "console reveals the keyboard on entry")
 	assert.True(t, u.keysBtn.On())
-	assert.Greater(t, u.keyboardRack.piano.MinSize().Height, compactH, "keyboard is taller in the console")
+	assert.Greater(t, u.keyboardRack.piano.MinSize().Height, windowedH, "keyboard is taller in the console")
 
 	u.setConsole(false)
 	assert.False(t, u.keyboardRack.Object().Visible(), "keyboard returns to its prior hidden state on leaving the console")
 	assert.False(t, u.keysBtn.On())
-	assert.Equal(t, compactH, u.keyboardRack.piano.MinSize().Height, "keyboard returns to compact height when windowed")
+	assert.Equal(t, windowedH, u.keyboardRack.piano.MinSize().Height, "keyboard returns to windowed height")
+}
+
+func TestConsoleRepeatedRoundTripKeepsSequencerAvailable(t *testing.T) {
+	u := newTestUI(t)
+	u.win.Resize(fyne.NewSize(1920, 1080))
+	for cycle := range 3 {
+		u.setConsole(true)
+		assert.True(t, u.seqRack.Object().Visible(), "cycle %d: console shows sequencer", cycle+1)
+		u.setConsole(false)
+		assert.True(t, u.seqRack.Object().Visible(), "cycle %d: windowed mode also shows the sequencer by default", cycle+1)
+	}
 }
 
 // TestConsolePreservesRackState reproduces the round-trip bug: the console
 // force-shows FX, KEYS and PAKS; leaving it must restore the racks the user had
-// before (here: all off), not leave them stuck on (which crammed the normal
-// layout and pushed the pads off-screen).
+// before (here: FX/KEYS/PAKS off), not leave them stuck on (which crammed the
+// normal layout and pushed the pads off-screen). The sequencer is a shown-by-
+// default rack in the window variant, so it stays on across the round trip.
 func TestConsolePreservesRackState(t *testing.T) {
 	u := newTestUI(t)
-	// Default state: fx / keys / paks are off; pads on.
+	// Default window state: fx / keys / paks are off; pads + sequencer on.
 	require.False(t, u.fxRack.Object().Visible())
 	require.False(t, u.keyboardRack.Object().Visible())
 	require.False(t, u.paksRack.Object().Visible())
+	require.True(t, u.seqRack.Object().Visible(), "sequencer shown by default in windowed mode")
 	require.True(t, u.padRackObj.Visible())
 
 	u.toggleConsole() // enter console — force-shows the racks
 	assert.True(t, u.fxRack.Object().Visible())
-	assert.True(t, u.keyboardRack.Object().Visible())
+	assert.True(t, u.keyboardRack.Object().Visible(), "console reveals the keyboard")
 	assert.True(t, u.paksRack.Object().Visible(), "console reveals the paks rack")
+	assert.True(t, u.seqRack.Object().Visible(), "console shows the sequencer")
 
-	u.toggleConsole() // back to normal — must restore the prior (off) state
+	u.toggleConsole() // back to windowed — restore the prior FX/KEYS/PAKS (off) state
 	assert.False(t, u.fxRack.Object().Visible(), "FX restored to off")
 	assert.False(t, u.keyboardRack.Object().Visible(), "KEYS restored to off")
 	assert.False(t, u.paksRack.Object().Visible(), "PAKS restored to off")
+	assert.True(t, u.seqRack.Object().Visible(), "SEQ stays on (windowed default)")
 	assert.False(t, u.padFXBtn.On())
 	assert.False(t, u.keysBtn.On())
 	assert.False(t, u.paksBtn.On())
+	assert.True(t, u.seqBtn.On())
 	assert.True(t, u.padRackObj.Visible(), "pads still visible")
 }
 
@@ -248,6 +265,33 @@ func TestConsoleKeepsUserToggleWithinConsole(t *testing.T) {
 
 	u.toggleConsole() // leave — fx should remain off (matches pre-console)
 	assert.False(t, u.fxRack.Object().Visible())
+}
+
+// TestConsoleReturnsToWindowVariant verifies that leaving the console restores
+// the windowed variant along with its window-only defaults (twobank pads, four
+// tracks, horizontally-expanded pad rack) — the "use the windowed layout on exit"
+// behavior.
+func TestConsoleReturnsToWindowVariant(t *testing.T) {
+	u := newTestUI(t)
+	require.Equal(t, "window", u.activeVariant)
+	require.Equal(t, layoutTwoBank, u.padLayout, "window defaults to twobank")
+
+	u.setConsole(true)
+	require.Equal(t, "console", u.activeVariant)
+	assert.Equal(t, layoutPaged, u.padLayout, "console switches to paged")
+	assert.Equal(t, 6, u.seq.Tracks(), "console default track count")
+
+	u.setConsole(false)
+	assert.Equal(t, "window", u.activeVariant, "leaving the console returns to the window variant")
+	assert.Equal(t, layoutTwoBank, u.padLayout, "window twobank restored on exit")
+	assert.Equal(t, 4, u.seq.Tracks(), "window track default restored on exit")
+
+	// The pad rack expands horizontally again in the window variant.
+	allocation := fyne.NewSize(1400, 900)
+	u.padRackObj.Resize(allocation)
+	u.padRackObj.Refresh()
+	assert.Equal(t, allocation.Width, fittedContent(u.padRackObj).Size().Width,
+		"pad rack expands horizontally after returning to the window variant")
 }
 
 // TestToggleFullScreenRelayouts exercises the F11 path against the real widgets:
@@ -306,5 +350,76 @@ func TestConsoleLayoutSmoke(t *testing.T) {
 			u.relayout()
 			require.NotNil(t, u.root, "content after %q", s.name)
 		})
+	}
+}
+
+// --- Windowed-mode sequencer + console round-trip (issues reported by the user) ---
+
+// Issue 1: windowed mode enables the sequencer rack by default.
+func TestWindowShowsSequencerByDefault(t *testing.T) {
+	u := newTestUI(t)
+	require.Equal(t, "window", u.activeVariant)
+	assert.True(t, u.seqRack.Object().Visible(), "sequencer is shown by default in windowed mode")
+	assert.True(t, u.seqBtn.On(), "SEQ toggle is lit")
+}
+
+// Issue 2: with the sequencer shown, the window content fits the fixed 850x950
+// window (emulator backend — the P-6 hardware rack makes its window a few px
+// taller), and the sequencer's last track is not clipped by the pads below it.
+func TestWindowContentFitsWithSequencer(t *testing.T) {
+	u := newTestUI(t)
+	u.useEmu = true
+	u.applyBackendGating()
+	u.relayout()
+	require.True(t, u.seqRack.Object().Visible(), "precondition: sequencer shown")
+
+	min := u.root.MinSize()
+	assert.LessOrEqualf(t, min.Width, float32(windowedWidth),
+		"window content min width %.0f must fit the fixed %d window", min.Width, windowedWidth)
+	assert.LessOrEqualf(t, min.Height, float32(windowedHeight),
+		"window content min height %.0f must fit the fixed %d window", min.Height, windowedHeight)
+
+	// Lay out at the window size (two passes so the width-aware sequencer minimum
+	// settles) and verify the last track isn't clipped by the scroll viewport.
+	for range 2 {
+		u.contentHolder.Resize(fyne.NewSize(windowedWidth, windowedHeight))
+		u.contentHolder.Refresh()
+	}
+	last := u.seqRack.blocks[u.seq.Tracks()-1]
+	lastBottom := last.Position().Y + last.Size().Height
+	assert.LessOrEqualf(t, lastBottom, u.seqRack.trackBox.Size().Height+0.5,
+		"last sequencer track (bottom %.1f) fits inside the scroll viewport (%.1f) — not clipped under the pads",
+		lastBottom, u.seqRack.trackBox.Size().Height)
+}
+
+// Issue 3: leaving the console returns to the window variant and, once the canvas
+// settles back to the windowed size, every visible rack lays out inside the
+// window (no rack stranded at the previous full-screen geometry).
+func TestConsoleExitRelaysOutWindow(t *testing.T) {
+	u := newTestUI(t)
+
+	u.setConsole(true)
+	u.contentHolder.Resize(fyne.NewSize(1920, 1080)) // full-screen settle
+	u.relayout()
+	require.Equal(t, "console", u.activeVariant)
+
+	u.setConsole(false)
+	// Simulate the compositor shrinking the window back to the windowed size
+	// (the async settle) with no explicit relayout — the content must reflow.
+	u.contentHolder.Resize(fyne.NewSize(windowedWidth, windowedHeight))
+	u.contentHolder.Refresh()
+
+	assert.Equal(t, "window", u.activeVariant, "back to the window variant")
+	win := fyne.NewSize(windowedWidth, windowedHeight)
+	racks := map[string]fyne.CanvasObject{
+		"pads": u.padRackObj, "sequencer": u.seqRack.Object(), "transport": u.transportRack,
+		"navigation": u.controlBar, "status": u.statusBar,
+	}
+	for name, r := range racks {
+		if !r.Visible() {
+			continue
+		}
+		assert.LessOrEqualf(t, r.Position().X+r.Size().Width, win.Width+0.5, "%s right edge within window", name)
+		assert.LessOrEqualf(t, r.Position().Y+r.Size().Height, win.Height+0.5, "%s bottom edge within window", name)
 	}
 }

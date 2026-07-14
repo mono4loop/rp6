@@ -1,9 +1,11 @@
-// RP6 "mixing console" layout — used when the window is full screen (press F11
-// or Ctrl+Shift+Enter to toggle full screen).
+// RP6 "mixing console" layout — the fixed desktop full-screen layout (press F11
+// or Ctrl+Shift+Enter, or the bottom-bar CONSOLE toggle, to enter/leave).
 //
-// Compiled into the binary alongside default.layout; the loader concatenates the
-// two with this file FIRST, so this `when fullscreen` variant takes precedence
-// over the default/original variants. It shares the `rack …` blocks defined in
+// Selected `when fullscreen && desktop`: mobile devices use the phone/tablet
+// layouts instead (a tablet gets the dedicated `tablet` variant, which is parsed
+// first). The loader concatenates the layout files with the tablet variant FIRST,
+// then this console, then the default file's `phone`/`window` variants, so the
+// first matching guard wins. It shares the `rack …` blocks defined in
 // default.layout.
 //
 //   ┌───────┬───────────────────────┬───────┐
@@ -16,7 +18,7 @@
 //   │                status                 │
 //   └───────────────────────────────────────┘
 
-layout console when fullscreen {
+layout console when fullscreen && desktop {
   Border {
     // Bottom: the P-6-only rack (full width, only when the P-6 is active), or the
     // emulator's host-side Keys FX rack, above the keyboard (full width, on by
@@ -45,7 +47,7 @@ layout console when fullscreen {
     // Right rail: the sequencer only when it is not docked in the centre split.
     // When docked this region disappears completely, giving that width back to
     // the pads and sequencer rather than leaving a mostly-empty FX column.
-    right: seq if !seq_docked
+    right: seq(show: true, tracks: 6) if !seq_docked
 
     // Centre: the pads fill the space; when the sequencer is docked it shares
     // the centre as the right pane of a split.
@@ -53,9 +55,9 @@ layout console when fullscreen {
       horizontal: true
       // Keep enough width for 16 touchable sequencer steps on a 1920px laptop
       // while the six-column pad grid remains comfortably finger-sized.
-      offset: 0.58
-      leading: pads if pads_visible
-      trailing: seq if seq_docked
+      offset: 0.517
+      leading: pads(layout: paged) if pads_visible
+      trailing: seq(show: true, tracks: 6) if seq_docked
     }
   }
 }

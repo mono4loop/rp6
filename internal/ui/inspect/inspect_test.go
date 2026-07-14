@@ -7,6 +7,7 @@ import (
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
+	"fyne.io/fyne/v2/driver/software"
 	"fyne.io/fyne/v2/test"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -91,6 +92,37 @@ func TestSnapshotDetectsClipAndSplitBounds(t *testing.T) {
 }
 
 func TestPixelRectsUseRoundedEdges(t *testing.T) {
-	got := pixelRect(Rect{X: 0.2, Width: 0.2, Height: 1}, 3)
-	assert.Equal(t, PixelRect{X: 1, Width: 1, Height: 3}, got)
+	aApp := test.NewApp()
+	t.Cleanup(aApp.Quit)
+	w := test.NewWindow(canvas.NewRectangle(color.White))
+	t.Cleanup(w.Close)
+	c := w.Canvas().(software.WindowlessCanvas)
+	c.SetScale(3)
+	got := pixelRect(Rect{X: 0.2, Width: 0.2, Height: 1}, c)
+	assert.Equal(t, PixelRect{X: 0, Width: 1, Height: 3}, got)
+}
+
+func TestCheckPhysicalSquares(t *testing.T) {
+	snapshot := Snapshot{Elements: []Element{{
+		ID: "cell", EffectiveVisible: true, PixelRect: PixelRect{Width: 39, Height: 43},
+	}}}
+	problems := Check(snapshot, Contract{PhysicalSquares: []PhysicalSquareContract{{
+		IDs: []string{"cell"}, MinPixels: 40, MaxPixels: 50, Tolerance: 1,
+	}}})
+	require.Len(t, problems, 1)
+	assert.Equal(t, "not-square", problems[0].Code)
+}
+
+func TestCheckContainmentReportsEscapedChild(t *testing.T) {
+	snapshot := Snapshot{Elements: []Element{
+		{ID: "rack", EffectiveVisible: true, Rect: Rect{Width: 100, Height: 100}},
+		{ID: "inside", EffectiveVisible: true, Rect: Rect{X: 10, Y: 10, Width: 20, Height: 20}},
+		{ID: "escaped", EffectiveVisible: true, Rect: Rect{X: 90, Y: 10, Width: 20, Height: 20}},
+	}}
+	problems := Check(snapshot, Contract{Contained: []ContainmentContract{{
+		Parent: "rack", Children: []string{"inside", "escaped"}, Tolerance: 0.5,
+	}}})
+	require.Len(t, problems, 1)
+	assert.Equal(t, "outside-parent", problems[0].Code)
+	assert.Equal(t, "escaped", problems[0].ID)
 }

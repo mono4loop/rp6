@@ -59,6 +59,14 @@ func (p *RackPanel) InspectionChildren() []fyne.CanvasObject {
 	return children
 }
 
+// SizeForContent returns the panel size needed for the supplied content size,
+// including this panel's frame, padding and optional nameplate reservation.
+func (p *RackPanel) SizeForContent(contentSize fyne.Size) fyne.Size {
+	contentMin := p.content.MinSize()
+	panelMin := p.MinSize()
+	return contentSize.Add(fyne.NewSize(panelMin.Width-contentMin.Width, panelMin.Height-contentMin.Height))
+}
+
 // AccessibilityLabel names the rack panel for assistive technologies. Named
 // device panels use their nameplate; generic panels are exposed as a rack.
 func (p *RackPanel) AccessibilityLabel() string {

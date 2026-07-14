@@ -131,15 +131,17 @@ func TestPlayButtonFloatsVerticalRackChoices(t *testing.T) {
 	assert.True(t, u.playMenu.Visible())
 	assert.NotNil(t, u.win.Canvas().Overlays().Top(), "choices float in a canvas overlay")
 
+	// Hide pads; the sequencer is still visible so the parent stays lit.
 	u.padBtn.Tapped(nil)
 	assert.False(t, u.playMenu.Visible(), "choosing a rack closes the floating menu")
 	assert.False(t, u.padRackObj.Visible())
-	assert.True(t, u.playMenuBtn.On(), "sequencer remains visible")
+	assert.True(t, u.playMenuBtn.On(), "parent stays lit while the sequencer is visible")
 
+	// Hide the sequencer too; now no play rack is visible so the parent greys.
 	u.togglePlayMenu()
 	u.seqBtn.Tapped(nil)
 	assert.False(t, u.seqRack.Object().Visible())
-	assert.False(t, u.playMenuBtn.On(), "parent greys when all three racks are hidden")
+	assert.False(t, u.playMenuBtn.On(), "parent greys when no play rack is visible")
 
 	u.togglePlayMenu()
 	u.keysBtn.Tapped(nil)
@@ -374,43 +376,14 @@ func TestToggleMeter(t *testing.T) {
 
 func TestMeterHorizontalStrip(t *testing.T) {
 	u := newTestUI(t)
-	require.False(t, u.compact, "wide by default")
-	require.True(t, u.meterHoriz, "meter is a horizontal strip beside TEMPO in the default layout")
+	require.Equal(t, "window", u.activeVariant, "desktop windowed by default")
+	assert.True(t, u.meterHoriz, "meter is a horizontal strip beside TEMPO in the window layout")
+	assert.True(t, u.meterArea.Visible(), "meter shown by default")
 
-	// Compact form factor keeps it a horizontal strip (moved to the bottom). Drive
-	// the state directly + relayout synchronously (production defers relayout via
-	// fyne.Do; calling it here concurrently would race the headless text shaper).
-	u.compact = true
+	// A relayout keeps it a horizontal strip (the layout applies the
+	// vu(orientation: horizontal) property idempotently).
 	u.relayout()
-	assert.True(t, u.meterHoriz, "meter stays horizontal in compact mode")
-	assert.True(t, u.meterArea.Visible(), "meter still shown after reflow")
-
-	// Back to wide -> still a horizontal strip (now up top beside TEMPO).
-	u.compact = false
-	u.relayout()
-	assert.True(t, u.meterHoriz, "meter still horizontal when wide")
-}
-
-func TestClassifyCompactHysteresis(t *testing.T) {
-	// Clearly tall (portrait phone) -> compact; clearly square/wide -> not.
-	assert.True(t, classifyCompact(false, 400, 800), "tall portrait is compact")
-	assert.False(t, classifyCompact(true, 900, 600), "landscape is wide")
-
-	// The default desktop window (858x900, aspect ~0.95) must stay wide.
-	assert.False(t, classifyCompact(false, 858, 900), "near-square desktop stays wide")
-
-	// Within the hysteresis band (aspect 0.70..0.80) the state is held.
-	// 750/1000 = 0.75 sits inside the band.
-	assert.False(t, classifyCompact(false, 750, 1000), "0.75 aspect keeps a wide window wide")
-	assert.True(t, classifyCompact(true, 750, 1000), "0.75 aspect keeps a compact window compact")
-
-	// Edges: above 0.80 -> wide, below 0.70 -> compact.
-	assert.False(t, classifyCompact(true, 810, 1000), "0.81 aspect -> wide")
-	assert.True(t, classifyCompact(false, 690, 1000), "0.69 aspect -> compact")
-
-	// Degenerate height holds the current state (no divide-by-zero flip).
-	assert.True(t, classifyCompact(true, 400, 0))
-	assert.False(t, classifyCompact(false, 400, 0))
+	assert.True(t, u.meterHoriz, "meter stays horizontal after relayout")
 }
 
 func TestIsTabletSize(t *testing.T) {
@@ -420,23 +393,6 @@ func TestIsTabletSize(t *testing.T) {
 	assert.True(t, isTabletSize(fyne.NewSize(600, 600)), "exactly at the threshold")
 	assert.False(t, isTabletSize(fyne.NewSize(393, 851)), "portrait phone")
 	assert.False(t, isTabletSize(fyne.NewSize(851, 393)), "landscape phone")
-}
-
-func TestConsoleAutoTabletOnFirstResize(t *testing.T) {
-	u := newTestUI(t)
-	require.False(t, u.fullScreen, "windowed by default")
-
-	// Simulate a fresh mobile install with no saved preference.
-	u.consoleAutoTablet = true
-	u.onCanvasResize(fyne.NewSize(1292, 914)) // tablet-class size
-	assert.True(t, u.fullScreen, "a tablet-class screen defaults to the console")
-	assert.False(t, u.consoleAutoTablet, "the decision runs only once")
-
-	// A phone-class first size must not turn the console on.
-	u2 := newTestUI(t)
-	u2.consoleAutoTablet = true
-	u2.onCanvasResize(fyne.NewSize(393, 851))
-	assert.False(t, u2.fullScreen, "a phone-class screen stays windowed")
 }
 
 func TestConsoleChoicePersisted(t *testing.T) {
@@ -455,17 +411,19 @@ func TestConsoleChoicePersisted(t *testing.T) {
 	assert.False(t, on, "saved as off")
 }
 
-func TestSequencerRackDefaultsVisible(t *testing.T) {
+func TestSequencerRackDefaultsShown(t *testing.T) {
 	u := newTestUI(t)
-	assert.True(t, u.seqRack.Object().Visible(), "sequencer shown by default")
+	assert.True(t, u.seqRack.Object().Visible(), "sequencer shown by default in windowed mode")
+	assert.True(t, u.seqBtn.On(), "SEQ toggle lit")
+	assert.Equal(t, 4, u.seq.Tracks(), "window variant sets a default of 4 tracks")
 	assert.False(t, u.fxRack.Object().Visible(), "effects hidden by default")
 	assert.True(t, u.p6Obj.Visible(), "P-6 rack shown by default on the hardware backend")
 
+	// Toggling the sequencer off then back on works.
 	u.toggleVisible(u.seqRack.Object(), u.seqBtn)
 	assert.False(t, u.seqRack.Object().Visible(), "toggles off")
-
-	// Default track count is 4.
-	assert.Equal(t, defaultTracks, u.seq.Tracks())
+	u.toggleVisible(u.seqRack.Object(), u.seqBtn)
+	assert.True(t, u.seqRack.Object().Visible(), "toggles back on")
 }
 
 func TestArmedTrackMuteAndBars(t *testing.T) {
@@ -669,26 +627,31 @@ func TestTogglePads(t *testing.T) {
 
 func TestLayoutCycle(t *testing.T) {
 	u := newTestUI(t)
-	assert.Equal(t, layoutPaged, u.padLayout, "6x4 paged by default")
-	assert.Len(t, u.grid.Pads(), 24, "4 banks x 6 pads per page")
-
-	u.setLayout(layoutTwoBank)
-	assert.Equal(t, layoutTwoBank, u.padLayout)
+	// The window variant sets the 12-pad two-bank layout as its default (via the
+	// `pads(layout: twobank)` layout property).
+	assert.Equal(t, layoutTwoBank, u.padLayout, "window variant defaults to two-bank")
 	assert.Len(t, u.grid.Pads(), 12, "2 banks x 6 pads per page")
+
+	u.setLayout(layoutPaged)
+	assert.Equal(t, layoutPaged, u.padLayout)
+	assert.Len(t, u.grid.Pads(), 24, "4 banks x 6 pads per page")
 	assert.Same(t, u.grid.Object(), u.padGridArea.Objects[0], "grid swapped into the holder")
 
 	u.setLayout(layoutDense)
 	assert.Equal(t, layoutDense, u.padLayout)
 	assert.Len(t, u.grid.Pads(), 48, "all 8 banks x 6 pads on one page")
 
-	u.setLayout(layoutPaged)
-	assert.Equal(t, layoutPaged, u.padLayout)
-	assert.Len(t, u.grid.Pads(), 24)
+	u.setLayout(layoutTwoBank)
+	assert.Equal(t, layoutTwoBank, u.padLayout)
+	assert.Len(t, u.grid.Pads(), 12)
 }
 
 func TestLayoutButtonCycles(t *testing.T) {
 	u := newTestUI(t)
 	require.NotNil(t, u.layoutBtn)
+	// The window variant defaults the pad grid to twobank; start the cycle test
+	// from a known layout so it doesn't depend on that default.
+	u.setLayout(layoutPaged)
 	assert.Equal(t, int(layoutPaged), u.layoutBtn.State())
 
 	u.layoutBtn.Tapped(nil)

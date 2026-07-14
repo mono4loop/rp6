@@ -146,13 +146,13 @@ func SnapshotCanvas(c fyne.Canvas, metadata Metadata, targets []Target) Snapshot
 		Elements: make([]Element, 0, len(targets)),
 	}
 	for _, target := range targets {
-		e := elementFor(target, placements[target.Object], scale)
+		e := elementFor(target, placements[target.Object], c)
 		out.Elements = append(out.Elements, e)
 	}
 	return out
 }
 
-func elementFor(target Target, found []placement, scale float32) Element {
+func elementFor(target Target, found []placement, canvas fyne.Canvas) Element {
 	label, role := target.Label, target.Role
 	if accessible, ok := target.Object.(fyne.Accessible); ok {
 		if label == "" {
@@ -182,7 +182,7 @@ func elementFor(target Target, found []placement, scale float32) Element {
 	e.EffectiveVisible = p.effectiveVisible
 	e.Rect = p.rect
 	e.VisibleRect = p.visibleRect
-	e.PixelRect = pixelRect(p.rect, scale)
+	e.PixelRect = pixelRect(p.rect, canvas)
 	e.MinSize = Size{Width: min.Width, Height: min.Height}
 	e.UnderMin = p.effectiveVisible && (p.rect.Width+0.5 < min.Width || p.rect.Height+0.5 < min.Height)
 	e.Clipped = p.selfVisible && !sameRect(p.rect, p.visibleRect)
@@ -280,11 +280,9 @@ func sameRect(a, b Rect) bool {
 		abs(a.Width-b.Width) <= tolerance && abs(a.Height-b.Height) <= tolerance
 }
 
-func pixelRect(r Rect, scale float32) PixelRect {
-	x1 := pixelEdge(r.X, scale)
-	y1 := pixelEdge(r.Y, scale)
-	x2 := pixelEdge(r.X+r.Width, scale)
-	y2 := pixelEdge(r.Y+r.Height, scale)
+func pixelRect(r Rect, canvas fyne.Canvas) PixelRect {
+	x1, y1 := canvas.PixelCoordinateForPosition(fyne.NewPos(r.X, r.Y))
+	x2, y2 := canvas.PixelCoordinateForPosition(fyne.NewPos(r.X+r.Width, r.Y+r.Height))
 	return PixelRect{
 		X:      x1,
 		Y:      y1,

@@ -154,9 +154,14 @@ func newPadGrid(layout padLayout, onTrigger func(bank, number int), badges func(
 			bank, number := cell(page, row, col)
 			onTrigger(bank, number)
 		},
+		CellMinPixels: 80,
+		CellMaxPixels: 130,
 	}
 	if layout == layoutDense {
-		cfg.CellMinSize = fyne.NewSize(22, 22) // half of the normal 44 floor
+		// Dense mode uses a separate compact range so all
+		// eight banks remain visible without scrolling.
+		cfg.CellMinPixels = 65
+		cfg.CellMaxPixels = 75
 	}
 	return components.NewPadGrid(cfg)
 }

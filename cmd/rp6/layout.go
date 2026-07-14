@@ -3,9 +3,11 @@ package main
 import (
 	_ "embed"
 	"log"
+	"strconv"
 
 	"fyne.io/fyne/v2"
 
+	"github.com/mono4loop/rp6/internal/ui/components"
 	"github.com/mono4loop/rp6/internal/ui/layoutlang"
 	"github.com/mono4loop/rp6/internal/ui/layoutspec"
 )
@@ -48,27 +50,33 @@ func (u *ui) loadLayout() {
 	u.layoutDoc = doc
 }
 
-// selectLayout compiles the active layout document for the current environment,
-// resolving all `when`/`if` conditions. The environment carries the boot-time
-// platform (mobile/web/desktop — decided at compile time by build tags) and the
-// live form factor (compact + window width/height) plus UI state, so the layout
-// can adapt to the device it launched on. Returns nil if there's no document or
-// no variant matches (relayout then uses a minimal fallback).
-func (u *ui) selectLayout(reg layoutspec.Registry) fyne.CanvasObject {
-	if u.layoutDoc == nil {
-		return nil
+// layoutEnv builds the condition environment for variant selection at a given
+// canvas size. It carries the boot-time platform (mobile/web/desktop — decided at
+// compile time by build tags) and the discrete form factor the size resolves to
+// (a tablet-class touchscreen, plus the fullscreen/console intent) so a size maps
+// to exactly one designed variant. There is deliberately no continuous "compact"
+// adaptation: windowed desktop is a single fixed size, mobile is phone-or-tablet
+// by device size, and desktop fullscreen is the console. See docs/architecture/
+// layouts.md (fixed-form-factor policy) and resolutions.txt for the target set.
+func (u *ui) layoutEnv(size fyne.Size) layoutlang.Env {
+	mobile := onMobile
+	if u.mobileForTest != nil {
+		mobile = *u.mobileForTest
 	}
-	size := u.canvasSize()
-	env := layoutlang.Env{
+	tablet := isTabletSize(size)
+	if u.tabletForTest != nil {
+		tablet = *u.tabletForTest
+	}
+	return layoutlang.Env{
 		Bools: map[string]bool{
 			// Platform, detected at boot (compile-time build tags).
-			"mobile":  onMobile,
+			"mobile":  mobile,
 			"web":     onWeb,
-			"desktop": !onMobile && !onWeb,
-			// Live form factor + UI state.
+			"desktop": !mobile && !onWeb,
+			// Discrete form factor + UI state.
 			"fullscreen":   u.isFullScreen(),
-			"compact":      u.compact,
-			"seq_docked":   u.seqSide && u.seqRack.Object().Visible(),
+			"tablet":       tablet,
+			"seq_docked":   u.seqSide,
 			"pads_visible": u.padRackObj.Visible() && !u.padFloating,
 			// The P-6-only rack (transport + PATTERN + Delay/Reverb) is laid out
 			// only when the P-6 is the active backend; its controls are no-ops on
@@ -80,6 +88,16 @@ func (u *ui) selectLayout(reg layoutspec.Registry) fyne.CanvasObject {
 			"height": float64(size.Height),
 		},
 	}
+}
+
+// selectLayout compiles the active layout document for the current environment,
+// resolving all `when`/`if` conditions. Returns nil if there's no document or no
+// variant matches (relayout then uses a minimal fallback).
+func (u *ui) selectLayout(reg layoutspec.Registry) fyne.CanvasObject {
+	if u.layoutDoc == nil {
+		return nil
+	}
+	env := u.layoutEnv(u.canvasSize())
 	// Detect a variant switch so `show:` properties apply only on entry (see
 	// configureComponent). Select and SelectedName evaluate the same variants.
 	name, _ := u.layoutDoc.SelectedName(env)
@@ -88,6 +106,18 @@ func (u *ui) selectLayout(reg layoutspec.Registry) fyne.CanvasObject {
 	root := layoutspec.BuildConfig(reg, u.configureComponent, u.layoutDoc.Select(env))
 	u.variantChanged = false
 	return root
+}
+
+// variantFor reports which layout variant a given canvas size would select,
+// without building it. onCanvasResize uses it to relayout only when the discrete
+// form factor actually changes (e.g. a tablet's first real size, or entering the
+// desktop console), rather than continuously adapting to every pixel.
+func (u *ui) variantFor(size fyne.Size) string {
+	if u.layoutDoc == nil {
+		return ""
+	}
+	name, _ := u.layoutDoc.SelectedName(u.layoutEnv(size))
+	return name
 }
 
 // configureComponent applies a component's layout-file properties (from a
@@ -99,6 +129,12 @@ func (u *ui) selectLayout(reg layoutspec.Registry) fyne.CanvasObject {
 //   - fx/keys/paks(show: true|false)        — the rack's default visibility, set
 //     only when the layout variant is entered (u.variantChanged), so the user's
 //     toggles still work while that variant is showing.
+//   - seq(tracks: N)                         — the sequencer's default track count
+//     for this variant (also variant-entry only).
+//   - pads(layout: paged|twobank|dense)      — the pad grid's default paging for
+//     this variant (variant-entry only; doesn't clobber the saved preference).
+//   - pads/seq(expand: horizontal|vertical|both) — fill that axis with the rack
+//     frame (children stay natural size); applied every relayout.
 func (u *ui) configureComponent(id string, props map[string]string) {
 	switch id {
 	case "vu":
@@ -113,6 +149,72 @@ func (u *ui) configureComponent(id string, props map[string]string) {
 		u.applyRackShow("keys", props, u.keyboardRack.Object(), u.keysBtn)
 	case "paks":
 		u.applyRackShow("paks", props, u.paksRack.Object(), u.paksBtn)
+	case "seq":
+		u.applyRackShow("seq", props, u.seqRack.Object(), u.seqBtn)
+		u.applyDefaultTracks(props)
+		u.applyRackExpand(u.seqRack.Object(), props)
+	case "pads":
+		u.applyDefaultPadLayout(props)
+		u.applyRackExpand(u.padRackObj, props)
+	}
+}
+
+// applyRackExpand applies a `expand: horizontal|vertical|both` property, making
+// the rack's frame fill that axis of its allocation (its children stay their
+// natural size, centered). Applied on every relayout (idempotent) so a variant
+// without the property resets the rack back to content-sized.
+func (u *ui) applyRackExpand(obj fyne.CanvasObject, props map[string]string) {
+	h, v := parseExpand(props["expand"])
+	if cf, ok := obj.(*components.ContentFit); ok {
+		cf.SetExpand(h, v)
+	}
+}
+
+// parseExpand maps an `expand: …` property value to horizontal/vertical flags.
+func parseExpand(s string) (horizontal, vertical bool) {
+	switch s {
+	case "horizontal":
+		return true, false
+	case "vertical":
+		return false, true
+	case "both":
+		return true, true
+	default:
+		return false, false
+	}
+}
+
+// applyDefaultTracks applies a `seq(tracks: N)` property — the variant's default
+// sequencer track count — only when the variant is entered, so it establishes a
+// default without fighting the user's TRK knob while that variant stays shown.
+func (u *ui) applyDefaultTracks(props map[string]string) {
+	if !u.variantChanged {
+		return
+	}
+	v, ok := props["tracks"]
+	if !ok {
+		return
+	}
+	n, err := strconv.Atoi(v)
+	if err != nil {
+		return
+	}
+	u.seqRack.SetTrackCount(n)
+}
+
+// applyDefaultPadLayout applies a `pads(layout: …)` property — the variant's
+// default pad paging — only when the variant is entered. It does not persist to
+// the global preference (that's reserved for the user's density button).
+func (u *ui) applyDefaultPadLayout(props map[string]string) {
+	if !u.variantChanged {
+		return
+	}
+	v, ok := props["layout"]
+	if !ok {
+		return
+	}
+	if l, ok := parsePadLayout(v); ok {
+		u.applyPadLayout(l, false)
 	}
 }
 

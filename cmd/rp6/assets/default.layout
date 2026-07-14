@@ -1,20 +1,18 @@
 // RP6 UI layout — compiled into the binary (edit and `make build` to change).
 //
-// This is the DEFAULT (original) top-bar arrangement: transport across the top,
-// pads in the centre, VU meter down the right (or along the bottom when the
-// window is narrow), status at the bottom. Press F11 or Ctrl+Shift+Enter to go
-// full screen, which switches to the "mixing console" layout in console.layout.
-//
-// The loader parses console.layout first, so its `when fullscreen` variant wins
-// when full screen; otherwise the first matching variant below is used (compact
-// on a narrow window, else the unguarded default).
+// This file holds two fixed variants: `phone` (mobile portrait) and `window`
+// (the desktop windowed layout — a single fixed, non-resizable 850x950 window;
+// see resolutions.txt). Desktop full screen switches to the "mixing console"
+// layout in console.layout; a tablet uses the dedicated `tablet` variant in
+// console-tablet.layout. The loader parses tablet + console first, so their
+// guards win; otherwise `phone` (mobile) or the unguarded `window` is used.
 //
 // A widget reference may carry properties: `name(key: value, …)`. The app
 // applies them to the widget — currently `vu(orientation: horizontal|vertical)`
 // sets the VU meter's orientation.
 
-// Narrow / portrait window: the VU meter moves to a strip along the bottom.
-layout compact when compact {
+// Phone (mobile portrait): the VU meter sits in a strip along the bottom.
+layout phone when mobile {
   Border {
     top: VBox {
       transport
@@ -39,10 +37,10 @@ layout compact when compact {
   }
 }
 
-// Default (windowed): TEMPO and the VU meter share a strip along the top (the
-// meter fills the width beside the small TEMPO rack), saving the right-hand
-// column for the pads.
-layout default {
+// Desktop windowed (fixed 850x950): TEMPO and the VU meter share a strip along
+// the top (the meter fills the width beside the small TEMPO rack), saving the
+// right-hand column for the pads.
+layout window {
   Border {
     top: VBox {
       Border {
@@ -54,13 +52,13 @@ layout default {
       keysfx if !p6_active
       keys
       paks
-      seq if !seq_docked
+      seq(show: true, tracks: 4, expand: horizontal) if !seq_docked
     }
     center: Split {
       horizontal: true
       offset: 0.5
-      leading: pads if pads_visible
-      trailing: seq if seq_docked
+      leading: pads(layout: twobank, expand: horizontal) if pads_visible
+      trailing: seq(show: true, tracks: 4, expand: horizontal) if seq_docked
     }
     bottom: VBox {
       toggles
@@ -86,16 +84,13 @@ rack transport {
 // rack is hidden and its toggle disabled on the emulator (see applyBackendGating);
 // the layout only places it `if p6_active`. Note there's no RackPanel here — Go
 // wraps these controls in the P-6's yellow tinted plate (device-specific styling).
+// Play + PATTERN sit on the top row and the four Delay/Reverb knobs wrap onto a
+// second row so the whole rack fits the fixed 850-wide window (six knobs in one
+// row overflow it); full-width variants (console/tablet) just show two rows.
 rack p6 {
-  HBox {
-    play
-    Separator
-    pattern
-    Separator
-    delayTime
-    delayLevel
-    reverbTime
-    reverbLevel
+  VBox {
+    HBox { play; Separator; pattern }
+    HBox { delayTime; delayLevel; reverbTime; reverbLevel }
   }
 }
 

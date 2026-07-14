@@ -1,7 +1,9 @@
-// RP6 "tablet console" layout — the console variant for large touch screens
-// (Android tablets). Selected when the CONSOLE button is on AND the platform is
-// mobile; it must be parsed BEFORE the desktop `console` variant so it wins
-// there (see layoutSource — this file is concatenated first).
+// RP6 "tablet" layout — the fixed layout for large touch screens (Android
+// tablets, e.g. the OnePlus Pad 3 in resolutions.txt). Selected whenever the
+// platform is mobile AND the screen is tablet-class (isTabletSize); it is NOT
+// gated on the console/fullscreen intent — a tablet always gets this layout. It
+// must be parsed BEFORE the desktop `console` variant so it wins (see
+// layoutSource — this file is concatenated first).
 //
 // The pad-rack "store" selector needs room, so this variant gives the sample-pak
 // selector its own left rail beside a single centre column that stacks the
@@ -19,7 +21,7 @@
 //   │       │            status           │
 //   └───────┴─────────────────────────────┘
 
-layout consoletablet when fullscreen && mobile {
+layout tablet when mobile && tablet {
   Border {
     bottom: VBox {
       fx(show: false)
@@ -49,8 +51,8 @@ layout consoletablet when fullscreen && mobile {
     center: Split {
       horizontal: false
       offset: 0.5
-      leading: seq if !seq_docked
-      trailing: pads if pads_visible
+      leading: seq(tracks: 6) if !seq_docked
+      trailing: pads(layout: paged) if pads_visible
     }
   }
 }

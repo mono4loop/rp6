@@ -48,17 +48,25 @@ type sequencerRack struct {
 	armBarsBtn *components.RackToggle
 
 	trackBtns []*components.RackToggle
-	blocks    []*fyne.Container          // per track (whole block, shown/hidden)
-	barRows   [][]*fyne.Container        // [track][bar] rows of 16 cells
-	cells     [][]*components.StepButton // [track][step]
-	lastStep  []int                      // per-track last playhead step
+	blocks    []*fyne.Container            // per track (whole block, shown/hidden)
+	barRows   [][]fyne.CanvasObject        // [track][bar] rows of 16 cells
+	stepGrids [][]*components.PhysicalGrid // [track][bar] physical square grids
+	cells     [][]*components.StepButton   // [track][step]
+	lastStep  []int                        // per-track last playhead step
 
 	// Sub-section holders, exposed so the layout DSL can (re)compose the rack's
 	// internals: the transport/knob row, the armed-track control row, and the
 	// scrolling track grid (whose rows are generated in Go).
-	header   *fyne.Container
-	header2  *fyne.Container
-	trackBox *container.Scroll
+	header       *fyne.Container
+	header2      *fyne.Container
+	trackBox     *container.Scroll
+	tracks       *fyne.Container
+	tracksLayout *sequencerTracksLayout
+	// lastContentWidth is the width the track grid was last laid out at (set from
+	// the fit's FitSize). naturalTracksMinSize uses it to reserve the *rendered*
+	// square-row height (cells grow with width) so the last track isn't clipped;
+	// 0 before the first layout falls back to the floor.
+	lastContentWidth float32
 
 	armedTrack int // track waiting to adopt the next selected pad (-1 = none)
 
@@ -72,7 +80,8 @@ func newSequencerRack(seq *sequencer.Engine, onLayout func(), onDock func(bool),
 
 	r.trackBtns = make([]*components.RackToggle, maxT)
 	r.blocks = make([]*fyne.Container, maxT)
-	r.barRows = make([][]*fyne.Container, maxT)
+	r.barRows = make([][]fyne.CanvasObject, maxT)
+	r.stepGrids = make([][]*components.PhysicalGrid, maxT)
 	r.cells = make([][]*components.StepButton, maxT)
 	r.lastStep = make([]int, maxT)
 
@@ -169,10 +178,11 @@ func newSequencerRack(seq *sequencer.Engine, onLayout func(), onDock func(bool),
 		tb.SetOn(!seq.Muted(t)) // lit as a label; goes dark while the track is muted
 		r.trackBtns[t] = tb
 
-		headerCol := container.New(&fixedWidthFillLayout{width: 64}, tb)
+		headerCol := container.New(&fixedWidthFillLayout{width: 44}, tb)
 
 		r.cells[t] = make([]*components.StepButton, maxB*spb)
-		r.barRows[t] = make([]*fyne.Container, maxB)
+		r.barRows[t] = make([]fyne.CanvasObject, maxB)
+		r.stepGrids[t] = make([]*components.PhysicalGrid, maxB)
 		acc := bankColorForID(seq.Pad(t))
 		for b := range maxB {
 			cellObjs := make([]fyne.CanvasObject, spb)
@@ -185,15 +195,18 @@ func newSequencerRack(seq *sequencer.Engine, onLayout func(), onDock func(bool),
 				r.cells[t][idx] = cell
 				cellObjs[c] = cell
 			}
-			row := container.NewGridWithColumns(spb, cellObjs...)
+			stepGrid := components.NewPhysicalGrid(spb, 40, 50, cellObjs...)
+			stepGrid.SetPadding(3)
+			row := stepGrid.Object
 			if b != 0 {
 				row.Hide() // only the first bar visible until bars increased
 			}
 			r.barRows[t][b] = row
+			r.stepGrids[t][b] = stepGrid
 		}
-		barsCol := container.New(&fillRowsLayout{}, toObjs(r.barRows[t])...)
-
-		block := container.NewBorder(nil, nil, headerCol, nil, barsCol)
+		trackLayout := &sequencerTrackLayout{assign: headerCol, bars: r.stepGrids[t]}
+		blockObjs := append([]fyne.CanvasObject{headerCol}, r.barRows[t]...)
+		block := container.New(trackLayout, blockObjs...)
 		r.blocks[t] = block
 		r.lastStep[t] = -1
 		trackObjs = append(trackObjs, block)
@@ -210,9 +223,9 @@ func newSequencerRack(seq *sequencer.Engine, onLayout func(), onDock func(bool),
 	// docked as a side column). The transport + armed-track control rows stay
 	// pinned above it. A modest min height keeps a few tracks visible even when
 	// the rack is stacked in an unbounded VBox.
-	tracks := container.New(&fillRowsLayout{fixedLast: true}, trackObjs...)
-	scroll := container.NewVScroll(tracks)
-	scroll.SetMinSize(fyne.NewSize(tracks.MinSize().Width, 240))
+	r.tracksLayout = &sequencerTracksLayout{fixedLast: true}
+	r.tracks = container.New(r.tracksLayout, trackObjs...)
+	scroll := container.NewVScroll(r.tracks)
 	r.trackBox = scroll
 
 	// The object is composed by the app (ui.composeRack): from the layout file's
@@ -234,65 +247,130 @@ func (r *sequencerRack) defaultObject() fyne.CanvasObject {
 	return components.NewRackPanel(container.NewBorder(top, nil, nil, nil, r.trackBox))
 }
 
-func toObjs(rows []*fyne.Container) []fyne.CanvasObject {
-	objs := make([]fyne.CanvasObject, len(rows))
-	for i, r := range rows {
-		objs[i] = r
-	}
-	return objs
+// sequencerTrackLayout packs an assign key beside one square 16-step row per
+// visible bar. The step grids choose their physical size from the row width.
+type sequencerTrackLayout struct {
+	assign fyne.CanvasObject
+	bars   []*components.PhysicalGrid
 }
 
-// fillRowsLayout preserves every visible child's minimum height, then shares
-// any extra height evenly. This lets the sequencer's active tracks and bars grow
-// into a tall rack instead of leaving a large dead area beneath 34px step rows;
-// when their minimums exceed the viewport the enclosing Scroll still scrolls.
-// fixedLast keeps the trailing breathing-room object at its small minimum size.
-type fillRowsLayout struct{ fixedLast bool }
+func (l *sequencerTrackLayout) MinSize([]fyne.CanvasObject) fyne.Size {
+	assign := l.assign.MinSize()
+	var grids fyne.Size
+	visible := 0
+	for _, grid := range l.bars {
+		if grid == nil || !grid.Object.Visible() {
+			continue
+		}
+		size := grid.MinSize()
+		grids.Width = max(grids.Width, size.Width)
+		grids.Height += size.Height
+		visible++
+	}
+	if visible > 1 {
+		grids.Height += float32(visible-1) * theme.Padding()
+	}
+	return fyne.NewSize(assign.Width+theme.Padding()+grids.Width, max(assign.Height, grids.Height))
+}
 
-func (l *fillRowsLayout) MinSize(objects []fyne.CanvasObject) fyne.Size {
+func (l *sequencerTrackLayout) preferredSize(available fyne.Size) fyne.Size {
+	assign := l.assign.MinSize()
+	gridAvailable := available
+	if gridAvailable.Width > 0 {
+		gridAvailable.Width -= assign.Width + theme.Padding()
+	}
+	var grids fyne.Size
+	visible := 0
+	for _, grid := range l.bars {
+		if grid == nil || !grid.Object.Visible() {
+			continue
+		}
+		size := grid.PreferredSize(gridAvailable)
+		grids.Width = max(grids.Width, size.Width)
+		grids.Height += size.Height
+		visible++
+	}
+	if visible > 1 {
+		grids.Height += float32(visible-1) * theme.Padding()
+	}
+	return fyne.NewSize(assign.Width+theme.Padding()+grids.Width, max(assign.Height, grids.Height))
+}
+
+func (l *sequencerTrackLayout) Layout(_ []fyne.CanvasObject, size fyne.Size) {
+	preferred := l.preferredSize(size)
+	assignWidth := l.assign.MinSize().Width
+	l.assign.Move(fyne.Position{})
+	l.assign.Resize(fyne.NewSize(assignWidth, preferred.Height))
+	x := assignWidth + theme.Padding()
+	y := float32(0)
+	for _, grid := range l.bars {
+		if grid == nil || !grid.Object.Visible() {
+			continue
+		}
+		gridSize := grid.PreferredSize(fyne.NewSize(max(size.Width-x, float32(0)), 0))
+		grid.Object.Move(fyne.NewPos(x, y))
+		grid.Object.Resize(gridSize)
+		y += gridSize.Height + theme.Padding()
+	}
+}
+
+// sequencerTracksLayout packs active tracks at their square-grid preferred
+// height. The enclosing vertical Scroll handles overflow rather than stretching
+// the steps to fill arbitrary rack height.
+type sequencerTracksLayout struct{ fixedLast bool }
+
+func (l *sequencerTracksLayout) MinSize(objects []fyne.CanvasObject) fyne.Size {
 	visible := visibleObjects(objects)
-	var size fyne.Size
+	var result fyne.Size
 	for _, object := range visible {
 		min := object.MinSize()
-		size.Width = fyne.Max(size.Width, min.Width)
-		size.Height += min.Height
+		result.Width = max(result.Width, min.Width)
+		result.Height += min.Height
 	}
 	if len(visible) > 1 {
-		size.Height += float32(len(visible)-1) * theme.Padding()
+		result.Height += float32(len(visible)-1) * theme.Padding()
 	}
-	return size
+	return result
 }
 
-func (l *fillRowsLayout) Layout(objects []fyne.CanvasObject, size fyne.Size) {
+func (l *sequencerTracksLayout) preferredSize(objects []fyne.CanvasObject, available fyne.Size) fyne.Size {
 	visible := visibleObjects(objects)
-	if len(visible) == 0 {
-		return
+	var result fyne.Size
+	for i, object := range visible {
+		size := object.MinSize()
+		if track, ok := object.(*fyne.Container); ok {
+			if trackLayout, ok := track.Layout.(*sequencerTrackLayout); ok {
+				size = trackLayout.preferredSize(available)
+			}
+		}
+		if l.fixedLast && i == len(visible)-1 {
+			size.Height = object.MinSize().Height
+		}
+		result.Width = max(result.Width, size.Width)
+		result.Height += size.Height
 	}
-	padding := theme.Padding()
-	available := size.Height - float32(len(visible)-1)*padding
-	for _, object := range visible {
-		available -= object.MinSize().Height
+	if len(visible) > 1 {
+		result.Height += float32(len(visible)-1) * theme.Padding()
 	}
-	if available < 0 {
-		available = 0
-	}
-	grow := len(visible)
-	if l.fixedLast && grow > 1 {
-		grow--
-	}
-	extra := float32(0)
-	if grow > 0 {
-		extra = available / float32(grow)
-	}
+	return result
+}
+
+func (l *sequencerTracksLayout) Layout(objects []fyne.CanvasObject, size fyne.Size) {
+	visible := visibleObjects(objects)
 	y := float32(0)
 	for i, object := range visible {
-		height := object.MinSize().Height
-		if !l.fixedLast || i < len(visible)-1 {
-			height += extra
+		preferred := object.MinSize()
+		if track, ok := object.(*fyne.Container); ok {
+			if trackLayout, ok := track.Layout.(*sequencerTrackLayout); ok {
+				preferred = trackLayout.preferredSize(size)
+			}
+		}
+		if l.fixedLast && i == len(visible)-1 {
+			preferred.Height = object.MinSize().Height
 		}
 		object.Move(fyne.NewPos(0, y))
-		object.Resize(fyne.NewSize(size.Width, height))
-		y += height + padding
+		object.Resize(fyne.NewSize(preferred.Width, preferred.Height))
+		y += preferred.Height + theme.Padding()
 	}
 }
 
@@ -329,6 +407,57 @@ func (*fixedWidthFillLayout) Layout(objects []fyne.CanvasObject, size fyne.Size)
 
 // Object returns the CanvasObject to place in a layout.
 func (r *sequencerRack) Object() fyne.CanvasObject { return r.obj }
+
+// fitObject bounds the sequencer panel's width to its controls + square step
+// grid, while the panel fills the available pane height.
+func (r *sequencerRack) fitObject(object fyne.CanvasObject) fyne.CanvasObject {
+	panel, ok := object.(*components.RackPanel)
+	if !ok {
+		return object
+	}
+	fit := components.NewContentFit(panel, func(available fyne.Size) fyne.Size {
+		frame := panel.SizeForContent(fyne.Size{})
+		contentAvailable := available.Subtract(frame)
+		r.lastContentWidth = contentAvailable.Width // remembered for naturalTracksMinSize
+		topWidth := max(r.header.MinSize().Width, r.header2.MinSize().Width)
+		tracks := r.tracksLayout.preferredSize(r.tracks.Objects, contentAvailable)
+		width := frame.Width + max(topWidth, tracks.Width)
+		return fyne.NewSize(min(width, available.Width), available.Height)
+	})
+	fit.SetMinSizeFunc(func() fyne.Size {
+		top := fyne.NewSize(max(r.header.MinSize().Width, r.header2.MinSize().Width), r.header.MinSize().Height+r.header2.MinSize().Height+theme.Padding())
+		tracks := r.naturalTracksMinSize()
+		return panel.SizeForContent(fyne.NewSize(max(top.Width, tracks.Width), top.Height+theme.Padding()+tracks.Height))
+	})
+	return fit
+}
+
+// naturalTracksMinSize reserves the track grid's minimum footprint. The width
+// uses the step grid's *minimum* square size so a narrow pane — like the fixed
+// 850-wide window with the sequencer above the pads — can hold the whole
+// sequencer without forcing the window wider. The height uses the *actual*
+// laid-out track height at the current pane width (the same width-constrained
+// calc the fit's FitSize uses, so square cells grow with width): a wide docked
+// console renders 50px rows while the narrow window renders ~45px, and the
+// reservation matches exactly so no track is clipped and the minimum isn't
+// inflated. Before the first layout (lastContentWidth == 0) it falls back to the
+// floor height, keeping the launch-time minimum small (the fixed-size window
+// locks to it) until the accurate value is known.
+func (r *sequencerRack) naturalTracksMinSize() fyne.Size {
+	var floorWidth float32
+	for track := 0; track < r.seq.Tracks() && track < len(r.stepGrids); track++ {
+		if len(r.stepGrids[track]) == 0 {
+			continue
+		}
+		assign := r.trackBtns[track].MinSize()
+		floorWidth = max(floorWidth, assign.Width+theme.Padding()+r.stepGrids[track][0].MinSize().Width)
+	}
+	height := r.tracksLayout.MinSize(r.tracks.Objects).Height
+	if r.lastContentWidth > 0 {
+		height = r.tracksLayout.preferredSize(r.tracks.Objects, fyne.NewSize(r.lastContentWidth, 0)).Height
+	}
+	return fyne.NewSize(floorWidth, height)
+}
 
 func (r *sequencerRack) toggleDock() {
 	r.docked = !r.docked
@@ -408,6 +537,14 @@ func (r *sequencerRack) applyTracks(n int) bool {
 		}
 	}
 	return changed
+}
+
+// SetTrackCount sets the number of active tracks and syncs the TRK knob without
+// firing its OnChange (which would re-apply + relayout). Used by the layout
+// `seq(tracks: N)` property to establish a variant's default track count.
+func (r *sequencerRack) SetTrackCount(n int) {
+	r.tracksStep.SetValueSilent(n)
+	r.applyTracks(n)
 }
 
 // cycleArmedBars advances the armed track's bar count (wrapping at maxBars).

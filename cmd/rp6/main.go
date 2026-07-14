@@ -127,8 +127,9 @@ type ui struct {
 	relayoutStop chan struct{} // closed to stop the relayout watcher on shutdown
 
 	grid           *components.PadGrid
-	padRackObj     fyne.CanvasObject // pad grid + tool column, wrapped as a toggleable rack
-	padGridArea    *fyne.Container   // holds the current grid object (swapped on density toggle)
+	padRackObj     fyne.CanvasObject      // pad grid + tool column, wrapped as a toggleable rack
+	padGridArea    *fyne.Container        // holds the current grid object (swapped on density toggle)
+	padGridFit     *components.ContentFit // sizes only the grid; the rack panel still fills its pane
 	padFloatBtn    *components.RackToggle
 	midiInBtn      *components.RackToggle
 	layoutBtn      *components.RackCycle
@@ -154,8 +155,11 @@ type ui struct {
 	seqSide       bool // sequencer docked as a right-hand column
 
 	// Runtime UI layout (see internal/ui/layoutlang). layoutDoc is the parsed
-	// layout program, compiled into the binary from assets/default.layout; its
-	// variants are selected per environment (platform + form factor) at boot.
+	// layout program, compiled into the binary from assets/*.layout; its variants
+	// are selected per environment (platform + discrete form factor) — see
+	// layoutEnv. There is no continuous adaptation: windowed desktop is one fixed
+	// size, mobile is phone-or-tablet by device size, desktop full screen is the
+	// console (see docs/architecture/layouts.md and resolutions.txt).
 	layoutDoc *layoutlang.Document
 	// activeVariant is the name of the layout variant currently shown;
 	// variantChanged is set for the one relayout where it changes, so a variant
@@ -164,29 +168,32 @@ type ui struct {
 	activeVariant  string
 	variantChanged bool
 
-	// compact is the phone/portrait form factor (narrow window): the VU meter
-	// moves from the right-hand side to a horizontal strip along the bottom,
-	// between the pads and the status bar. contentHolder is a stable wrapper
-	// whose custom layout reports window size changes to onCanvasResize so the
-	// app can flip between the wide and compact arrangements live.
-	compact       bool
-	contentHolder *fyne.Container
+	// mobileForTest/tabletForTest override the compile-time platform for the
+	// headless layout-inspection harness only (the real platform is a build-tag
+	// constant, so a desktop test binary can't otherwise exercise the phone/
+	// tablet variants). nil in production; set per scenario in inspection_test.go.
+	mobileForTest *bool
+	tabletForTest *bool
 
-	// Full-screen state. windowedSize remembers the pre-full-screen size so we
-	// can restore it on exit; lastFullScreen is the state we last laid out for,
-	// so onCanvasResize relays out when full screen is toggled (see
-	// toggleFullScreen). fullScreen is our own intent (set only by
-	// toggleFullScreen), NOT the window flag — mobile reports FullScreen()==true
-	// inherently, and the console layout is desktop-only. Full screen selects the
-	// "console" layout.
-	fullScreen     bool
-	windowedSize   fyne.Size
-	lastFullScreen bool
-	// consoleAutoTablet requests that the first laid-out canvas size decide the
-	// console default (on for a tablet-class screen). Set at launch only when no
-	// console preference was saved and we're on mobile — the size isn't known
-	// until the first onCanvasResize.
-	consoleAutoTablet bool
+	// contentHolder is a stable wrapper whose custom layout reports window size
+	// changes to onCanvasResize, so the app can relayout when the discrete
+	// form-factor variant changes (a tablet's first size, or the desktop console
+	// settling after an async SetFullScreen). layoutScale tracks the effective
+	// physical pixels per logical unit so a late Wayland scale change forces a
+	// real relayout (see canvasScaleChanged).
+	contentHolder *fyne.Container
+	layoutScale   float32
+
+	// fullScreen is our own console-layout intent (set only by setConsole via
+	// F11 / Ctrl+Shift+Enter / the CONSOLE toggle), NOT the window flag — mobile
+	// reports FullScreen()==true inherently, and the console layout is desktop-
+	// only. On desktop, console means the OS window is full screen while windowed
+	// is a single fixed, non-resizable size (see setConsole).
+	fullScreen bool
+	// relockWindowed is set when leaving the console: the fixed-size lock is
+	// dropped for full screen (so Mutter restores geometry like a normal app) and
+	// re-applied by onCanvasResize once the windowed size settles.
+	relockWindowed bool
 	// forced tracks the racks the active layout variant force-shows/hides via a
 	// `show:` property, keyed by rack id, each remembering the visibility the
 	// rack had *before* the variant forced it. On a variant switch these are
@@ -239,6 +246,16 @@ type ui struct {
 	keyboardFX audiofx.Settings // retained across emulator kit/backend switches
 }
 
+// windowedWidth/windowedHeight are the single fixed, non-resizable desktop
+// windowed size (see resolutions.txt: "Thinkpad X13 - 850 x 950 window mode").
+// Sticking to one windowed size means the `window` layout variant only has to be
+// correct at one geometry — no continuous adaptation. Desktop full screen uses
+// the console layout at the display's size instead.
+const (
+	windowedWidth  = 850
+	windowedHeight = 950
+)
+
 func newUI() *ui {
 	u := &ui{bpm: 120, selPad: -1, padLayout: loadPadLayout()}
 	u.activity = &activitySource{}
@@ -280,11 +297,12 @@ func (u *ui) build(w fyne.Window) {
 				u.root.Refresh()
 			}
 		}, u.onSeqDock, numSeqSlots, u.selectSlot, u.copyToSlot, u.deleteSlot, u.saveSeq)
-	u.seqRack.obj = u.composeRack("seq", layoutspec.Registry{
+	seqObject := u.composeRack("seq", layoutspec.Registry{
 		"seqHeader":   u.seqRack.header,
 		"seqControls": u.seqRack.header2,
 		"seqGrid":     u.seqRack.trackBox,
 	}, u.seqRack.defaultObject)
+	u.seqRack.obj = u.seqRack.fitObject(seqObject)
 	u.seqRack.onStop = u.applyPendingSlot
 	u.seq.OnStep = func(tick int) {
 		fyne.Do(func() {
@@ -412,11 +430,15 @@ func (u *ui) build(w fyne.Window) {
 	u.playMenu.Hide()
 	u.paksBtn = components.NewRackToggle("PAKS", acc, func() { u.toggleVisible(u.paksRack.Object(), u.paksBtn) })
 	u.meterBtn = components.NewRackToggle("VU", acc, func() { u.toggleVisible(u.meterArea, u.meterBtn) })
-	// CONSOLE switches to the "mixing console" layout: full screen on desktop,
-	// and the same wide layout on a large tablet.
+	// CONSOLE switches to the "mixing console" layout: full screen on desktop.
+	// It's desktop-only — on mobile the phone/tablet layout is chosen by the
+	// device size, so the toggle is omitted from the bar there.
 	u.consoleBtn = components.NewRackToggle("CONSOLE", acc, u.toggleConsole)
 	u.consoleBtn.SetOn(u.fullScreen)
-	toggleObjs := []fyne.CanvasObject{u.playMenuBtn, u.p6Btn, u.fxBtn, u.paksBtn, u.meterBtn, u.consoleBtn}
+	toggleObjs := []fyne.CanvasObject{u.playMenuBtn, u.p6Btn, u.fxBtn, u.paksBtn, u.meterBtn}
+	if !onMobile {
+		toggleObjs = append(toggleObjs, u.consoleBtn)
+	}
 	u.jamControls = u.jamToggles() // absent in -tags nojam / web / mobile builds
 	toggleObjs = append(toggleObjs, u.jamControls...)
 	toggles := container.NewHBox(toggleObjs...)
@@ -459,16 +481,16 @@ func (u *ui) build(w fyne.Window) {
 	u.addRackShortcut(w, fyne.KeyReturn, u.toggleFullScreen)
 	u.addRackShortcut(w, fyne.KeyEnter, u.toggleFullScreen)
 
-	// Default visibility: Pads + Sequencer + Meter on; FX + Keyboard off. The P-6
+	// Default visibility: Pads + Meter on; Sequencer, FX and Keyboard off. The P-6
 	// rack (transport + PATTERN + Delay/Reverb) is on by default too — it holds
 	// Play/Stop — but applyBackendGating below hides it and disables its toggle
-	// when the emulator is the active backend. The sequencer shows above the pads
-	// (undocked) by default.
+	// when the emulator is the active backend. The sequencer does not fit above
+	// touch-sized pads in the default-height window; the console layout force-shows it.
 	u.setVisible(u.padRackObj, u.padBtn, true)
 	u.setVisible(u.p6Obj, u.p6Btn, true)
 	u.setVisible(u.fxRack.Object(), u.padFXBtn, false)
 	u.setVisible(u.keyboardFXRack.Object(), u.keysFXBtn, false)
-	u.setVisible(u.seqRack.Object(), u.seqBtn, true)
+	u.setVisible(u.seqRack.Object(), u.seqBtn, false)
 	u.setVisible(u.keyboardRack.Object(), u.keysBtn, false)
 	u.updatePlayMenuButton()
 	u.setVisible(u.paksRack.Object(), u.paksBtn, false)
@@ -522,9 +544,9 @@ func (u *ui) relayout() {
 		u.root = container.NewBorder(u.transportRack, container.NewVBox(u.controlBar, u.statusBar), nil, nil, u.padRackObj)
 	}
 
-	// A stable outer holder (created once) watches the window size so we can flip
-	// between the wide and compact arrangements as the window resizes. Swapping
-	// its child avoids re-doing SetContent on every relayout.
+	// A stable outer holder (created once) watches the window size so we can
+	// relayout when the discrete form factor (variant) changes. Swapping its
+	// child avoids re-doing SetContent on every relayout.
 	if u.contentHolder == nil {
 		u.contentHolder = container.New(&sizeWatch{onResize: u.onCanvasResize}, u.root)
 		u.win.SetContent(u.contentHolder)
@@ -532,12 +554,12 @@ func (u *ui) relayout() {
 		u.contentHolder.Objects = []fyne.CanvasObject{u.root}
 		u.contentHolder.Refresh()
 	}
+	u.layoutScale = u.canvasPhysicalScale()
 }
 
 // canvasSize reports the current window canvas size, or the zero size if there's
-// no window/canvas yet (e.g. very early startup). The wide/compact choice is
-// driven by u.compact (computed with hysteresis in onCanvasResize), so the exact
-// value only matters to size-based Variant predicates.
+// no window/canvas yet (e.g. very early startup). It feeds layoutEnv, which
+// resolves the size to a discrete form-factor variant (see variantFor).
 func (u *ui) canvasSize() fyne.Size {
 	if u.win == nil || u.win.Canvas() == nil {
 		return fyne.Size{}
@@ -573,29 +595,31 @@ func (u *ui) applyMeterOrientation(horizontal bool) {
 }
 
 // onCanvasResize is called by the content holder's layout on every window resize.
-// It classifies the window as compact (phone/portrait) by its aspect ratio, with
-// hysteresis to avoid flip-flopping at the boundary, and re-lays out on a change.
-// It also relays out when the full-screen state flips: entering/leaving full
-// screen resizes the window (which is where we reliably learn the settled size),
-// so this is the right place to rebuild the layout for the new form — see
-// toggleFullScreen, which can't rebuild correctly on its own because
-// SetFullScreen is applied asynchronously.
+// Under the fixed-form-factor policy the layout does NOT adapt continuously to
+// pixel size: it relays out only when the discrete variant the size resolves to
+// actually changes (see variantFor). That happens in two real cases — a mobile
+// device learning its first real size (phone vs tablet), and the desktop console
+// settling after an async SetFullScreen — not while a window is dragged (the
+// windowed size is fixed, and the console's proportional splits reflow on their
+// own without a rebuild).
 func (u *ui) onCanvasResize(size fyne.Size) {
-	// First real size on a fresh install (no saved console pref) on mobile:
-	// default a tablet-class screen to the wide console layout.
-	if u.consoleAutoTablet && size.Width > 1 && size.Height > 1 {
-		u.consoleAutoTablet = false
-		if isTabletSize(size) {
-			u.fullScreen = true // onCanvasResize's fs-change check below fires the relayout
-		}
-	}
-	compact := classifyCompact(u.compact, size.Width, size.Height)
-	fs := u.isFullScreen()
-	if compact == u.compact && fs == u.lastFullScreen {
+	if size.Width <= 1 || size.Height <= 1 {
 		return
 	}
-	u.compact = compact
-	u.lastFullScreen = fs
+	// After leaving the console, re-lock the fixed windowed size once the
+	// compositor has restored the pre-full-screen geometry (width back near the
+	// windowed width — not an intermediate full-screen frame). One-shot, so it
+	// can't loop or fight the compositor.
+	if u.relockWindowed && !onMobile && !u.isFullScreen() && u.win != nil {
+		if absFloat(size.Width-windowedWidth) <= 2 {
+			u.relockWindowed = false
+			u.win.SetFixedSize(true)
+			u.diagRelock(size)
+		}
+	}
+	if u.variantFor(size) == u.activeVariant {
+		return
+	}
 	// Request a relayout off this layout pass (calling relayout synchronously here
 	// would re-enter layout). The relayoutWatch goroutine (started in main())
 	// marshals it through fyne.Do so it runs serialized on the UI loop. A buffered
@@ -625,6 +649,55 @@ func (u *ui) relayoutWatch() {
 	}()
 }
 
+func (u *ui) canvasPhysicalScale() float32 {
+	if u.win == nil || u.win.Canvas() == nil {
+		return 0
+	}
+	c := u.win.Canvas()
+	x0, _ := c.PixelCoordinateForPosition(fyne.Position{})
+	x1, _ := c.PixelCoordinateForPosition(fyne.NewPos(1000, 0))
+	if scale := float32(x1-x0) / 1000; scale > 0 {
+		return scale
+	}
+	return c.Scale()
+}
+
+func (u *ui) relayoutIfScaleChanged() {
+	if !u.canvasScaleChanged() {
+		return
+	}
+	u.relayout()
+}
+
+func (u *ui) requestRelayoutIfScaleChanged() {
+	if !u.canvasScaleChanged() {
+		return
+	}
+	select {
+	case u.relayoutReq <- struct{}{}:
+	default:
+	}
+}
+
+func (u *ui) canvasScaleChanged() bool {
+	current := u.canvasPhysicalScale()
+	if current <= 0 {
+		return false
+	}
+	if u.layoutScale == 0 {
+		u.layoutScale = current
+		return false
+	}
+	return absFloat(current-u.layoutScale) >= 0.01
+}
+
+func absFloat(value float32) float32 {
+	if value < 0 {
+		return -value
+	}
+	return value
+}
+
 // stopRelayoutWatch halts the relayout watcher (idempotent).
 func (u *ui) stopRelayoutWatch() {
 	if u.relayoutStop != nil {
@@ -633,37 +706,10 @@ func (u *ui) stopRelayoutWatch() {
 	}
 }
 
-// classifyCompact decides whether a window is the compact (phone/portrait) form
-// factor from its aspect ratio (width/height): a clearly taller-than-wide window
-// docks the VU meter along the bottom. Hysteresis around the threshold means it
-// only flips once clearly past either edge, otherwise it holds the current state.
-//
-// The thresholds sit below 1.0 on purpose: the default desktop window is 858x900
-// (aspect ~0.95, already slightly portrait), so only a distinctly tall window —
-// like a phone held upright — counts as compact.
-func classifyCompact(current bool, width, height float32) bool {
-	const (
-		compactEnter = 0.70 // aspect below this (clearly tall) -> compact
-		compactExit  = 0.80 // aspect above this -> wide
-	)
-	if height <= 0 {
-		return current
-	}
-	aspect := width / height
-	switch {
-	case aspect < compactEnter:
-		return true
-	case aspect > compactExit:
-		return false
-	default:
-		return current
-	}
-}
-
 // sizeWatch is a pass-through layout (its single child fills the whole area)
 // that reports the container's size to onResize on every layout pass. It lets
-// the app react to live window resizes (to flip between the wide and compact
-// arrangements) without subclassing the window.
+// the app react to window resizes (to relayout when the discrete form-factor
+// variant changes) without subclassing the window.
 type sizeWatch struct {
 	onResize func(fyne.Size)
 	last     fyne.Size
@@ -701,6 +747,12 @@ func (s *sizeWatch) MinSize(objs []fyne.CanvasObject) fyne.Size {
 func (u *ui) buildPadRack() {
 	u.grid = newPadGrid(u.padLayout, u.onPadTrigger, u.padBadges)
 	u.padGridArea = container.NewStack(u.grid.Object())
+	u.padGridFit = components.NewContentFit(u.padGridArea, func(available fyne.Size) fyne.Size {
+		const bottomInset = 8
+		available.Height = max(available.Height-bottomInset, float32(0))
+		return u.grid.PreferredSize(available)
+	})
+	u.padGridFit.SetContentMin(true)
 
 	// Tool strip across the top: backlit icon toggles (lit = active, faded = off).
 	tool := deviceHwAccent
@@ -734,18 +786,19 @@ func (u *ui) buildPadRack() {
 	// back to the stock Go arrangement if there's no block. composeRack builds
 	// only one tree, so the sub-widgets are never double-parented (which broke
 	// rendering on the Android driver — see composeRack).
-	u.padRackObj = u.composeRack("pads", layoutspec.Registry{
+	padRack := u.composeRack("pads", layoutspec.Registry{
 		"padFloat":   u.padFloatBtn,
 		"padListen":  u.midiInBtn,
 		"padDensity": u.layoutBtn,
 		"store":      u.storeToggle,
 		"badge":      u.deviceBadge,
-		"padGrid":    u.padGridArea,
+		"padGrid":    u.padGridFit,
 	}, func() fyne.CanvasObject {
 		padTools := container.NewHBox(u.padFloatBtn, u.midiInBtn, u.layoutBtn,
 			layout.NewSpacer(), u.storeToggle, u.deviceBadge)
-		return components.NewRackPanel(container.NewBorder(padTools, nil, nil, nil, u.padGridArea))
+		return components.NewRackPanel(container.NewBorder(padTools, nil, nil, nil, u.padGridFit))
 	})
+	u.padRackObj = u.fitPadRack(padRack)
 
 	// Re-apply the selection highlight (no flash) to the fresh grid.
 	if u.selPad >= 0 {
@@ -754,9 +807,31 @@ func (u *ui) buildPadRack() {
 	}
 }
 
+// fitPadRack keeps horizontal slack outside the rack panel while allowing the
+// rack itself to fill the complete vertical pane. Only the square pad grid is
+// bounded inside it.
+func (u *ui) fitPadRack(object fyne.CanvasObject) fyne.CanvasObject {
+	panel, ok := object.(*components.RackPanel)
+	if !ok {
+		return object
+	}
+	fit := components.NewContentFit(panel, func(available fyne.Size) fyne.Size {
+		frame := panel.SizeForContent(fyne.Size{})
+		grid := u.grid.PreferredSize(available.Subtract(frame))
+		width := max(panel.MinSize().Width, frame.Width+grid.Width)
+		return fyne.NewSize(min(width, available.Width), available.Height)
+	})
+	// Parent layouts must reserve enough room for six 80px pads. If the complete
+	// geometry cannot satisfy that floor, console fit policy hides other racks
+	// instead of shrinking or overlapping the pad grid.
+	fit.SetContentMin(true)
+	return fit
+}
+
 // togglePads shows/hides the pad grid rack (it occupies the center, so relayout).
 func (u *ui) togglePads() {
-	u.setVisible(u.padRackObj, u.padBtn, !u.padRackObj.Visible())
+	show := !u.padRackObj.Visible()
+	u.setVisible(u.padRackObj, u.padBtn, show)
 	u.relayout()
 }
 
@@ -818,7 +893,8 @@ func (u *ui) onSeqDock(docked bool) {
 // toggleSeqView shows/hides the sequencer rack (it re-lays out because it can
 // dock to the side column).
 func (u *ui) toggleSeqView() {
-	u.setVisible(u.seqRack.Object(), u.seqBtn, !u.seqRack.Object().Visible())
+	show := !u.seqRack.Object().Visible()
+	u.setVisible(u.seqRack.Object(), u.seqBtn, show)
 	u.relayout()
 }
 
@@ -950,50 +1026,76 @@ func (u *ui) toggleFullScreen() { u.setConsole(!u.fullScreen) }
 func (u *ui) toggleConsole() { u.setConsole(!u.fullScreen) }
 
 // setConsole enters (on) or leaves (off) the "mixing console" layout, then
-// re-lays out. On desktop it also drives the OS window full screen (the console
-// is `when fullscreen`); on mobile there's no window to toggle (it's already full
-// screen), so it just switches the layout variant — useful on large tablets.
+// re-lays out. On desktop it also drives the OS window: the console is full
+// screen, while windowed is a single fixed, non-resizable size — so entering
+// clears the fixed-size lock before going full screen and leaving restores the
+// fixed windowed size. On mobile there's no console (the phone/tablet variants
+// are chosen by device size), so setConsole is desktop-only in practice.
 //
-// The console force-shows some racks (DLY/REV, FX, KEYS via `show: true`). We
+// The console force-shows some racks (FX, KEYS, PAKS, SEQ via `show: true`). We
 // restore them to the user's prior state when leaving the console, so they don't
-// leak into the normal layout — which would cram its bottom stack and push the
-// pads off-screen. This is done here (a single-threaded user action), not in
-// relayout, so a background resize-driven relayout can't hide racks mid-build.
-// The set is generic — whatever a variant force-shows via `show:` is recorded in
-// u.forced by applyRackShow and restored here — so it works for any layout.
+// leak into the windowed layout. This is done here (a single-threaded user
+// action), not in relayout, so a background resize-driven relayout can't hide
+// racks mid-build. The set is generic — whatever a variant force-shows via
+// `show:` is recorded in u.forced by applyRackShow and restored here.
 //
 // SetFullScreen is applied asynchronously (Fyne queues it onto the main loop),
-// so we can't rely on the canvas size here; the authoritative relayout happens
-// from onCanvasResize once the window settles. Leaving full screen we also
-// restore the saved windowed size explicitly, because some drivers don't shrink
-// the canvas back on their own (leaving content laid out at full-screen size).
+// so we can't rely on the canvas size here; the console layout keys off the
+// fullscreen intent (not pixel size) and its proportional splits adapt as the
+// window settles, so the synchronous relayout below is authoritative.
 func (u *ui) setConsole(on bool) {
 	if on {
 		u.forced = nil // the entering variant's applyRackShow repopulates it
 	}
 	u.fullScreen = on
 	rememberConsole(on) // persist the choice so it's restored next launch
-	// We relayout synchronously below (the variant keys off the fullscreen flag,
-	// not pixel size), so record the state here and let onCanvasResize skip a
-	// redundant relayout for this flip — it still fires for a real compact change.
-	// That avoids a second, concurrent relayout (which corrupts Fyne's shared text
-	// shaper under the test driver, where fyne.Do runs off the main loop).
-	u.lastFullScreen = on
 	if !onMobile && u.win != nil {
 		if on {
-			u.windowedSize = u.win.Canvas().Size() // remember, to restore on exit
+			// Behave like a normal resizable app while full screen: unlock the
+			// fixed size so the window isn't a fixed-size window in full screen
+			// (which confused Mutter's geometry restore on exit).
+			u.win.SetFixedSize(false)
 			u.win.SetFullScreen(true)
 		} else {
+			// Leave full screen. Mutter restores the pre-full-screen frame to the
+			// windowed size, but glfw-Wayland doesn't always propagate that to
+			// Fyne's canvas, so it can stay laid out at the full-screen size. An
+			// explicit Resize reconciles the canvas with the restored frame (both
+			// are the windowed size now, so this doesn't fight the compositor). The
+			// fixed-size lock is re-applied once it settles (see onCanvasResize).
 			u.win.SetFullScreen(false)
-			if u.windowedSize.Width > 1 && u.windowedSize.Height > 1 {
-				u.win.Resize(u.windowedSize)
-			}
+			// Set the re-lock flag before Resize so the resize it triggers re-locks
+			// the fixed windowed size once it settles (see onCanvasResize).
+			u.relockWindowed = true
+			u.win.Resize(fyne.NewSize(windowedWidth, windowedHeight))
 		}
+		u.diagConsole(on)
 	}
 	if !on {
 		u.restoreForcedRacks() // put the force-shown racks back before relayout
 	}
 	u.relayout() // immediate variant switch; onCanvasResize corrects the sizing
+}
+
+// diagConsole logs the console/window transition and the resulting canvas size
+// when RP6_DIAG=1, to diagnose compositor-specific full-screen-exit sizing (some
+// Wayland compositors don't restore the windowed size). No-op otherwise.
+func (u *ui) diagConsole(on bool) {
+	if os.Getenv("RP6_DIAG") == "" || u.win == nil || u.win.Canvas() == nil {
+		return
+	}
+	sz := u.win.Canvas().Size()
+	log.Printf("rp6: setConsole(%v) -> fullScreen()=%v canvas=%.0fx%.0f (windowed target %dx%d)",
+		on, u.win.FullScreen(), sz.Width, sz.Height, windowedWidth, windowedHeight)
+}
+
+// diagRelock logs when the fixed windowed size is re-applied after a console
+// exit (RP6_DIAG=1), so the compositor's geometry restore can be confirmed.
+func (u *ui) diagRelock(size fyne.Size) {
+	if os.Getenv("RP6_DIAG") == "" {
+		return
+	}
+	log.Printf("rp6: re-locked windowed size at canvas=%.0fx%.0f", size.Width, size.Height)
 }
 
 // savedRack captures a toggleable rack's visibility so it can be restored.
@@ -1864,6 +1966,7 @@ func (u *ui) startMeter() {
 				}
 				pending.Store(true)
 				fyne.Do(func() {
+					u.requestRelayoutIfScaleChanged()
 					src := u.meterSrc
 					src.step()
 					u.meter.SetLevel(src.level())
@@ -2454,9 +2557,20 @@ func (u *ui) gridPos(bank, number int) (page, row, col int) {
 
 // setLayout switches the pad grid to a new layout (paged / two-bank / dense),
 // rebuilding the grid and swapping it into the holder.
-func (u *ui) setLayout(l padLayout) {
+func (u *ui) setLayout(l padLayout) { u.applyPadLayout(l, true) }
+
+// applyPadLayout switches the pad grid to layout l, rebuilding the grid and
+// swapping it into the stable holder. persist writes it to the global preference
+// (true for a user cycle-button change; false for a variant default applied via
+// the `pads(layout: …)` layout property, which shouldn't clobber the pref).
+func (u *ui) applyPadLayout(l padLayout, persist bool) {
+	if persist {
+		rememberPadLayout(l) // global preference — survives a restart
+	}
+	if u.padLayout == l && u.grid != nil {
+		return // already showing this layout — no rebuild needed
+	}
 	u.padLayout = l
-	rememberPadLayout(l) // global preference — survives a restart
 	u.grid = newPadGrid(u.padLayout, u.onPadTrigger, u.padBadges)
 	u.padGridArea.Objects = []fyne.CanvasObject{u.grid.Object()}
 	u.padGridArea.Refresh()
@@ -2467,6 +2581,20 @@ func (u *ui) setLayout(l padLayout) {
 	if u.selPad >= 0 {
 		bank, number := padBankNumber(u.selPad)
 		u.grid.Highlight(u.gridPos(bank, number))
+	}
+}
+
+// parsePadLayout maps a `pads(layout: …)` property value to a padLayout.
+func parsePadLayout(s string) (padLayout, bool) {
+	switch s {
+	case "paged":
+		return layoutPaged, true
+	case "twobank":
+		return layoutTwoBank, true
+	case "dense":
+		return layoutDense, true
+	default:
+		return 0, false
 	}
 }
 
@@ -2621,18 +2749,28 @@ func main() {
 	if strings.TrimSpace(u.emuDir) == "" {
 		u.emuDir = u.savedEmuDir()
 	}
-	w.Resize(fyne.NewSize(858, 900))
-	// Restore the remembered console-layout choice; on a fresh install default a
-	// tablet to the console (decided from the first laid-out size — see
-	// onCanvasResize). On desktop, restoring console means going full screen.
-	if on, saved := loadConsolePref(); saved {
-		u.fullScreen = on
-		u.lastFullScreen = on
-		if on && !onMobile {
+	w.Resize(fyne.NewSize(windowedWidth, windowedHeight))
+	// Restore the remembered console-layout choice. On desktop the windowed size
+	// is a single fixed, non-resizable size (see resolutions.txt); the lock stays
+	// on the whole time (glfw full-screen ignores the size limits, and keeping
+	// them present helps the compositor restore the windowed size on exit — see
+	// setConsole). Mobile picks phone-or-tablet from the device size (see the
+	// `phone`/`tablet` variants), so there's no console choice or fixed size.
+	startConsole := false
+	if on, saved := loadConsolePref(); saved && !onMobile {
+		startConsole = on
+	}
+	if !onMobile {
+		u.fullScreen = startConsole
+		if startConsole {
+			// Start full screen unlocked (like a normal app), so leaving the
+			// console later restores the windowed size and re-locks it — see
+			// setConsole / onCanvasResize.
+			u.relockWindowed = true
 			w.SetFullScreen(true)
+		} else {
+			w.SetFixedSize(true) // windowed is a single fixed, non-resizable size
 		}
-	} else if onMobile {
-		u.consoleAutoTablet = true
 	}
 	u.build(w)
 	u.connect()

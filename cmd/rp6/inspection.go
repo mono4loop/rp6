@@ -5,6 +5,7 @@ import (
 
 	"fyne.io/fyne/v2"
 
+	"github.com/mono4loop/rp6/internal/ui/components"
 	uiinspect "github.com/mono4loop/rp6/internal/ui/inspect"
 )
 
@@ -18,12 +19,12 @@ func (u *ui) inspectionTargets() []uiinspect.Target {
 		inspectionTarget("rack.p6", "rack", "P-6", "group", u.p6Obj, true, nil),
 		inspectionTarget("rack.pad-fx", "rack", "Pad effects", "group", u.fxRack.Object(), true, nil),
 		inspectionTarget("rack.keys-fx", "rack", "Keyboard effects", "group", u.keyboardFXRack.Object(), true, nil),
-		inspectionTarget("rack.sequencer", "rack", "Sequencer", "group", u.seqRack.Object(), true, map[string]any{
+		inspectionTarget("rack.sequencer", "rack", "Sequencer", "group", fittedContent(u.seqRack.Object()), true, map[string]any{
 			"tracks": u.seq.Tracks(), "docked": u.seqSide,
 		}),
 		inspectionTarget("rack.keyboard", "rack", "Keyboard", "group", u.keyboardRack.Object(), true, nil),
 		inspectionTarget("rack.paks", "rack", "Sample paks", "group", u.paksRack.Object(), true, nil),
-		inspectionTarget("rack.pads", "rack", "Pads", "group", u.padRackObj, true, map[string]any{
+		inspectionTarget("rack.pads", "rack", "Pads", "group", fittedContent(u.padRackObj), true, map[string]any{
 			"floating": u.padFloating, "layout": int(u.padLayout), "page": u.grid.Page(),
 		}),
 		inspectionTarget("rack.vu", "rack", "VU meter", "group", u.meterArea, true, nil),
@@ -99,6 +100,13 @@ func (u *ui) inspectionTargets() []uiinspect.Target {
 	return targets
 }
 
+func fittedContent(object fyne.CanvasObject) fyne.CanvasObject {
+	if fit, ok := object.(*components.ContentFit); ok {
+		return fit.Content
+	}
+	return object
+}
+
 func inspectionTarget(id, kind, label, role string, object fyne.CanvasObject, annotate bool, state map[string]any) uiinspect.Target {
 	return uiinspect.Target{ID: id, Kind: kind, Label: label, Role: role, Object: object, Annotate: annotate, State: state}
 }
@@ -122,7 +130,7 @@ func (u *ui) inspectionMetadata(scenario, formFactor string, notes ...string) ui
 		FormFactor: formFactor,
 		Backend:    backend,
 		State: map[string]any{
-			"compact": u.compact, "console": u.fullScreen, "padFloating": u.padFloating,
+			"console": u.fullScreen, "padFloating": u.padFloating,
 			"sequencerDocked": u.seqSide,
 		},
 		Notes: notes,

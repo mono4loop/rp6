@@ -321,8 +321,8 @@ cmd/rp6/effectsrack.go the "effects rack" for the selected pad (4 slots + Rate)
 cmd/rp6/sequencerrack.go the step-sequencer panel (tracks + step grid + transport)
 cmd/rp6/layout.go     loads the embedded UI layout, selects a variant per env,
                     composes rack internals + applies component properties
-cmd/rp6/assets/*.layout  the compiled-in UI layouts (console + default/compact
-                    variants and the shared `rack` blocks) — see docs/architecture/layouts.md
+cmd/rp6/assets/*.layout  the compiled-in UI layouts (tablet · console · phone ·
+                    window variants and the shared `rack` blocks) — see docs/architecture/layouts.md
 cmd/rp6/pak.go        (desktop) sample-pak CLI (pak create/install/list), the -pak
                     launch flag, the emu-settings install button; cmd/rp6/store.go
                     is the in-app store dialog (desktop + Android/iOS); the
@@ -631,12 +631,14 @@ selects the granular source A1..H6).
   `build()`, so tests that call `build()` don't spawn ticking goroutines that
   outlive them. The resize-relayout watcher (`relayoutWatch`) follows the same
   rule — see §6's note on `onCanvasResize`.
-- **`newTestUI` sizes the window like production (`w.Resize(900, 760)`).** The
-  compact/wide form factor is classified from the canvas *size*
-  (`classifyCompact`); a content-min-sized test window can come up unexpectedly
-  tall/narrow and misclassify as compact. `main()` opens ~858×900, so the test
-  harness mirrors a wide desktop window and the default variant is `default`, not
-  `compact`.
+- **`newTestUI` sizes the window like production (`w.Resize(900, 760)`).** On
+  desktop the form factor is discrete (see `docs/architecture/layouts.md`): a
+  windowed desktop is the fixed `window` variant, full screen is `console`, and
+  mobile is `phone`/`tablet` by device size. There is no continuous
+  `compact`/hysteresis reflow. Because `mobile`/`web`/`desktop` are compile-time
+  constants (a desktop test binary is always `desktop`), the inspection harness
+  exercises the phone/tablet variants via the per-instance `mobileForTest`/
+  `tabletForTest` overrides (see `layoutEnv`).
 - For concurrent writers (the `Clocker`), tests use a mutex-wrapped buffer
   (`safeBuf`/`syncBuf`) and assert loosely (starts with `0xFA`, contains `0xFC`).
 - **`go test -race` flags the tap-flash / pulse goroutines** (pad, transport,
@@ -648,6 +650,63 @@ selects the granular source A1..H6).
 - Limits of the harness: it can't reproduce **real GLFW double-tap detection** or
   **OS window focus**, and it realizes widgets immediately (so it won't reproduce
   first-show timing bugs). Say so honestly rather than guessing.
+
+### Layout inspection workflow
+
+- **Use RP6's semantic inspection, not renderer guesses.** `cmd/rp6/inspection.go`
+  registers stable IDs (`rack.pads`, `pads.cell.01`,
+  `sequencer.track.1.step.1`, etc.). `internal/ui/inspect` records logical and
+  physical rects, effective visibility, min size, clipping and component state.
+  The manifest is the automation API; Fyne has no stable test IDs or complete
+  public accessibility tree.
+- Run **`make inspect-layouts`** after any layout/min-size/visibility/scale edit.
+  It regenerates clean PNG, annotated PNG and JSON under
+  `cmd/rp6/testdata/layout-inspection/`. Never judge only the annotated image:
+  inspect the clean render too, then use JSON for exact geometry and state.
+- **Test real production states, not only curated showcases.** Required scenarios
+  are the fixed set in `resolutions.txt` — the `850x950` fixed window, the two
+  desktop full-screen consoles (16:10 + 21:9), the two phones, and the tablet —
+  plus the `1.25x -> 2x` late-scale regression guard. Curated scenes once hid the
+  actual `850x1`/`1px` sequencer bug.
+- **Containment is different from rack non-overlap.** A child can paint outside
+  its rack while rack rectangles remain disjoint because Fyne containers usually
+  do not clip. Contracts must require pad cells inside `pads.grid`, pad controls
+  and grid inside `rack.pads`, and sequencer controls/visible steps inside their
+  grid/rack. Use full `Rect` containment; `VisibleRect` can conceal an escape.
+- **Use physical-pixel contracts for touch cells.** `PhysicalGrid` converts the
+  effective canvas pixel mapping into logical sizes. Normal pads prefer 80-130
+  physical pixels, dense pads 65-75, and sequencer steps 40-50. Permit one pixel
+  for edge rounding. The grid must never exceed its allocation even when the
+  preferred floor cannot fit.
+- **Late Wayland scale changes require a real relayout.** Fyne's content-scale
+  callback updates framebuffer scale and repaints but does not guarantee layout.
+  RP6 polls effective `PixelCoordinateForPosition` scale from the main-started
+  meter tick and sends scale changes through the existing coalesced
+  `relayoutReq` watcher. The regression scenario must first prove stale physical
+  sizing, then prove the corrective relayout ran.
+- **Distinguish pane, rack and bounded child.** Pad/sequencer wrappers may fill a
+  pane, rack panels may expand vertically while staying content-width bounded,
+  and square grids remain bounded inside them. Semantic `rack.*` targets should
+  point at the visible panel, not a transparent allocation wrapper.
+- **A scroller's minimum is not its natural no-scroll height.** Six active
+  one-bar tracks need six preferred 50px rows, every inter-track gap, the final
+  gap and trailing spacer. Reserve that as the undocked sequencer's natural
+  height; additional bars/tracks may overflow through its existing vertical
+  scroller. Assert packed track content is no taller than the viewport for the
+  six-track/one-bar baseline.
+- **Each variant has a fixed rack set — don't hide racks to make things fit.**
+  Under the fixed-form-factor policy a variant declares exactly which racks it
+  places (via the `.layout` structure + `show:` defaults); a size too small for
+  that set simply isn't a supported target. The old size-driven fit fallback
+  (hide sequencer, then keyboard, restore on grow) was removed — it was the main
+  source of layout churn. The `show:`-default bookkeeping (`forced` /
+  `restoreForcedRacks`) stays: it restores the user's pre-console rack state on
+  exit so a variant's defaults don't leak. Still test at least three repeated
+  console round trips; async fullscreen resizing can otherwise strand visibility.
+- The software renderer still cannot validate compositor chrome, native safe
+  areas, real multi-window ownership or arbitrary opaque sibling occlusion. Keep
+  a real Wayland/Android smoke check for those, especially after scale or window
+  ownership changes.
 
 ---
 

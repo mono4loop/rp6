@@ -6,6 +6,7 @@ import (
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
+	"fyne.io/fyne/v2/theme"
 )
 
 // PadGridConfig configures a PadGrid.
@@ -32,6 +33,11 @@ type PadGridConfig struct {
 	// CellMinSize optionally overrides each pad's minimum size (default 44x44),
 	// e.g. smaller for a dense all-banks layout.
 	CellMinSize fyne.Size
+
+	// CellMinPixels and CellMaxPixels keep cells square within physical-pixel
+	// bounds. When set, these supersede CellMinSize as the grid's sizing rule.
+	CellMinPixels float32
+	CellMaxPixels float32
 }
 
 // PadGrid is a generic grid of pads with optional paging and a single-selection
@@ -42,6 +48,8 @@ type PadGrid struct {
 	pads     []*Pad
 	pageBtns []*RackToggle
 	page     int
+	grid     *PhysicalGrid
+	pageBar  fyne.CanvasObject
 
 	hasSel                  bool
 	selPage, selRow, selCol int
@@ -69,13 +77,23 @@ func NewPadGrid(cfg PadGridConfig) *PadGrid {
 	objs := make([]fyne.CanvasObject, len(g.pads))
 	for i := range g.pads {
 		p := NewPad("", color.Black, nil)
-		if cfg.CellMinSize.Width > 0 && cfg.CellMinSize.Height > 0 {
+		if cfg.CellMinPixels > 0 {
+			// PhysicalGrid owns the minimum. Keep each leaf permissive so high-DPI
+			// cells can be smaller than the Pad widget's legacy 44-logical floor.
+			p.SetMinSize(fyne.NewSquareSize(1))
+		} else if cfg.CellMinSize.Width > 0 && cfg.CellMinSize.Height > 0 {
 			p.SetMinSize(cfg.CellMinSize)
 		}
 		g.pads[i] = p
 		objs[i] = p
 	}
-	grid := container.NewGridWithColumns(cfg.Cols, objs...)
+	var grid fyne.CanvasObject
+	if cfg.CellMinPixels > 0 {
+		g.grid = NewPhysicalGrid(cfg.Cols, cfg.CellMinPixels, cfg.CellMaxPixels, objs...)
+		grid = g.grid.Object
+	} else {
+		grid = container.NewGridWithColumns(cfg.Cols, objs...)
+	}
 
 	if len(cfg.Pages) > 1 {
 		btns := make([]fyne.CanvasObject, len(cfg.Pages))
@@ -87,6 +105,7 @@ func NewPadGrid(cfg PadGridConfig) *PadGrid {
 			btns[i] = b
 		}
 		pageBar := container.NewGridWithColumns(len(cfg.Pages), btns...)
+		g.pageBar = pageBar
 		g.obj = container.NewBorder(pageBar, nil, nil, nil, grid)
 	} else {
 		g.obj = grid
@@ -98,6 +117,26 @@ func NewPadGrid(cfg PadGridConfig) *PadGrid {
 
 // Object returns the CanvasObject to place in a layout.
 func (g *PadGrid) Object() fyne.CanvasObject { return g.obj }
+
+// PreferredSize returns the tightly-packed page selector + square grid size for
+// an available allocation. Unbounded legacy grids return their MinSize.
+func (g *PadGrid) PreferredSize(available fyne.Size) fyne.Size {
+	if g.grid == nil {
+		return g.obj.MinSize()
+	}
+	gridAvailable := available
+	var pageSize fyne.Size
+	if g.pageBar != nil && g.pageBar.Visible() {
+		pageSize = g.pageBar.MinSize()
+		gridAvailable.Height -= pageSize.Height + theme.Padding()
+	}
+	gridSize := g.grid.PreferredSize(gridAvailable)
+	result := fyne.NewSize(max(gridSize.Width, pageSize.Width), gridSize.Height)
+	if pageSize.Height > 0 {
+		result.Height += pageSize.Height + theme.Padding()
+	}
+	return result
+}
 
 // Page returns the currently shown page index.
 func (g *PadGrid) Page() int { return g.page }

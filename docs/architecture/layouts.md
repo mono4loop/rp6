@@ -98,23 +98,42 @@ layout console when fullscreen {
 
 ## 4. Variant selection & the environment
 
+RP6 uses a **fixed-form-factor policy**: rather than continuously adapting to any
+window size, each layout is designed for a discrete form factor and a size maps
+to exactly one variant. The supported set is `resolutions.txt`; the windowed
+desktop is a single **fixed, non-resizable** size, mobile is phone-or-tablet by
+device size, and desktop full screen is the console. There is deliberately **no
+continuous "compact" reflow and no size-driven rack hiding** — those were the
+main sources of layout bugs (see the git history around this change).
+
 `Document.Select(env)` walks variants in order and takes the **first** whose
 `when` matches (a bare `layout` with no `when` is the default / last). The
-environment is built in `cmd/rp6/layout.go` `selectLayout` each relayout:
+environment is built in `cmd/rp6/layout.go` `layoutEnv` each relayout:
 
 | flag / var | meaning |
 |---|---|
-| `mobile` / `web` / `desktop` | platform, from compile-time build tags |
-| `fullscreen` | the user toggled full screen (see §7) |
-| `compact` | narrow/portrait window (aspect ratio, hysteresis — `classifyCompact`) |
+| `mobile` / `web` / `desktop` | platform, from compile-time build tags (overridable per-scenario in the inspection tests via `mobileForTest`/`tabletForTest`) |
+| `fullscreen` | the user's console intent (desktop only — see §7/§8) |
+| `tablet` | tablet-class touchscreen (`isTabletSize`: smallest side ≥ 600) |
 | `seq_docked` | sequencer docked as a side column |
 | `pads_visible` | pad grid shown and not floating |
 | `width` / `height` | live canvas size (numeric) |
 
-The shipped variants: **`consoletablet`** (`when fullscreen && mobile`),
-**`console`** (`when fullscreen`), **`compact`** (`when compact`), **`default`**
-(windowed, unguarded). Order matters — the tablet console is listed first so its
-more-specific guard wins on a mobile device (see §9). See §9 for the files.
+The shipped variants and their guards (order matters — the loader concatenates
+tablet + console first, so more-specific guards win):
+
+| variant | guard | target(s) in `resolutions.txt` |
+|---|---|---|
+| `tablet` | `mobile && tablet` | OnePlus Pad 3 3392×2400 |
+| `console` | `fullscreen && desktop` | ThinkPad 1920×1200, Asus ROG 3440×1440 |
+| `phone` | `mobile` | Pixel 10 Pro / Pro XL |
+| `window` | *(default)* | ThinkPad 850×950 windowed |
+
+A size not in `resolutions.txt` resolves to the nearest of these by the same
+predicates (best-effort): an unlisted desktop full-screen size still gets
+`console` (its proportional splits absorb the aspect difference), an unlisted
+Android device gets `phone` or `tablet` by size, and any desktop window is the
+fixed `window` size. See §9 for the files.
 
 ## 5. Widget IDs
 
@@ -173,51 +192,75 @@ what they mean:
   a variant restores the racks to how the user had them — e.g. leaving the
   console doesn't leave its force-shown racks stuck on in the normal layout. This
   is generic: any variant + any rack using `show:` is handled, no hardcoded list.
+- **`seq(tracks: N)`** — the sequencer's default track count for the variant
+  (`applyDefaultTracks` → `sequencerRack.SetTrackCount`). Variant-entry only, like
+  `show:`. The window variant uses `tracks: 4`; console/tablet use `6`.
+- **`pads(layout: paged|twobank|dense)`** — the pad grid's default paging for the
+  variant (`applyDefaultPadLayout` → `applyPadLayout` **without persisting**, so it
+  doesn't clobber the user's density-button preference). Variant-entry only. The
+  window variant uses `twobank` (12 pads, four A–B…G–H tabs); console/tablet `paged`.
+- **`pads/seq(expand: horizontal|vertical|both)`** — fill that axis of the
+  allocation with the **rack frame** while its children stay their natural size,
+  centered (`applyRackExpand` → `ContentFit.SetExpand`; doesn't change MinSize, so
+  it never forces the window larger). Applied every relayout (idempotent), so a
+  variant without it resets the rack to content-sized. The window variant sets
+  `pads(expand: horizontal)` so the pad rack fills the fixed window width.
+
+The window's fixed size + full-screen console interaction is covered in §8; the
+per-variant default set (which properties each variant declares) is in §4.
 
 ## 8. The full-screen / console gotcha
 
-`console` is chosen `when fullscreen`. **Do not** read `Window.FullScreen()` for
-this: Android apps report `FullScreen() == true` inherently, which would force
-the console layout on unbidden. Instead the app tracks its **own** `fullScreen`
-intent bool, flipped by `toggleFullScreen` (F11 / Ctrl+Shift+Enter on desktop)
-and by the bottom-bar **CONSOLE** toggle (`toggleConsole`) on any platform. On
-desktop CONSOLE also drives the OS window full screen; on mobile there's no
-window to toggle (it's already full screen), so it just flips the layout intent.
+`console` is chosen `when fullscreen && desktop`. **Do not** read
+`Window.FullScreen()` for this: Android apps report `FullScreen() == true`
+inherently, which would force the console layout on unbidden. Instead the app
+tracks its **own** `fullScreen` intent bool, flipped by `toggleFullScreen` (F11 /
+Ctrl+Shift+Enter on desktop) and by the bottom-bar **CONSOLE** toggle
+(`toggleConsole`). CONSOLE is **desktop-only** — on mobile the phone/tablet
+variant is chosen by device size, so the toggle is omitted from the bar there.
 
-Because the desktop console's three-rail split squeezes its centre into an
-unreadable sliver on a ~4:3 tablet, mobile gets its **own** console variant
-(`consoletablet`, `when fullscreen && mobile`) with two wide panes (pads | seq)
-instead — see §9. A phone that turns CONSOLE on still gets this tablet variant;
-it suits large screens best, so it's an opt-in (off by default on mobile).
+On desktop `setConsole` drives the OS window: **console = full screen**, while
+**windowed = a single fixed, non-resizable size** (`windowedWidth`×
+`windowedHeight`, `SetFixedSize(true)`). Entering console clears the fixed-size
+lock before `SetFullScreen(true)`; leaving restores the fixed windowed size. The
+tablet gets its own `tablet` variant (a paks rail beside a seq-over-pads column),
+distinct from the desktop console's three-rail split.
 
-`SetFullScreen` is applied asynchronously by Fyne, so `toggleFullScreen` also
-restores the saved windowed size on exit and lets `onCanvasResize` re-lay out
-once the size settles (some drivers don't shrink the canvas back on their own).
+`SetFullScreen` is applied asynchronously by Fyne, so the console layout keys off
+the fullscreen *intent* (not pixel size) and its proportional splits reflow as
+the window settles — the synchronous relayout in `setConsole` is authoritative,
+and `onCanvasResize` only rebuilds if the discrete variant actually changes (see
+§9 / `variantFor`).
 
 ## 9. Files & app wiring
 
-- **`cmd/rp6/assets/console-tablet.layout`** — the `consoletablet` variant (the
-  console layout for large touch screens; `when fullscreen && mobile`).
-- **`cmd/rp6/assets/console.layout`** — the `console` (desktop full-screen) variant.
-- **`cmd/rp6/assets/default.layout`** — the `compact` + `default` variants **and
-  the shared `rack` blocks**.
+- **`cmd/rp6/assets/console-tablet.layout`** — the `tablet` variant (paks rail +
+  seq-over-pads column for large touch screens; `when mobile && tablet`).
+- **`cmd/rp6/assets/console.layout`** — the `console` (desktop full-screen)
+  variant (`when fullscreen && desktop`).
+- **`cmd/rp6/assets/default.layout`** — the `phone` (`when mobile`) + `window`
+  (default, fixed desktop) variants **and the shared `rack` blocks**.
 
-`layoutSource()` concatenates them **tablet-console-first, then desktop console,
-then default**, so the more specific `when fullscreen && mobile` guard is matched
-before the plain `when fullscreen` (a document is just a sequence of blocks, so
-concatenation is valid). `loadLayout()` parses it in `build()` — pure, no I/O,
-safe in tests.
+`layoutSource()` concatenates them **tablet-first, then console, then the
+default file**, so the more specific `when mobile && tablet` guard is matched
+before `when mobile` (a document is just a sequence of blocks, so concatenation
+is valid). `loadLayout()` parses it in `build()` — pure, no I/O, safe in tests.
 
 Flow: `build()` → `loadLayout()`; each rack composed once via `composeRack`;
 `relayout()` builds the registry, calls `selectLayout` (→ `Document.Select` +
 `layoutspec.BuildConfig` with `configureComponent`), and swaps the result into
 the stable `contentHolder` (whose `sizeWatch` reports resizes to
-`onCanvasResize`). A minimal Go fallback keeps the window non-blank if the
-document ever fails to parse (a test guards that it always parses).
+`onCanvasResize`). `onCanvasResize` compares `variantFor(size)` to the active
+variant and requests a relayout **only when the discrete form factor changes** (a
+tablet learning its first size, or the desktop console settling after an async
+`SetFullScreen`) — never continuously while a window is dragged (the windowed
+size is fixed, and the console's splits reflow on their own). A minimal Go
+fallback keeps the window non-blank if the document ever fails to parse (a test
+guards that it always parses).
 
-To change the UI: edit a `.layout` file and `make build`. Add a device layout by
-adding a `layout <name> when <cond> { … }` block (order matters — specific
-first).
+To change the UI: edit a `.layout` file and `make build`. Add a device form
+factor by adding a `layout <name> when <cond> { … }` block (order matters —
+specific first) and a matching scenario in `inspection_test.go`.
 
 ## 10. Testing
 
@@ -278,25 +321,66 @@ object and its ancestors with non-empty bounds through known clip containers; it
 does not attempt arbitrary opaque-sibling occlusion. Keep real Wayland and
 physical Android smoke checks for those driver-specific behaviors.
 
-Current validated rack sets:
+Current validated targets (the `resolutions.txt` set — one scenario each in
+`inspection_test.go`, plus a Wayland scale-transition regression guard):
 
-| target | active racks |
-|---|---|
-| ThinkPad X13 1920x1200 | transport, VU, paks, pad FX, pads, docked sequencer, keyboard, navigation, status |
-| Pixel 10 Pro XL 1344x2992 | transport, pads, VU, navigation, status |
-| Pixel 10 Pro 1280x2856 | transport, pads, VU, navigation, status |
-| Asus ROG 3440x1440 | transport, VU, paks, pad FX, pads, docked sequencer, keyboard, navigation, status |
+| target | variant | active racks |
+|---|---|---|
+| ThinkPad X13 850×950 window | `window` | transport, pads, VU, navigation, status |
+| ThinkPad X13 1920×1200 full screen | `console` | transport, VU, paks, pad FX, docked sequencer, pads, keyboard, navigation, status |
+| Asus ROG 3440×1440 full screen | `console` | transport, VU, paks, pad FX, docked sequencer, pads, keyboard, navigation, status |
+| Pixel 10 Pro XL 1344×2992 | `phone` | transport, pads, VU, navigation, status |
+| Pixel 10 Pro 1280×2856 | `phone` | transport, pads, VU, navigation, status |
+| OnePlus Pad 3 3392×2400 | `tablet` | transport, VU, paks, sequencer, pads, keyboard, navigation, status |
 
 The phone scenarios intentionally leave the sequencer, keyboard, effects and
 sample-pak browser off; they do not fit while preserving the 32-unit touch
-contract. Desktop console layout puts pad FX at the bottom of the existing left
-rail instead of reserving a mostly-empty full-height right rail, and its active
-sequencer track/bar rows expand to consume available height.
+contract. The desktop console puts pad FX at the bottom of the left rail instead
+of reserving a mostly-empty full-height right rail, and its active sequencer
+track/bar rows expand to consume available height. The rack set for each variant
+is **fixed** — a size that is too small for it simply isn't a supported target;
+RP6 no longer hides racks to fit (that size-driven fallback was removed with the
+fixed-form-factor policy).
+
+### Physical cell sizing
+
+Pads and sequencer steps use `components.PhysicalGrid`: a fixed-column custom
+layout that measures the effective canvas pixel scale through
+`Canvas.PixelCoordinateForPosition`, keeps cells square, and converts their
+physical-pixel bounds into logical Fyne sizes. Normal pads are 80-130 physical
+pixels square; sequencer steps are 40-50. The all-bank dense pad mode is the
+explicit exception, using 65-75px squares so eight bank rows remain visible
+without adding a pad scrollbar.
+
+`components.ContentFit` wraps the complete pad/sequencer panel and sizes that
+panel to the grid plus its controls and rack frame. Extra viewport space remains
+outside the panel, horizontally balanced, rather than stretching cells or
+appearing as internal rack space. Sequencer tracks and visible bars are packed at
+their square-row height; when they exceed the fitted panel height, the existing
+vertical track scroller exposes the overflow.
+
+Resolution contracts assert the physical square ranges directly from each
+manifest's `pixelRect`, allowing one pixel for raster edge rounding. The
+If a pane cannot provide the 80px preferred pad floor, cells still shrink to the
+allocation rather than painting outside the rack. The inspection contracts catch
+that degraded size separately. On Wayland, the app polls the effective framebuffer
+scale and forces a real relayout after a content-scale change because Fyne's
+scale callback repaints without guaranteeing layout.
+
+Inspection also declares semantic containment contracts: every visible pad must
+stay inside `pads.grid`, pad controls/grid inside `rack.pads`, and sequencer
+controls/visible steps inside `rack.sequencer` / `sequencer.grid`. This catches
+painting outside a rack even when the rack rectangles themselves do not overlap.
+`regression-scale-transition-3072x1920` reproduces a Wayland late content-scale
+change (1.25x geometry to 2x rendering) and asserts the corrective relayout runs;
+it is a rendering regression guard, not a supported resolution.
 
 ## 11. Ideas / not built
 
 - More component properties (grid density, knob ranges) via `configureComponent`.
-- A phone-tailored `layout mobile when mobile { … }` (today phones use `compact`).
+- Per-target `.layout` files if two clustered targets ever need genuinely
+  different structure (today the two desktop full-screen sizes share `console`
+  and the two phones share `phone`).
 - A `rp6 -check-layout <file>` CLI to validate a layout without a display.
 - If runtime editing is ever wanted again, layer a file loader over
   `layoutlang.Parse` — the parser is already file-agnostic.
