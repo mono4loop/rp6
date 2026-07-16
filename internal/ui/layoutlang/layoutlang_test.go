@@ -350,3 +350,19 @@ func TestPagesEmptyByDefault(t *testing.T) {
 	require.NoError(t, err)
 	assert.Empty(t, doc.Pages())
 }
+
+// TestPageRefs collects the widget ids a page places across its variants,
+// regardless of conditions, so the host can build a page-appropriate rack menu.
+func TestPageRefs(t *testing.T) {
+	doc, err := Parse(`
+page play PLAY {
+  layout wide when width >= 500 { Border { center: pads; bottom: seq } }
+  layout narrow { VBox { pads; keys if show_keys } }
+}
+page loop LOOP {
+  layout main { HBox { pads; rec; keys } }
+}`)
+	require.NoError(t, err)
+	assert.Equal(t, []string{"pads", "seq", "keys"}, doc.PageRefs("play"), "union across the play variants, first-seen")
+	assert.Equal(t, []string{"pads", "rec", "keys"}, doc.PageRefs("loop"))
+}

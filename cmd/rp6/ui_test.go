@@ -269,6 +269,27 @@ func TestPerPageRackVisibility(t *testing.T) {
 	assert.False(t, keys.Visible(), "PLAY remembers keys hidden")
 }
 
+// TestPlayMenuIsPerPage verifies the grid-icon play menu lists the racks the
+// active page actually places: PADS/SEQ/KEYS on PLAY, PADS/KEYS/REC on LOOP.
+func TestPlayMenuIsPerPage(t *testing.T) {
+	u := newTestUI(t)
+	require.Equal(t, "play", u.activePage)
+
+	// PLAY: PADS / SEQ / KEYS (no REC — the recorder isn't on this page).
+	play := u.playMenu.Content.(*fyne.Container).Objects
+	assert.Equal(t, []fyne.CanvasObject{u.padBtn, u.seqBtn, u.keysBtn}, play)
+
+	// LOOP: PADS / KEYS / REC (no SEQ — the sequencer isn't on this page).
+	u.setPage("loop")
+	loop := u.playMenu.Content.(*fyne.Container).Objects
+	assert.Equal(t, []fyne.CanvasObject{u.padBtn, u.keysBtn, u.recBtn}, loop)
+
+	// Returning to PLAY restores its menu.
+	u.setPage("play")
+	back := u.playMenu.Content.(*fyne.Container).Objects
+	assert.Equal(t, []fyne.CanvasObject{u.padBtn, u.seqBtn, u.keysBtn}, back)
+}
+
 func TestRecorderRackArmsFromLivePadAndControlsTrack(t *testing.T) {
 	u := newTestUI(t)
 	var buf bytes.Buffer

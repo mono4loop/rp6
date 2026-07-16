@@ -91,7 +91,9 @@ class-compliant **USB MIDI** port:
   rack-label `components.RackToggle`s (component icon · `P-6` · `FX` · `PAKS` · `VU`, lit when
   shown / greyed when hidden, also **Ctrl+Shift+P/D/F/S/M**) — a red/green
   connection **LED** (breathing glow), status text, and an **ⓘ info** dialog
-  button. The component icon floats a vertical `PADS` / `SEQ` / `KEYS` selector above the bar;
+  button. The component icon floats a vertical **page-specific** rack selector
+  above the bar (the racks the active page places — `PADS`/`SEQ`/`KEYS` on PLAY,
+  `PADS`/`KEYS`/`REC` on LOOP);
   `FX` floats its own vertical `PAD FX` / `KEYS FX` selector. There is **no Reconnect button**: the app auto-connects/reconnects
   (see the device watcher in §4).
 - Amber/orange theme; **Ctrl+Q** quits.

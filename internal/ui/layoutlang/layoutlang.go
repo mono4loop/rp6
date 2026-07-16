@@ -167,6 +167,41 @@ func (d *Document) Names() []string {
 	return out
 }
 
+// PageRefs returns the widget-reference ids used anywhere in the named page's
+// variants (across all form factors, regardless of `if`/`when` conditions), in
+// first-seen order. It lets the host tell which racks a page can place — e.g. to
+// show a page-appropriate rack menu. Uses variantsForPage, so an empty/unknown id
+// resolves to the default/first-page variants.
+func (d *Document) PageRefs(pageID string) []string {
+	seen := map[string]bool{}
+	var out []string
+	for _, v := range d.variantsForPage(pageID) {
+		v.root.collectRefs(seen, &out)
+	}
+	return out
+}
+
+// collectRefs walks the node tree, appending each distinct widget-reference id to
+// out (first-seen order), ignoring conditions.
+func (n *nodeAST) collectRefs(seen map[string]bool, out *[]string) {
+	if n == nil {
+		return
+	}
+	if n.ref != "" {
+		if !seen[n.ref] {
+			seen[n.ref] = true
+			*out = append(*out, n.ref)
+		}
+		return
+	}
+	for _, c := range n.children {
+		c.n.collectRefs(seen, out)
+	}
+	for _, r := range n.regions {
+		r.n.collectRefs(seen, out)
+	}
+}
+
 // variantsForPage returns the variants to select among for a page id: the named
 // page's own variants, or — when pageID is empty or unknown — the top-level
 // variants, falling back to the first page's variants when there are no top-level

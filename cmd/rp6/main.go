@@ -484,9 +484,11 @@ func (u *ui) build(w fyne.Window) {
 	})
 	u.playMenuBtn = components.NewRackToggleIcon(theme.GridIcon(), acc, u.togglePlayMenu)
 	// The recorder is reached via the LOOP page (see buildPageNav), not a rack
-	// toggle, so the PADS/SEQ/KEYS "play menu" no longer lists REC. u.recBtn stays
-	// as the state holder the loop variant's `rec(show: true)` drives.
-	u.playMenu = widget.NewPopUp(popupChoices(u.padBtn, u.seqBtn, u.keysBtn), w.Canvas())
+	// toggle. The play menu's contents are page-specific (rebuildPlayMenu): the
+	// active page's placed content racks — PADS/SEQ/KEYS on PLAY, PADS/KEYS/REC on
+	// LOOP. u.recBtn is the REC toggle it lists on the LOOP page.
+	u.playMenu = widget.NewPopUp(popupChoices(), w.Canvas())
+	u.rebuildPlayMenu()
 	u.playMenu.Hide()
 	u.paksBtn = components.NewRackToggle("PAKS", acc, func() { u.toggleVisible(u.paksRack.Object(), u.paksBtn) })
 	u.meterBtn = components.NewRackToggle("VU", acc, func() { u.toggleVisible(u.meterArea, u.meterBtn) })
@@ -1009,11 +1011,77 @@ func (u *ui) hidePlayMenu() {
 	}
 }
 
-func (u *ui) updatePlayMenuButton() {
-	if u.playMenuBtn == nil || u.padRackObj == nil || u.seqRack == nil || u.keyboardRack == nil {
+// playMenuCandidates are the content racks that can appear in the play menu (the
+// grid-icon popup), in menu order. Which actually appear is filtered per page by
+// playMenuRacks — a page only lists the racks its layout places.
+func (u *ui) playMenuCandidates() []toggleRack {
+	return []toggleRack{
+		{"pads", u.padRackObj, u.padBtn},
+		{"seq", u.seqRack.Object(), u.seqBtn},
+		{"keys", u.keyboardRack.Object(), u.keysBtn},
+		{"rec", u.recRack.Object(), u.recBtn},
+	}
+}
+
+// playMenuRacks returns the play-menu content racks relevant to the active page:
+// the candidates the page's layout actually places (from the document's
+// PageRefs), so the menu is page-specific — PADS/SEQ/KEYS on PLAY, PADS/KEYS/REC
+// on LOOP. Falls back to all candidates when the layout can't be consulted.
+func (u *ui) playMenuRacks() []toggleRack {
+	refs := u.pageRefSet(u.activePage)
+	var out []toggleRack
+	for _, r := range u.playMenuCandidates() {
+		if refs == nil || refs[r.id] {
+			out = append(out, r)
+		}
+	}
+	return out
+}
+
+// pageRefSet is the set of widget ids the given page's layout references, or nil
+// when the document isn't available.
+func (u *ui) pageRefSet(page string) map[string]bool {
+	if u.layoutDoc == nil {
+		return nil
+	}
+	refs := u.layoutDoc.PageRefs(page)
+	m := make(map[string]bool, len(refs))
+	for _, id := range refs {
+		m[id] = true
+	}
+	return m
+}
+
+// rebuildPlayMenu repopulates the play-menu popup with the active page's racks
+// (at build and on page switch). The menu is hidden when this runs, so swapping
+// its content is safe.
+func (u *ui) rebuildPlayMenu() {
+	if u.playMenu == nil {
 		return
 	}
-	u.playMenuBtn.SetOn(u.padRackObj.Visible() || u.seqRack.Object().Visible() || u.keyboardRack.Object().Visible())
+	racks := u.playMenuRacks()
+	objs := make([]fyne.CanvasObject, 0, len(racks))
+	for _, r := range racks {
+		objs = append(objs, r.btn)
+	}
+	u.playMenu.Content = popupChoices(objs...)
+	u.playMenu.Refresh()
+}
+
+// updatePlayMenuButton lights the grid icon when any of the active page's play-
+// menu racks is visible.
+func (u *ui) updatePlayMenuButton() {
+	if u.playMenuBtn == nil || u.padRackObj == nil || u.seqRack == nil || u.recRack == nil || u.keyboardRack == nil {
+		return
+	}
+	on := false
+	for _, r := range u.playMenuRacks() {
+		if r.obj != nil && r.obj.Visible() {
+			on = true
+			break
+		}
+	}
+	u.playMenuBtn.SetOn(on)
 }
 
 // toggleFXChoices floats the PAD FX / KEYS FX selectors vertically above the
@@ -1151,8 +1219,9 @@ func (u *ui) setPage(id string) {
 	u.savePageVis(u.activePage) // remember this page's rack show/hide config
 	u.restoreForcedRacks()      // undo the outgoing page variant's show: overrides
 	u.activePage = id
-	rememberPage(id)  // resume on this page next launch
-	u.loadPageVis(id) // apply the incoming page's remembered show/hide config
+	rememberPage(id)    // resume on this page next launch
+	u.loadPageVis(id)   // apply the incoming page's remembered show/hide config
+	u.rebuildPlayMenu() // the play menu lists the new page's placed racks
 	u.updatePageNav()
 	u.relayout()
 }
@@ -2005,7 +2074,7 @@ func (u *ui) setVisible(o fyne.CanvasObject, btn *components.RackToggle, visible
 		o.Hide()
 	}
 	btn.SetOn(visible)
-	if btn == u.padBtn || btn == u.seqBtn || btn == u.keysBtn {
+	if btn == u.padBtn || btn == u.seqBtn || btn == u.keysBtn || btn == u.recBtn {
 		u.updatePlayMenuButton()
 	}
 	if btn == u.padFXBtn || btn == u.keysFXBtn {
