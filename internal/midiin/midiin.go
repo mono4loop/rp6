@@ -1,23 +1,26 @@
 // Package midiin is a small, pluggable framework for MIDI *input* controllers:
-// external hardware (a macropad, a grid controller, a keyboard, …) that drives
-// rp6's pads, on-screen keyboard and transport host-side. It is the mirror image
-// of the p6 package (which sends MIDI *out* to the P-6): here MIDI comes *in*
-// from a controller and is translated into rp6 actions.
+// external hardware (a pad controller, a grid, a keyboard, …) that drives rp6's
+// pads, on-screen keyboard and transport host-side. It is the mirror image of
+// the p6 package (which sends MIDI *out* to the P-6): here MIDI comes *in* from a
+// controller and is translated into rp6 actions.
 //
-// Each concrete controller lives in its own subpackage (e.g.
-// internal/midiin/macropad) and registers a Driver from its init(). The app
-// blank-imports the drivers it supports and calls Detect to open whichever
+// Most controllers are described by a data-driven .midimap file and served by
+// the generic interpreter in internal/midiin/mapped (see
+// docs/architecture/midimaps.md) — the app parses those files and registers a
+// Driver per map. A controller that needs real logic (e.g. the web-only Web MIDI
+// driver) can still be a hand-written Driver in its own subpackage, registered
+// from its init(). Either way the app calls Detect/Present to open whichever
 // controller is currently plugged in:
 //
-//	import _ "github.com/mono4loop/rp6/internal/midiin/macropad"
 //	dev, err := midiin.Detect()
 //
 // Design rules (mirroring the rest of rp6):
 //   - No Fyne here — this is pure logic, unit-testable without a display.
 //   - No device-model knowledge in the framework: a controller speaks only in
-//     device-agnostic Handlers (fire an absolute pad, toggle transport), so
-//     adding new hardware never touches the UI. The mapping from a controller's
-//     buttons/notes to those Handlers lives entirely inside its own subpackage.
+//     device-agnostic Handlers (fire an absolute pad, play a note, toggle
+//     transport) or forwards named Intents, so adding new hardware never touches
+//     the UI. The mapping from a controller's buttons/notes lives in its .midimap
+//     (or its hand-written subpackage), never here.
 package midiin
 
 import (
@@ -44,6 +47,39 @@ type Handlers struct {
 	// Transport requests the host transport change to the given state (true =
 	// play, false = stop), e.g. from an encoder press.
 	Transport func(playing bool)
+
+	// Dispatch handles a named control intent from a data-driven controller
+	// (internal/midiin/mapped). The application owns and validates the intent
+	// vocabulary; the driver only forwards. Hand-written drivers (e.g. the web
+	// MIDI driver) leave this nil and use the typed callbacks above instead. May
+	// be nil, and a driver MUST tolerate that.
+	Dispatch func(Intent)
+}
+
+// Intent is a named RP6 control action produced by a data-driven (mapped) input
+// controller — see internal/midiin/mapped. This package intentionally does NOT
+// own the set of valid names: the application (cmd/rp6) owns the intent
+// vocabulary and validates names, while the mapped interpreter only forwards
+// them. Only the fields relevant to a given Name are populated.
+type Intent struct {
+	// Name is the control action, e.g. "pad.trigger", "transport.play",
+	// "tempo.set". Its meaning (and which fields below matter) is the app's.
+	Name string
+	// Pad is an absolute pad id (0..47) for pad.trigger, or a discrete integer
+	// argument (track/bank index) for other intents.
+	Pad int
+	// Note is a chromatic MIDI note (0..127) for note.play.
+	Note uint8
+	// Velocity is 1..127 for trigger-shaped intents (pad.trigger, note.play).
+	Velocity uint8
+	// Value is a normalized 0..1 for value-shaped intents (the "*.set" family).
+	Value float64
+	// Delta is a signed detent count for delta-shaped intents (the "*.delta"
+	// family), e.g. from a relative encoder.
+	Delta int
+	// Arg is an optional string argument (e.g. "seq", "a_d") for intents that
+	// take one.
+	Arg string
 }
 
 // Device is an opened MIDI input controller.

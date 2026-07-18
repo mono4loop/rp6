@@ -43,7 +43,7 @@ bridge unchanged.
      • rp6_usb_send ← EncodeUSBMIDI ← midibridge OutputPort (P-6 output)
             │  midibridge.AddDevice + PushInput + SetOutput
             ▼
-   midibridge  ──►  internal/midiin/macropad (android)  ──►  pads / transport
+   midibridge  ──►  internal/midiin/mapped (android)  ──►  pads / keys / transport
                └►  p6/device_android.go (P-6 in + out)
 ```
 
@@ -63,8 +63,10 @@ bridge unchanged.
   Java). `AddDevice`/`PushInput`/`RemoveDevice` + `OpenReader`/`Writer`.
 - **`p6/device_android.go`** — P-6 backend over the bridge (input wired; output
   is the remaining TODO, see below).
-- **`internal/midiin/macropad/macropad_android.go`** — MacroPad driver reads the
-  bridge instead of an ALSA node; shared MIDI→Handlers mapping.
+- **`internal/midiin/mapped/platform_android.go`** — the generic `.midimap`
+  interpreter reads the bridge (Detect scans bridge inputs; Open =
+  `midibridge.OpenReader`) instead of an ALSA node, so map-based controllers (the
+  MacroPad, Arturia keyboards, …) work on Android too.
 - **`cmd/rp6/android.go`** — `startAndroidMIDI()`: starts the USB reader, marks
   the emulator start as a fallback, runs the device watcher, and **retries the
   input-controller attach** every 2 s (USB devices appear asynchronously, after

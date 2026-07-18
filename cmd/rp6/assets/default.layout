@@ -233,7 +233,7 @@ rack keysfx {
 rack pads {
   RackPanel {
     Border {
-      top: HBox { padFloat; padListen; padDensity; Spacer; store; badge }
+      top: HBox { padFloat; padListen; padKeys; padDensity; Spacer; store; badge }
       center: padGrid
     }
   }

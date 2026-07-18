@@ -1,0 +1,11 @@
+// Adafruit MacroPad RP2040 running the rp6 CircuitPython firmware
+// (docs/hardware/macropad). The firmware pages the P-6 banks on the pad itself
+// and sends absolute P-6-style pad notes (48..95), so this map just forwards
+// them; the rotary-encoder press sends realtime Start/Stop for transport.
+device "Adafruit MacroPad RP2040" {
+  match "macropad"
+
+  note 48..95    -> pad.trigger  offset=48
+  realtime start -> transport.play
+  realtime stop  -> transport.stop
+}

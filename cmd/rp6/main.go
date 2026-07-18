@@ -37,8 +37,6 @@ import (
 	"github.com/mono4loop/rp6/internal/effects"
 	"github.com/mono4loop/rp6/internal/emu"
 	"github.com/mono4loop/rp6/internal/midiin"
-	_ "github.com/mono4loop/rp6/internal/midiin/arturia"  // register the Arturia keyboard input drivers
-	_ "github.com/mono4loop/rp6/internal/midiin/macropad" // register the MacroPad input driver
 	"github.com/mono4loop/rp6/internal/recorder"
 	"github.com/mono4loop/rp6/internal/sequencer"
 	"github.com/mono4loop/rp6/internal/store"
@@ -137,14 +135,18 @@ type ui struct {
 	padGridFit     *components.ContentFit // sizes only the grid; the rack panel still fills its pane
 	padFloatBtn    *components.RackToggle
 	midiInBtn      *components.RackToggle
+	keysRouteBtn   *components.RackToggle
 	layoutBtn      *components.RackCycle
 	padLayout      padLayout   // how the 48 pads are paged across the grid
 	listenMIDI     atomic.Bool // reflect hardware pad presses in the UI
+	keysRoute      atomic.Bool // route external controller notes to the keyboard, not pads
 	padWin         fyne.Window // non-nil while the pad rack floats in its own window
 	padFloating    bool
 	playBtn        *components.TransportButton
 	tempo          *components.Knob
 	patternStep    *components.Knob
+	delayKnob      *components.Knob // DLY LVL — driven by external "delay.set" intents
+	reverbKnob     *components.Knob // REV LVL — driven by external "reverb.set" intents
 	fxRack         *effectsRack
 	keyboardFXRack *keyboardFXRack
 	seqRack        *sequencerRack
@@ -426,6 +428,7 @@ func (u *ui) build(w fyne.Window) {
 	delayLevel := u.fxKnob("DLY LVL", p6.CCDelayLevel)
 	reverbTime := u.fxKnob("REV TIME", p6.CCReverbTime)
 	reverbLevel := u.fxKnob("REV LVL", p6.CCReverbLevel)
+	u.delayKnob, u.reverbKnob = delayLevel, reverbLevel // external delay.set/reverb.set drive these
 	// Connection LED seated in the plate (black-bezel, like a mounted indicator),
 	// paired with the "P-6" nameplate as its lead; setConnected drives its color.
 	u.p6LED = components.NewLEDBordered(ledRed)
@@ -839,6 +842,12 @@ func (u *ui) buildPadRack() {
 	u.padFloatBtn.SetOn(u.padFloating)
 	u.midiInBtn = components.NewRackToggleIcon(theme.VisibilityIcon(), tool, u.toggleMIDIListen)
 	u.updateMIDIInBtn()
+	// Keyboard-routing toggle: when lit, external controller notes play the
+	// on-screen keyboard (pitching the selected sample) instead of triggering
+	// pads. Flip it when the controller is switched to a keyboard/note mode
+	// (e.g. the TempoPAD C16's KEYBOARD mode, which RP6 can't auto-detect).
+	u.keysRouteBtn = components.NewRackToggleIcon(keyboardIcon, tool, u.toggleKeysRoute)
+	u.keysRouteBtn.SetOn(u.keysRoute.Load())
 	// Layout selector: a 3-state cycle (paged A–D/E–H → two-bank A–B…G–H → dense
 	// all-8) whose icon shows the current density.
 	u.layoutBtn = components.NewRackCycle(layoutIcons, tool, func(s int) { u.setLayout(padLayout(s)) })
@@ -868,12 +877,13 @@ func (u *ui) buildPadRack() {
 	padRack := u.composeRack("pads", layoutspec.Registry{
 		"padFloat":   u.padFloatBtn,
 		"padListen":  u.midiInBtn,
+		"padKeys":    u.keysRouteBtn,
 		"padDensity": u.layoutBtn,
 		"store":      u.storeToggle,
 		"badge":      u.deviceBadge,
 		"padGrid":    u.padGridFit,
 	}, func() fyne.CanvasObject {
-		padTools := container.NewHBox(u.padFloatBtn, u.midiInBtn, u.layoutBtn,
+		padTools := container.NewHBox(u.padFloatBtn, u.midiInBtn, u.keysRouteBtn, u.layoutBtn,
 			layout.NewSpacer(), u.storeToggle, u.deviceBadge)
 		return components.NewRackPanel(container.NewBorder(padTools, nil, nil, nil, u.padGridFit))
 	})
@@ -2881,6 +2891,7 @@ func (u *ui) midiInHandlers() midiin.Handlers {
 				}
 			})
 		},
+		Dispatch: u.dispatchIntent,
 	}
 }
 
@@ -2938,6 +2949,13 @@ func (u *ui) playExternalNote(note, velocity uint8) {
 // current pad-grid layout (paged A-D/E-H, two-bank tabs, or the dense single
 // page).
 func (u *ui) gridPos(bank, number int) (page, row, col int) {
+	if u.padLayout == layoutTempoPad {
+		// Inverse of cellPadID for the TempoPad view: id -> (bank page, row, col)
+		// with the bottom row holding the lowest ids.
+		id := padID(bank, number)
+		phys := id % tempoBankPads
+		return id / tempoBankPads, tempoRows - 1 - phys/tempoCols, phys % tempoCols
+	}
 	bpp := banksForLayout(u.padLayout)
 	return bank / bpp, bank % bpp, number - 1
 }
@@ -2980,6 +2998,8 @@ func parsePadLayout(s string) (padLayout, bool) {
 		return layoutTwoBank, true
 	case "dense":
 		return layoutDense, true
+	case "tempopad":
+		return layoutTempoPad, true
 	default:
 		return 0, false
 	}
@@ -2995,6 +3015,27 @@ func (u *ui) toggleMIDIListen() {
 		u.setStatus("listening to MIDI input")
 	} else {
 		u.setStatus("ignoring MIDI input")
+	}
+}
+
+// toggleKeysRoute flips whether external controller notes drive the on-screen
+// keyboard (pitching the selected sample) instead of triggering pads. Use it
+// when the controller is in a keyboard/note mode RP6 can't detect (e.g. the
+// TempoPAD C16's KEYBOARD mode). Turning it on reveals the keyboard rack so the
+// routing target is visible.
+func (u *ui) toggleKeysRoute() {
+	on := !u.keysRoute.Load()
+	u.keysRoute.Store(on)
+	if u.keysRouteBtn != nil {
+		u.keysRouteBtn.SetOn(on)
+	}
+	if on {
+		if u.keyboardRack != nil && !u.keyboardRack.Object().Visible() {
+			u.setVisible(u.keyboardRack.Object(), u.keysBtn, true)
+		}
+		u.setStatus("controller → keyboard")
+	} else {
+		u.setStatus("controller → pads")
 	}
 }
 
@@ -3177,6 +3218,7 @@ func main() {
 	// MIDI a different way (see startAndroidMIDI); iOS has no MIDI path.
 	u.loadRecorder()
 	u.startAudio()
+	registerMIDIMaps() // register data-driven .midimap controllers (once)
 	if !onMobile {
 		u.startMIDIInput()
 		u.startDeviceWatch()

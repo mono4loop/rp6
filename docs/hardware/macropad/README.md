@@ -82,10 +82,11 @@ same pad regardless of what bank the P‑6 hardware currently has selected.
 - **Firmware** ([`code.py`](code.py)): a CircuitPython app that reads keys/
   encoder and emits USB MIDI. All device‑specific behavior (paging, LED colors,
   OLED) lives here.
-- **rp6 driver** (`internal/midiin/macropad`): translates incoming MIDI into
-  rp6 actions — Note On (48–95) → `TriggerPad(padID, velocity)`, realtime
-  Start/Stop → transport. It reuses `p6.ParseMIDI`, the same parser the P‑6
-  input uses.
+- **rp6 map** (`cmd/rp6/assets/midimaps/adafruit-macropad.midimap`): a
+  data-driven `.midimap` file served by the generic interpreter
+  (`internal/midiin/mapped`) — Note On (48–95) → `pad.trigger` (offset 48),
+  realtime Start/Stop → transport. It reuses `p6.ParseMIDI`, the same parser the
+  P‑6 input uses. (See `docs/architecture/midimaps.md`.)
 - **Framework** (`internal/midiin`): a small pluggable registry. Drivers
   `Register` themselves from `init()`, `main.go` blank‑imports the ones it
   supports, and `midiin.Detect()` opens whichever controller is plugged in. The

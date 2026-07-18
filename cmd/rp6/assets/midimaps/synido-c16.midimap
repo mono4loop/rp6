@@ -1,0 +1,25 @@
+// Synido TempoPAD C16 — RP6 MIDI map.
+//
+// Decoded from a real unit on factory defaults (see docs/architecture/midimaps.md
+// §10). Works out of the box for the 16 factory pads + transport + K1 + Fader 1;
+// to reach all 48 RP6 pads, reconfigure the device's PAD BANK B/C to emit notes
+// 52..67 and 68..83 (the `note 36..83` range below already covers that).
+device "Synido TempoPAD C16" {
+  match   "tempopad", "c16"
+  channel 1
+
+  // Pads: factory pads send notes 36..51 (bottom-left = 36); note 36 -> pad id 0.
+  // Aftertouch (0xA0) the pads also emit is ignored by the parser.
+  note 36..83            -> pad.trigger  offset=36
+
+  // Transport buttons: momentary CC (127 on press, 0 on release).
+  cc 97 when value=127   -> transport.play
+  cc 98 when value=127   -> transport.stop
+
+  // K1 knob (CC 9) and Fader 1 (CC 37) are factory-configured as absolute 0..127.
+  cc 9  abs              -> tempo.set
+  cc 37 abs              -> delay.set
+
+  // Spare (map as you like): REC button = CC 99; K/fader banks add more CCs.
+  // cc 99 when value=127 -> reverb.set
+}

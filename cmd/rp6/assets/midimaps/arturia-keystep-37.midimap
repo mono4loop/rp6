@@ -1,0 +1,10 @@
+// Arturia KeyStep 37 — a melodic USB keyboard. Its keys drive RP6's on-screen
+// keyboard (playing the selected sample pitched); realtime Start/Stop drive
+// transport.
+device "Arturia KeyStep 37" {
+  match "keystep"
+
+  note 0..127    -> note.play
+  realtime start -> transport.play
+  realtime stop  -> transport.stop
+}

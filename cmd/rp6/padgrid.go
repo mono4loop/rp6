@@ -23,10 +23,21 @@ const (
 	layoutTwoBank
 	// layoutDense shows all 8 banks on one page with half-size pads.
 	layoutDense
+	// layoutTempoPad mirrors a Synido TempoPAD C16: a 4×4 grid paged across four
+	// bank buttons (A–D). It maps the C16's note-linear layout onto RP6's pads
+	// (bank A→ids 0-15, B→16-31, C→32-47); bank D has no RP6 pad and is empty.
+	layoutTempoPad
 )
 
 // numLayouts is the number of pad layouts the layout selector cycles through.
-const numLayouts = 3
+const numLayouts = 4
+
+// TempoPad grid geometry: a 4×4 pad grid, 16 pads per bank page.
+const (
+	tempoRows     = 4
+	tempoCols     = 4
+	tempoBankPads = tempoRows * tempoCols // 16
+)
 
 // banksForLayout reports how many banks are shown per page in a layout.
 func banksForLayout(l padLayout) int {
@@ -73,9 +84,35 @@ var bankColors = [p6.NumBanks]color.Color{
 
 // cellBankPad maps a grid (page, row, col) to a P-6 0-based bank and 1-based pad
 // for the given layout. Each page holds banksForLayout(layout) banks stacked as
-// rows, so bank = page*banksPerPage_layout + row and pad = col+1.
+// rows, so bank = page*banksForLayout(l) + row and pad = col+1. (Not used for
+// layoutTempoPad, which maps cells to pad ids directly — see cellPadID.)
 func cellBankPad(l padLayout, page, row, col int) (bank, number int) {
 	return page*banksForLayout(l) + row, col + 1
+}
+
+// gridDims returns the pad grid's (rows, cols) for a layout.
+func gridDims(l padLayout) (rows, cols int) {
+	if l == layoutTempoPad {
+		return tempoRows, tempoCols
+	}
+	return banksForLayout(l), p6.PadsPerBank
+}
+
+// cellPadID maps a grid cell to a 0-based RP6 pad id, or -1 for an empty cell
+// (only the TempoPad view's bank D produces empties, since RP6 has just 48 pads).
+func cellPadID(l padLayout, page, row, col int) int {
+	if l == layoutTempoPad {
+		// Mirror the Synido C16 note layout: the bottom-left pad is the lowest
+		// note, rows stack upward, banks are 16 pads each (A:0-15, B:16-31,
+		// C:32-47). This matches the synido-c16.midimap note→pad mapping.
+		id := page*tempoBankPads + (tempoRows-1-row)*tempoCols + col
+		if id >= p6.NumPads {
+			return -1
+		}
+		return id
+	}
+	bank, number := cellBankPad(l, page, row, col)
+	return padID(bank, number)
 }
 
 // padID gives each of the 48 pads a stable 0-based id (used by the effects
@@ -121,37 +158,51 @@ func pagesForLayout(l padLayout) []string {
 		return []string{"A – B", "C – D", "E – F", "G – H"}
 	case layoutDense:
 		return []string{"Banks A – H"}
+	case layoutTempoPad:
+		return []string{"A", "B", "C", "D"}
 	default:
 		return []string{"Banks A – D", "Banks E – H"}
 	}
 }
 
 // newPadGrid configures the generic pad grid for the P-6 in the given layout:
-//   - layoutPaged:   4 banks/page, 2 tabs (A–D, E–H)
-//   - layoutTwoBank: 2 banks/page, 4 tabs (A–B, C–D, E–F, G–H)
-//   - layoutDense:   all 8 banks on one page with half-size pads
+//   - layoutPaged:    4 banks/page, 2 tabs (A–D, E–H)
+//   - layoutTwoBank:  2 banks/page, 4 tabs (A–B, C–D, E–F, G–H)
+//   - layoutDense:    all 8 banks on one page with half-size pads
+//   - layoutTempoPad: a 4×4 grid, 4 bank tabs (A–D), mirroring a Synido C16
 //
 // onTrigger receives a 0-based bank and 1-based pad number; badges returns the
-// effect icons for a pad.
+// effect icons for a pad. Empty cells (TempoPad bank D) are dark and inert.
 func newPadGrid(layout padLayout, onTrigger func(bank, number int), badges func(bank, number int) []image.Image) *components.PadGrid {
-	cell := func(page, row, col int) (bank, number int) {
-		return cellBankPad(layout, page, row, col)
-	}
+	rows, cols := gridDims(layout)
+	emptyFill := color.NRGBA{R: 0x1E, G: 0x1E, B: 0x1E, A: 0xFF}
 	cfg := components.PadGridConfig{
-		Rows:       banksForLayout(layout),
-		Cols:       p6.PadsPerBank, // 6 pads
+		Rows:       rows,
+		Cols:       cols,
 		Pages:      pagesForLayout(layout),
 		PageAccent: deviceHwAccent, // match the rack toggles
 		Cell: func(page, row, col int) (string, color.Color) {
-			bank, number := cell(page, row, col)
+			id := cellPadID(layout, page, row, col)
+			if id < 0 {
+				return "", emptyFill
+			}
+			bank, number := padBankNumber(id)
 			return p6.PadLabel(bank, number), bankColors[bank]
 		},
 		Badges: func(page, row, col int) []image.Image {
-			bank, number := cell(page, row, col)
+			id := cellPadID(layout, page, row, col)
+			if id < 0 {
+				return nil
+			}
+			bank, number := padBankNumber(id)
 			return badges(bank, number)
 		},
 		OnTrigger: func(page, row, col int) {
-			bank, number := cell(page, row, col)
+			id := cellPadID(layout, page, row, col)
+			if id < 0 {
+				return
+			}
+			bank, number := padBankNumber(id)
 			onTrigger(bank, number)
 		},
 		CellMinPixels: 80,
@@ -174,21 +225,24 @@ var layoutIcons = buildLayoutIcons()
 
 func buildLayoutIcons() []fyne.Resource {
 	icons := make([]fyne.Resource, numLayouts)
-	names := []string{"layout-paged.png", "layout-twobank.png", "layout-dense.png"}
+	names := []string{"layout-paged.png", "layout-twobank.png", "layout-dense.png", "layout-tempopad.png"}
 	for l := range numLayouts {
-		icons[l] = gridIconResource(names[l], banksForLayout(padLayout(l)))
+		if padLayout(l) == layoutTempoPad {
+			icons[l] = gridIconResource(names[l], tempoRows, tempoCols) // 4×4
+			continue
+		}
+		icons[l] = gridIconResource(names[l], banksForLayout(padLayout(l)), 3)
 	}
 	return icons
 }
 
-// gridIconResource renders a monochrome grid icon with rows rows × 3 columns of
-// cells and wraps it as a Fyne resource (drawn oversized for clean downscaling).
-func gridIconResource(name string, rows int) fyne.Resource {
+// gridIconResource renders a monochrome grid icon with rows×cols cells and wraps
+// it as a Fyne resource (drawn oversized for clean downscaling).
+func gridIconResource(name string, rows, cols int) fyne.Resource {
 	const (
 		size = 48 // canvas is square
-		cols = 3
-		pad  = 5 // outer padding
-		gap  = 3 // gap between cells
+		pad  = 5  // outer padding
+		gap  = 3  // gap between cells
 	)
 	fg := color.NRGBA{R: 0xE0, G: 0xE0, B: 0xE0, A: 0xFF}
 
@@ -216,4 +270,36 @@ func fillRect(img *image.NRGBA, x0, y0, w, h float64, c color.NRGBA) {
 			img.SetNRGBA(x, y, c)
 		}
 	}
+}
+
+// keyboardIcon is a small piano-keyboard glyph for the pad rack's "route to
+// keyboard" tool toggle (light-grey white keys with a few darker black keys).
+var keyboardIcon = buildKeyboardIcon()
+
+func buildKeyboardIcon() fyne.Resource {
+	const (
+		size  = 48
+		pad   = 6
+		white = 7 // white keys
+	)
+	fg := color.NRGBA{R: 0xE0, G: 0xE0, B: 0xE0, A: 0xFF} // white keys
+	bk := color.NRGBA{R: 0x60, G: 0x60, B: 0x60, A: 0xFF} // black keys
+
+	img := image.NewNRGBA(image.Rect(0, 0, size, size))
+	inner := float64(size - 2*pad)
+	keyW := inner / float64(white)
+	// White keys as vertical bars with a thin transparent gap between them.
+	for i := range white {
+		x0 := pad + float64(i)*keyW
+		fillRect(img, x0, float64(pad), keyW-1, inner, fg)
+	}
+	// Black keys sit on the top ~55%, between white keys (skip the E–F, B–C gaps).
+	blackH := inner * 0.55
+	for _, i := range []int{0, 1, 3, 4, 5} { // gaps after white keys 0,1,3,4,5
+		cx := pad + float64(i+1)*keyW
+		fillRect(img, cx-keyW*0.3, float64(pad), keyW*0.6, blackH, bk)
+	}
+	var buf bytes.Buffer
+	_ = png.Encode(&buf, img)
+	return fyne.NewStaticResource("keyboard.png", buf.Bytes())
 }

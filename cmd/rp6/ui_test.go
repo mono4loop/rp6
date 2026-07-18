@@ -405,6 +405,29 @@ func TestExternalKeyboardPlaysAndReveals(t *testing.T) {
 	assert.True(t, u.keysBtn.On())
 }
 
+func TestControllerKeysRouting(t *testing.T) {
+	u := newTestUI(t)
+	var buf bytes.Buffer
+	u.dev = p6.New(&buf, p6.DefaultConfig())
+	u.listenMIDI.Store(true)
+
+	// Keys-routing OFF (default): a mapped pad intent triggers the pad on the
+	// P-6 Sampler channel (default 11 -> 0x9A), and the keyboard stays hidden.
+	u.dispatchIntent(midiin.Intent{Name: "pad.trigger", Pad: 0, Note: 36, Velocity: 100})
+	require.NotEmpty(t, buf.Bytes())
+	assert.Equal(t, byte(0x9A), buf.Bytes()[0], "keys-routing off -> pad trigger")
+	assert.False(t, u.keyboardRack.Object().Visible())
+
+	// Keys-routing ON: the same kind of intent plays the raw note on the on-screen
+	// keyboard (Auto channel 15 -> 0x9E) instead, and reveals the keyboard rack.
+	u.toggleKeysRoute()
+	require.True(t, u.keysRoute.Load())
+	buf.Reset()
+	u.dispatchIntent(midiin.Intent{Name: "pad.trigger", Pad: 12, Note: 60, Velocity: 90})
+	assert.Equal(t, []byte{0x9E, 60, 90}, buf.Bytes(), "keys-routing on -> keyboard note")
+	assert.True(t, u.keyboardRack.Object().Visible())
+}
+
 func TestExternalKeyboardReflectsOctave(t *testing.T) {
 	u := newTestUI(t)
 	var buf bytes.Buffer
@@ -804,6 +827,10 @@ func TestLayoutCycle(t *testing.T) {
 	assert.Equal(t, layoutDense, u.padLayout)
 	assert.Len(t, u.grid.Pads(), 48, "all 8 banks x 6 pads on one page")
 
+	u.setLayout(layoutTempoPad)
+	assert.Equal(t, layoutTempoPad, u.padLayout)
+	assert.Len(t, u.grid.Pads(), 16, "TempoPad view is a 4x4 grid")
+
 	u.setLayout(layoutTwoBank)
 	assert.Equal(t, layoutTwoBank, u.padLayout)
 	assert.Len(t, u.grid.Pads(), 12)
@@ -825,7 +852,31 @@ func TestLayoutButtonCycles(t *testing.T) {
 	assert.Equal(t, layoutDense, u.padLayout)
 
 	u.layoutBtn.Tapped(nil)
+	assert.Equal(t, layoutTempoPad, u.padLayout)
+
+	u.layoutBtn.Tapped(nil)
 	assert.Equal(t, layoutPaged, u.padLayout, "wraps back to paged")
+}
+
+func TestTempoPadMapping(t *testing.T) {
+	// Cell -> pad id: bottom-left of bank A is the lowest note (A1); banks stack
+	// 16 pads (A:0-15, B:16-31, C:32-47); bank D has no RP6 pad.
+	assert.Equal(t, 0, cellPadID(layoutTempoPad, 0, 3, 0), "bank A bottom-left = A1 (id 0)")
+	assert.Equal(t, 3, cellPadID(layoutTempoPad, 0, 3, 3))
+	assert.Equal(t, 12, cellPadID(layoutTempoPad, 0, 0, 0), "bank A top-left")
+	assert.Equal(t, 15, cellPadID(layoutTempoPad, 0, 0, 3))
+	assert.Equal(t, 16, cellPadID(layoutTempoPad, 1, 3, 0), "bank B bottom-left")
+	assert.Equal(t, 47, cellPadID(layoutTempoPad, 2, 0, 3), "bank C top-right = last pad")
+	assert.Equal(t, -1, cellPadID(layoutTempoPad, 3, 3, 0), "bank D has no RP6 pad")
+
+	// gridPos is the exact inverse for every one of the 48 pads.
+	u := newTestUI(t)
+	u.padLayout = layoutTempoPad
+	for id := 0; id < p6.NumPads; id++ {
+		bank, number := padBankNumber(id)
+		page, row, col := u.gridPos(bank, number)
+		assert.Equal(t, id, cellPadID(layoutTempoPad, page, row, col), "round-trip id %d", id)
+	}
 }
 
 func TestLayoutPersists(t *testing.T) {
