@@ -1,5 +1,9 @@
 # RP6
 
+<p align="center">
+  <img src="web/vibecoded.svg" alt="Vibecoded: some or all of this code was written by AI and accepted on vibes" width="800">
+</p>
+
 A touch-friendly controller for the **Roland P-6** (AIRA Compact sampler). It
 also bundles a software sampler and step sequencer, so it works without the
 hardware too.
