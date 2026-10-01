@@ -3,7 +3,7 @@ module github.com/mono4loop/rp6
 go 1.26.4
 
 require (
-	fyne.io/fyne/v2 v2.8.0
+	fyne.io/fyne/v2 v2.8.1
 	github.com/gen2brain/malgo v0.11.25
 	github.com/mewkiz/flac v1.0.13
 	github.com/pion/webrtc/v4 v4.2.16
@@ -13,7 +13,7 @@ require (
 )
 
 require (
-	fyne.io/systray v1.12.2 // indirect
+	fyne.io/systray v1.12.3-0.20260810170012-af4e8e793ec4 // indirect
 	github.com/BurntSushi/toml v1.6.0 // indirect
 	github.com/FyshOS/fancyfs v0.0.1 // indirect
 	github.com/anthonynsimon/bild v0.14.0 // indirect
