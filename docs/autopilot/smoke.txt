@@ -1,0 +1,13 @@
+# Smoke check: the pads, the tempo knob and both pages respond.
+# On success RP6 quits; a step that fails stops the script and leaves it open.
+wait idle
+tap pads_cell_01
+tap pads_cell_02
+drag transport_tempo by 0 -40
+tap "LOOP"
+wait idle
+wait recorder_play
+tap "PLAY"
+wait idle
+wait pads_cell_01
+quit

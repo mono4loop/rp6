@@ -290,6 +290,7 @@ func (r *rackToggleRenderer) Layout(size fyne.Size) {
 		return
 	}
 	ts := r.t.txt.MinSize()
+	r.t.txt.Resize(ts)
 	r.t.txt.Move(fyne.NewPos((size.Width-ts.Width)/2, (size.Height-ts.Height)/2))
 }
 

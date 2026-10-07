@@ -6,6 +6,10 @@ BINARY_NAME := rp6
 #   migrated_fynedo opt into Fyne 2.8's fyne.Do threading model (all our
 #                   background->UI updates already go through fyne.Do), which
 #                   silences the startup migration warning
+#   autopilot       (off by default) let a script drive the UI, for demos and
+#                   smoke checks: FADE_AUTOPILOT=demo.txt with
+#                   `make run TAGS="capture wayland migrated_fynedo jam autopilot"`
+#                   (see docs/autopilot.md)
 # All three are on by default. Override for a different combination, e.g.
 # `make run TAGS=capture` (X11 driver) or `make run TAGS=wayland` (no audio).
 # Tests deliberately run without tags so Fyne's thread-safety checks stay on.
@@ -50,6 +54,9 @@ web:
 # ANDROID_ABI selects the target ABI: android/amd64 for the x86_64 emulator,
 # android/arm64 for phones, or `android` for all ABIs.
 ANDROID_ABI ?= android/amd64
+# ANDROID_TAGS are the build tags, comma-separated as fyne wants them; add
+# autopilot for a scripted on-device run (see docs/autopilot.md).
+ANDROID_TAGS ?= capture,migrated_fynedo
 
 # Signing/versioning for android-release. Override KEYSTORE/STOREPASS/KEYPASS
 # with your own for a real distribution; the defaults generate a throwaway dev
@@ -79,7 +86,7 @@ android:
 	echo "using NDK: $$ndk"; \
 	mkdir -p build/android; \
 	cd cmd/$(BINARY_NAME) && ANDROID_NDK_HOME="$$ndk" fyne package -os $(ANDROID_ABI) \
-		--tags "capture,migrated_fynedo" \
+		--tags "$(ANDROID_TAGS)" \
 		--icon ../../web/icon.png --app-id io.github.mono4loop.rp6 --name RP6 && \
 	mv -f RP6.apk ../../build/android/RP6.apk && \
 	echo "built build/android/RP6.apk"
@@ -107,7 +114,7 @@ android-release:
 	echo "      target-35 APK ourselves below. bundletool is NOT required for the APK."; \
 	mkdir -p build/android; \
 	( cd cmd/$(BINARY_NAME) && ANDROID_NDK_HOME="$$ndk" fyne release -os $(ANDROID_ABI) \
-		--tags "capture,migrated_fynedo" --icon ../../web/icon.png \
+		--tags "$(ANDROID_TAGS)" --icon ../../web/icon.png \
 		--app-id io.github.mono4loop.rp6 --name RP6 --app-version $(APP_VERSION) --app-build $(APP_BUILD) \
 		--keystore "$(KEYSTORE_PATH)" --keystore-pass $(STOREPASS) --key-name $(KEY_ALIAS) --key-pass $(KEYPASS) ) || true; \
 	[ -f cmd/$(BINARY_NAME)/RP6.apk ] || { echo "error: fyne release produced no APK"; exit 1; }; \

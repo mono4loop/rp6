@@ -22,7 +22,7 @@ jobs:
 
       - uses: actions/setup-go@v5
         with:
-          go-version: "1.26.x"
+          go-version: "1.27.x"
 
       # Fyne is cgo and links against OpenGL + X11 even for the headless test
       # driver, so the graphics dev headers must be present. The pinned GLFW

@@ -1,14 +1,15 @@
 module github.com/mono4loop/rp6
 
-go 1.26.4
+go 1.27.1
 
 require (
+	code.rbel.co/rubiojr/fade v0.12.5-0.20261006184108-0f61861a78a8
 	fyne.io/fyne/v2 v2.8.1
 	github.com/gen2brain/malgo v0.11.25
 	github.com/mewkiz/flac v1.0.13
 	github.com/pion/webrtc/v4 v4.2.16
 	github.com/stretchr/testify v1.11.1
-	golang.org/x/net v0.56.0
+	golang.org/x/net v0.59.0
 	modernc.org/sqlite v1.53.0
 )
 
@@ -20,7 +21,6 @@ require (
 	github.com/clipperhouse/uax29/v2 v2.2.0 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
-	github.com/fredbi/uri v1.1.1 // indirect
 	github.com/fsnotify/fsnotify v1.9.0 // indirect
 	github.com/fyne-io/gl-js v0.2.1-0.20260315212741-029c47fd27e8 // indirect
 	github.com/fyne-io/glfw-js v0.4.0 // indirect
@@ -66,15 +66,15 @@ require (
 	github.com/srwiley/rasterx v0.0.0-20220730225603-2ab79fcdd4ef // indirect
 	github.com/wlynxg/anet v0.0.5 // indirect
 	github.com/yuin/goldmark v1.8.2 // indirect
-	golang.org/x/crypto v0.53.0 // indirect
-	golang.org/x/image v0.42.0 // indirect
+	golang.org/x/crypto v0.57.0 // indirect
+	golang.org/x/image v0.46.0 // indirect
 	golang.org/x/mobile v0.0.0-20260611195102-4dd8f1dbf5d2 // indirect
-	golang.org/x/mod v0.37.0 // indirect
-	golang.org/x/sync v0.21.0 // indirect
-	golang.org/x/sys v0.46.0 // indirect
-	golang.org/x/text v0.38.0 // indirect
+	golang.org/x/mod v0.41.0 // indirect
+	golang.org/x/sync v0.23.0 // indirect
+	golang.org/x/sys v0.48.0 // indirect
+	golang.org/x/text v0.42.0 // indirect
 	golang.org/x/time v0.14.0 // indirect
-	golang.org/x/tools v0.46.0 // indirect
+	golang.org/x/tools v0.49.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 	modernc.org/libc v1.73.4 // indirect
 	modernc.org/mathutil v1.7.1 // indirect
@@ -82,3 +82,5 @@ require (
 )
 
 tool golang.org/x/mobile/cmd/gobind
+
+replace github.com/go-gl/glfw/v3.4/glfw => code.rbel.co/rubiojr/fade/third_party/glfw-touch v0.0.0-20261006184108-0f61861a78a8

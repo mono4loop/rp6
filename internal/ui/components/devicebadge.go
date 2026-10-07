@@ -191,7 +191,9 @@ func (r *deviceBadgeRenderer) Layout(size fyne.Size) {
 	tgH := r.b.tg.MinSize().Height
 	total := nmH + tgH - 2
 	top := (size.Height - total) / 2
+	r.b.nm.Resize(r.b.nm.MinSize())
 	r.b.nm.Move(fyne.NewPos(textX, top))
+	r.b.tg.Resize(r.b.tg.MinSize())
 	r.b.tg.Move(fyne.NewPos(textX, top+nmH-2))
 }
 

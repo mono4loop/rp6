@@ -473,6 +473,7 @@ func (r *knobRenderer) place(size fyne.Size) {
 	r.k.ring.Move(fyne.NewPos(8, (size.Height-rs)/2))
 
 	textX := 8 + rs + 12
+	r.k.label.Resize(r.k.label.MinSize())
 	r.k.label.Move(fyne.NewPos(textX, 8))
 
 	vs := r.k.valTxt.MinSize()

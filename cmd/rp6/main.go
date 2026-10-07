@@ -3243,5 +3243,6 @@ func main() {
 		a.Quit()
 	})
 
+	u.attachAutopilot() // no-op unless built with -tags autopilot and given a script
 	w.ShowAndRun()
 }

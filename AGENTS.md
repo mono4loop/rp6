@@ -135,6 +135,19 @@ in-app dialog. The WebRTC end-to-end tests are opt-in — set **`RP6_JAM_E2E=1`*
 (otherwise they skip, so `go test ./...` stays fast/hermetic). See §3 and
 `docs/architecture/jams.md`.
 
+**Autopilot** (off by default): **`-tags autopilot`** compiles in Fade's
+scripted UI driver (`code.rbel.co/rubiojr/fade/autopilot`), which runs the
+script `FADE_AUTOPILOT` names — taps, drags, typing — for demos and real-display
+/ on-device smoke checks. Script names are the inspection IDs with `_` for `.`
+(`sequencer_track_1_step_1`). Without the tag `Attach` is a no-op. Usage, limits
+and the Android flow: `docs/autopilot.md`. **`go.mod` replaces
+`github.com/go-gl/glfw/v3.4/glfw` with Fade's patched GLFW** (Wayland touch) for
+every build — the tagged build needs it, and keeping it on for all builds means
+they all run the same GLFW. Bump the `fade` requirement and the replacement to
+the same Fade commit together. Because of the `replace`,
+`go install github.com/mono4loop/rp6/cmd/rp6@<version>` doesn't work; build
+from a checkout (`make build` / `make install`).
+
 Manual quality gate used throughout development (run after edits):
 
 ```bash
@@ -347,6 +360,10 @@ cmd/rp6/pak.go        (desktop) sample-pak CLI (pak create/install/list), the -p
                     paksSamplesDir() seam (paksdir_desktop.go / paksdir_mobile.go)
                     is the one platform difference; pak_stub.go (web) / pak_mobile_stub.go
                     are the no-ops. Full design: docs/architecture/store.md
+cmd/rp6/autopilot.go  attaches Fade's autopilot to the main window (-tags
+                    autopilot; a no-op otherwise): Named resolves script names
+                    through inspectionTargets(), Idle = no sample pak loading
+                    (loadingSamples) and no relayout queued. See docs/autopilot.md
 ```
 
 ### The one rule that matters
@@ -539,7 +556,7 @@ selects the granular source A1..H6).
 
 ## 5. Go conventions
 
-- Go 1.26; module `github.com/mono4loop/rp6`.
+- Go 1.27 (`fade` requires 1.27.1); module `github.com/mono4loop/rp6`.
 - Format with `gofmt`/`go fmt`; keep `staticcheck` and `go vet` clean.
 - Errors: wrap with `%w` and a `p6:` prefix in the library.
 - Prefer small, testable units. `p6` has no I/O dependencies in tests
@@ -626,6 +643,12 @@ selects the granular source A1..H6).
 - Icons: don't rely on font glyphs for important shapes — the `▶`/`■` glyphs
   looked bad and don't render on web, so the transport Play triangle and Stop
   square are both drawn as antialiased images (`triangleImage` / `squareImage`).
+- **Size a renderer's `canvas.Text`, don't only `Move` it.** Fyne draws
+  zero-size text anyway, so nothing looks wrong, but autopilot (and anything
+  else that hit-tests by geometry) treats a zero-size object as not on screen —
+  `tap "TEMPO"` failed until the knob caption got `Resize(MinSize())`.
+  `TestCaptionsAreSized` guards the knob, rack toggle and device badge; add new
+  text-bearing widgets to it.
 - Theme: `internal/ui/theme.Amber` overrides `Primary/Hyperlink/Focus/Selection/
   Hover` to amber and forces the dark variant. Accent = `#E1873B` (bank-B
   orange) chosen so **white** text stays readable on highlighted buttons.
@@ -764,7 +787,10 @@ pads" facts were nailed down.
   x/y won't land on the right control (taps silently miss). Scripting taps by
   screenshot coords is unreliable — ask the human to tap and then screencap, or
   transform coords by the display rotation. `adb exec-out screencap -p` for
-  screenshots; the image is in the rotated (landscape) orientation.
+  screenshots; the image is in the rotated (landscape) orientation. To script
+  taps reliably, build with `ANDROID_TAGS=capture,migrated_fynedo,autopilot` and
+  push an autopilot script instead — it targets controls by name or text, not
+  coordinates (see `docs/autopilot.md`).
 - Fyne canvas sizes are in **density-independent units** (≈ Android dp), so the
   standard **`sw600dp` tablet breakpoint** works directly (`isTabletSize` = smallest
   side ≥ 600). The screen size isn't known until the first `onCanvasResize`, so
