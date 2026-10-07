@@ -71,19 +71,24 @@ page loop LOOP {
     }
   }
 
-  // LOOP on a phone (mobile portrait): the recorder above the pads, with the VU
-  // strip, page nav + toggles and status stacked along the bottom.
+  // LOOP on a phone (mobile portrait): the page nav rides beside TEMPO — the
+  // same place as on the PLAY page, so the keys don't jump between pages — with
+  // the recorder above the pads and the keyboard (optional), VU strip, toggles
+  // and status stacked along the bottom. See the PLAY page's `phone` variant for
+  // the phone's vertical budget.
   layout loop-phone when mobile {
     Border {
       top: VBox {
-        transport
+        Border {
+          left:   transport
+          center: pagenav
+        }
         rec(show: true, tracks: 4)
       }
-      center: pads if pads_visible
+      center: pads(layout: paged, expand: horizontal, cells: fill) if pads_visible
       bottom: VBox {
         keys
         vu(orientation: horizontal)
-        pagenav
         toggles
         status
       }

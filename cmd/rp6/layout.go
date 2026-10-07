@@ -134,6 +134,19 @@ func (u *ui) selectLayout(reg layoutspec.Registry) fyne.CanvasObject {
 	// active page's variants.
 	name, _ := u.layoutDoc.SelectedNameForPage(u.activePage, env)
 	u.variantChanged = name != u.activeVariant
+	if u.variantChanged {
+		// Leaving a variant undoes its `show:` overrides before the incoming one
+		// applies its own — however the switch happened. The toggle actions
+		// (setConsole, setPage) restore earlier and this is then a no-op; it
+		// matters for the resize-driven switch, which has no action to hook:
+		// on Android the first size event can arrive before gomobile knows the
+		// DPI (PixelsPerPt 0 → Fyne scale 1), so a phone's canvas first reads as
+		// its pixel size — tablet-class — and the tablet variant's paks/keys
+		// `show: true` otherwise leaked into the phone layout once the real
+		// scale settled. relayout runs serialized on the UI loop (relayoutWatch),
+		// so restoring here, before the build, can't race it.
+		u.restoreForcedRacks()
+	}
 	u.activeVariant = name
 	root := layoutspec.BuildConfig(reg, u.configureComponent, u.layoutDoc.SelectForPage(u.activePage, env))
 	u.variantChanged = false
@@ -163,8 +176,13 @@ func (u *ui) variantFor(size fyne.Size) string {
 //     toggles still work while that variant is showing.
 //   - seq(tracks: N)                         — the sequencer's default track count
 //     for this variant (also variant-entry only).
+//   - paks(rows: N)                          — how many pak keys the sample-pak
+//     list shows before scrolling (a short list for phones); reset by every
+//     relayout, so it only holds while a variant declaring it is shown.
 //   - pads(layout: paged|twobank|dense)      — the pad grid's default paging for
 //     this variant (variant-entry only; doesn't clobber the saved preference).
+//   - pads(cells: fill)                      — let the square pad cells grow past
+//     their 130px ceiling to fill the pane (phones); reset by every relayout.
 //   - pads/seq(expand: horizontal|vertical|both) — fill that axis with the rack
 //     frame (children stay natural size); applied every relayout.
 func (u *ui) configureComponent(id string, props map[string]string) {
@@ -181,6 +199,7 @@ func (u *ui) configureComponent(id string, props map[string]string) {
 		u.applyRackShow("keys", props, u.keyboardRack.Object(), u.keysBtn)
 	case "paks":
 		u.applyRackShow("paks", props, u.paksRack.Object(), u.paksBtn)
+		u.applyPaksRows(props)
 	case "rec":
 		u.applyRackShow("rec", props, u.recRack.Object(), u.recBtn)
 		u.applyDefaultRecorderTracks(props)
@@ -191,6 +210,7 @@ func (u *ui) configureComponent(id string, props map[string]string) {
 	case "pads":
 		u.applyDefaultPadLayout(props)
 		u.applyRackExpand(u.padRackObj, props)
+		u.applyPadCells(props)
 	}
 }
 
@@ -216,6 +236,32 @@ func parseExpand(s string) (horizontal, vertical bool) {
 		return true, true
 	default:
 		return false, false
+	}
+}
+
+// applyPaksRows records a `paks(rows: N)` property — the number of pak keys the
+// sample-pak list shows before it scrolls. It only records the request
+// (u.paksRows); relayout clears it before the build and applies it once after,
+// so a variant that references `paks` without the property (the Configurator
+// isn't called for bare references) resets the list to its default height —
+// the same reset-in-relayout pattern as the keyboard's tall mode.
+func (u *ui) applyPaksRows(props map[string]string) {
+	if v, ok := props["rows"]; ok {
+		if n, err := strconv.Atoi(v); err == nil {
+			u.paksRows = n
+		}
+	}
+}
+
+// applyPadCells records a `pads(cells: fill)` property — let the square pad
+// cells grow past their physical-pixel ceiling to fill the pane. Like
+// applyPaksRows it only records the request (u.padFill); relayout clears it
+// before the build and applies it to the grid after (the grid may also be
+// rebuilt mid-build by `layout:`, so applying here would be order-dependent),
+// and applyPadLayout/buildPadRack re-apply it whenever the grid is rebuilt.
+func (u *ui) applyPadCells(props map[string]string) {
+	if props["cells"] == "fill" {
+		u.padFill = true
 	}
 }
 

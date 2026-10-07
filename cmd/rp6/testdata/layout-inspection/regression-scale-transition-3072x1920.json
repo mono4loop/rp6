@@ -26,7 +26,7 @@
     },
     "scale": 2
   },
-  "imageSHA256": "4d58d99a71cfa4805603568ed24ad4dab4bfab487965698f606d5aa539eea730",
+  "imageSHA256": "75b4205d445b3f99b7c8d93bb08bcd34bb83122cf04e835511f38d3ee6ab6712",
   "elements": [
     {
       "id": "layout.root",
@@ -57,7 +57,7 @@
         "height": 1904
       },
       "minSize": {
-        "width": 1181.9531,
+        "width": 1217.9531,
         "height": 762.3125
       },
       "underMin": false,
@@ -390,7 +390,7 @@
         "height": 1353
       },
       "minSize": {
-        "width": 366,
+        "width": 402,
         "height": 283.70312
       },
       "underMin": false,
@@ -1540,19 +1540,19 @@
       "occurrences": 1,
       "duplicate": false,
       "rect": {
-        "x": 466.83536,
+        "x": 502.83536,
         "y": 16,
         "width": 32,
         "height": 46
       },
       "visibleRect": {
-        "x": 466.83536,
+        "x": 502.83536,
         "y": 16,
-        "width": 32,
+        "width": 31.99997,
         "height": 46
       },
       "pixelRect": {
-        "x": 933,
+        "x": 1005,
         "y": 32,
         "width": 64,
         "height": 92

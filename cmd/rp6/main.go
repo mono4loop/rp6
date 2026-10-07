@@ -194,6 +194,13 @@ type ui struct {
 	// previous page's toggles.
 	pageVis    map[string]map[string]bool
 	defaultVis map[string]bool
+	// paksRows is the `paks(rows: N)` bound the variant being built requested
+	// (0 = none); relayout clears it before the build and applies it after.
+	paksRows int
+	// padFill is the `pads(cells: fill)` request of the variant being built
+	// (phones): the pad cells grow past their 130px ceiling to fill the pane.
+	// Same reset-in-relayout lifecycle as paksRows; re-applied on grid rebuilds.
+	padFill bool
 
 	// mobileForTest/tabletForTest override the compile-time platform for the
 	// headless layout-inspection harness only (the real platform is a build-tag
@@ -508,9 +515,10 @@ func (u *ui) build(w fyne.Window) {
 	toggleObjs = append(toggleObjs, u.jamControls...)
 	toggles := container.NewHBox(toggleObjs...)
 	// Page-navigation strip (PLAY / LOOP …): a separate rack the layout places
-	// beside the toggles where there's room (desktop/tablet) or on its own row on
-	// phones, so the narrow phone bar isn't overfilled. Data-driven off the
-	// document's declared pages; nil (and absent from every layout) with <2 pages.
+	// beside the toggles where there's room (desktop/tablet) or beside TEMPO on
+	// phones (the narrow phone bar can't take both, and a row of its own would
+	// cost the pads height). Data-driven off the document's declared pages; nil
+	// (and absent from every layout) with <2 pages.
 	u.buildPageNav()
 
 	u.status = widget.NewLabel("")
@@ -597,6 +605,11 @@ func (u *ui) relayout() {
 	if u.keyboardRack != nil {
 		u.keyboardRack.setTall(u.isFullScreen())
 	}
+	// The sample-pak list's row bound (`paks(rows: N)`) is likewise reset here
+	// and re-requested by the variant's property during the build (see
+	// applyPaksRows), then applied once below.
+	u.paksRows = 0
+	u.padFill = false // `pads(cells: fill)` — same lifecycle; applied below
 	// Keep the CONSOLE toggle lit whenever the console layout is active, however
 	// it was entered (button, F11, or Ctrl+Shift+Enter).
 	if u.consoleBtn != nil {
@@ -620,6 +633,12 @@ func (u *ui) relayout() {
 	}
 
 	u.root = u.selectLayout(reg)
+	if u.paksRack != nil {
+		u.paksRack.setListRows(u.paksRows) // 0 (no property) restores the default
+	}
+	if u.grid != nil {
+		u.grid.SetFillCells(u.padFill) // false (no property) restores the ceiling
+	}
 	if u.root == nil {
 		// No document, or no variant matched: fall back to a minimal arrangement
 		// so the window is never blank.
@@ -828,6 +847,7 @@ func (s *sizeWatch) MinSize(objs []fyne.CanvasObject) fyne.Size {
 // rebuild is seamless.
 func (u *ui) buildPadRack() {
 	u.grid = newPadGrid(u.padLayout, u.onPadTrigger, u.padBadges)
+	u.grid.SetFillCells(u.padFill) // keep the variant's `cells: fill` across the rebuild
 	u.padGridArea = container.NewStack(u.grid.Object())
 	u.padGridFit = components.NewContentFit(u.padGridArea, func(available fyne.Size) fyne.Size {
 		const bottomInset = 8
@@ -2977,6 +2997,7 @@ func (u *ui) applyPadLayout(l padLayout, persist bool) {
 	}
 	u.padLayout = l
 	u.grid = newPadGrid(u.padLayout, u.onPadTrigger, u.padBadges)
+	u.grid.SetFillCells(u.padFill) // keep the variant's `cells: fill` across the rebuild
 	u.padGridArea.Objects = []fyne.CanvasObject{u.grid.Object()}
 	u.padGridArea.Refresh()
 	if u.layoutBtn != nil {

@@ -7,3 +7,4 @@
 *.apk
 /rp6-release.keystore
 /rp6-signal
+/.claude

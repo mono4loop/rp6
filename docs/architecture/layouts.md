@@ -218,12 +218,27 @@ what they mean:
   variant (`applyDefaultPadLayout` → `applyPadLayout` **without persisting**, so it
   doesn't clobber the user's density-button preference). Variant-entry only. The
   window variant uses `twobank` (12 pads, four A–B…G–H tabs); console/tablet `paged`.
+- **`pads(cells: fill)`** — let the square pad cells grow past their 130
+  physical-pixel ceiling to fill the pane (`PadGrid.SetFillCells` →
+  `PhysicalGrid.SetFill`); whichever of the pane's width or height binds sets
+  the side, so they stay square and never paint outside the rack, and the 80px
+  floor is unchanged. Reset on every relayout (the same lifecycle as
+  `paks(rows:)`) and re-applied when the grid is rebuilt for a density change.
+  The phone variants use it: with nothing stacked above, a Pixel's pads are
+  width-bound at ~175–185px; with PAKS + KEYS shown they are height-bound and
+  settle back around 120–150px. Every other variant keeps the ceiling.
+- **`paks(rows: N)`** — how many pak keys the sample-pak list shows before it
+  scrolls (`paksRack.setListRows`). Applied on every relayout (idempotent), so a
+  variant without it resets the list to its default 150-unit minimum. The phone
+  variant uses `rows: 2`: stacked above the pads, a 150-unit list (mostly empty
+  with few paks) was what crushed the pads on the Pixels.
 - **`pads/seq(expand: horizontal|vertical|both)`** — fill that axis of the
   allocation with the **rack frame** while its children stay their natural size,
   centered (`applyRackExpand` → `ContentFit.SetExpand`; doesn't change MinSize, so
   it never forces the window larger). Applied every relayout (idempotent), so a
-  variant without it resets the rack to content-sized. The window variant sets
-  `pads(expand: horizontal)` so the pad rack fills the fixed window width.
+  variant without it resets the rack to content-sized. The window and phone
+  variants set `pads(expand: horizontal)` so the pad rack's frame fills the
+  width like every other rack in the stack (the grid stays centred inside).
 
 The window's fixed size + full-screen console interaction is covered in §8; the
 per-variant default set (which properties each variant declares) is in §4.
@@ -250,6 +265,16 @@ the fullscreen *intent* (not pixel size) and its proportional splits reflow as
 the window settles — the synchronous relayout in `setConsole` is authoritative,
 and `onCanvasResize` only rebuilds if the discrete variant actually changes (see
 §9 / `variantFor`).
+
+**The Android first-size gotcha.** gomobile's event loop can deliver the first
+size event before it has read the display density (`PixelsPerPt` 0), which Fyne
+turns into scale 1 — so for one layout pass a phone's canvas is its *pixel* size
+(1344×2992 on a Pixel 10 Pro XL), i.e. tablet-class, and the `tablet` variant is
+selected before the real 3x scale arrives and `phone` replaces it. Any `show:`
+override the transient variant applied must therefore be undone on the way out:
+`selectLayout` calls `restoreForcedRacks` whenever the selected variant changes
+(a resize-driven switch has no toggle action to do it). Before that, the tablet's
+`paks`/`keys(show: true)` leaked into every phone launch.
 
 ## 9. Files & app wiring
 
@@ -317,10 +342,17 @@ they remain stable across drawing refactors and will also identify future pages.
 
 Phone native resolutions are converted to Fyne logical units with the Android
 driver's DPI bucket: both Pixel targets in `resolutions.txt` fall in Fyne's 3x
-bucket. The JSON retains both coordinate spaces and the PNG is native-pixel
-sized. Desktop captures use scale 1 because `resolutions.txt` does not specify
-desktop DPI/scaling; add explicit scale scenarios if those displays run at a
-different OS scale.
+bucket. **The phone scenarios measure the app's content area, not the panel**:
+Fyne's mobile driver lays the app out in the canvas's `InteractiveArea` (the
+panel less Android's status bar / display cutout and gesture-navigation insets)
+and pads it by `theme.Padding()` on every side, so `phoneInsets` (200px + 72px
++ 12px of padding per side, read from the Pixel's `dumpsys window`) is taken
+off the native size first — the phone PNGs are therefore that content area
+(e.g. 1320×2696 for the Pro XL), not the full screen. Before this the harness
+was ~90dp taller than the phone and passed layouts the device crammed. The JSON
+retains both coordinate spaces. Desktop captures use scale 1 because
+`resolutions.txt` does not specify desktop DPI/scaling; add explicit scale
+scenarios if those displays run at a different OS scale.
 
 Fyne 2.8 exposes `fyne.Accessible` (label + button/container/link/text role) but
 no stable automation ID or public accessibility-tree traversal. RP6 custom
@@ -348,13 +380,22 @@ Current validated targets (the `resolutions.txt` set — one scenario each in
 | ThinkPad X13 850×950 window | `window` | transport, pads, VU, navigation, status |
 | ThinkPad X13 1920×1200 full screen | `console` | transport, VU, paks, pad FX, docked sequencer, pads, keyboard, navigation, status |
 | Asus ROG 3440×1440 full screen | `console` | transport, VU, paks, pad FX, docked sequencer, pads, keyboard, navigation, status |
-| Pixel 10 Pro XL 1344×2992 | `phone` | transport, pads, VU, navigation, status |
-| Pixel 10 Pro 1280×2856 | `phone` | transport, pads, VU, navigation, status |
+| Pixel 10 Pro XL 1344×2992 | `phone` | transport + page nav, pads, VU, navigation, status |
+| Pixel 10 Pro XL 1344×2992 (`-racks-`) | `phone` | the same with the PAKS + KEYS racks toggled on |
+| Pixel 10 Pro 1280×2856 | `phone` | transport + page nav, pads, VU, navigation, status |
+| Pixel 10 Pro 1280×2856 (`-racks-`) | `phone` | the same with the PAKS + KEYS racks toggled on |
 | OnePlus Pad 3 3392×2400 | `tablet` | transport, VU, paks, sequencer, pads, keyboard, navigation, status |
 
-The phone scenarios intentionally leave the sequencer, keyboard, effects and
-sample-pak browser off; they do not fit while preserving the 32-unit touch
-contract. The desktop console puts pad FX at the bottom of the left rail instead
+The phone's clean scenarios leave the sequencer, keyboard, effects and sample-pak
+browser off (the sequencer is wider than the screen and never fits); the
+`-racks-` scenarios toggle PAKS + KEYS on above the pads — the state the Pixel
+was found crammed in — and prove the 4×6 pads keep their 80–130px size with both
+stacked. The phone budget is vertical: the page nav rides beside TEMPO rather
+than on its own bottom row, and the pak list is bounded to two keys
+(`paks(rows: 2)`). With any two of PAKS / FX / KEYS shown the pads stay at full
+size on both Pixels; all three at once on the smaller Pro is the one phone state
+that drops them below the floor (a 60px cell), which is left to degrade rather
+than hiding a rack. The desktop console puts pad FX at the bottom of the left rail instead
 of reserving a mostly-empty full-height right rail, and its active sequencer
 track/bar rows expand to consume available height. The rack set for each variant
 is **fixed** — a size that is too small for it simply isn't a supported target;
@@ -379,7 +420,10 @@ their square-row height; when they exceed the fitted panel height, the existing
 vertical track scroller exposes the overflow.
 
 Resolution contracts assert the physical square ranges directly from each
-manifest's `pixelRect`, allowing one pixel for raster edge rounding. The
+manifest's `pixelRect`, allowing one pixel for raster edge rounding. The phone
+scenarios use a wider range (the floor stays 80px; the ceiling is what the pane
+allows) because their variant lifts the 130px ceiling with `pads(cells: fill)`.
+The
 If a pane cannot provide the 80px preferred pad floor, cells still shrink to the
 allocation rather than painting outside the rack. The inspection contracts catch
 that degraded size separately. On Wayland, the app polls the effective framebuffer
@@ -436,8 +480,9 @@ it's defined entirely in the layout file. The mechanism, end to end:
    §4/§9). PLAY is first, so it's the default page.
 4. **Navigation.** `buildPageNav` builds one backlit `RackToggle` per page (the
    active one lit), framed as its own `pagenav` rack the layout positions —
-   *left of* the section toggles where there's room (desktop/tablet), on its
-   **own row** on the narrow phone bar. `setPage(id)` restores the outgoing
+   *left of* the section toggles where there's room (desktop/tablet), **beside
+   TEMPO** on phones (the narrow phone bar can't take both, and a row of its own
+   would cost the pads height). `setPage(id)` restores the outgoing
    page's `show:` overrides (like leaving the console), sets `activePage`,
    persists it (`ui.page` preference), relights the nav, and relays out.
    Keyboard: **Ctrl+Shift+Left/Right** cycle pages.

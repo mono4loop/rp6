@@ -17,6 +17,7 @@ type PhysicalGrid struct {
 	cols          int
 	minPixels     float32
 	maxPixels     float32
+	fill          bool // grow past maxPixels to fill the allocation (still square)
 	padding       float32
 	objects       []fyne.CanvasObject
 	physicalScale func(fyne.CanvasObject) float32
@@ -46,6 +47,22 @@ func NewPhysicalGrid(cols int, minPixels, maxPixels float32, objects ...fyne.Can
 	g.Object = container.New(&physicalGridLayout{grid: g}, objects...)
 	return g
 }
+
+// SetFill lifts the maxPixels ceiling so the square cells grow to whatever the
+// allocation allows (its width or height, whichever binds); off restores the
+// configured ceiling. The minimum floor is unaffected. Use it where the grid is
+// the main surface and spare space is better spent on bigger cells than left
+// empty (a phone's pad grid); the ceiling stays the default elsewhere.
+func (g *PhysicalGrid) SetFill(on bool) {
+	if g.fill == on {
+		return
+	}
+	g.fill = on
+	g.Object.Refresh()
+}
+
+// Fill reports whether the cells grow past maxPixels to fill the allocation.
+func (g *PhysicalGrid) Fill() bool { return g.fill }
 
 // SetPadding sets the logical gap between cells.
 func (g *PhysicalGrid) SetPadding(padding float32) {
@@ -100,7 +117,10 @@ func (g *PhysicalGrid) sideFor(available fyne.Size, rows int) float32 {
 	minimum := g.logicalPixels(g.minPixels)
 	maximum := g.logicalPixels(g.maxPixels)
 	if fit == float32(math.MaxFloat32) {
-		return maximum
+		return maximum // no allocation to fill: the configured ceiling, even in fill mode
+	}
+	if g.fill {
+		maximum = fit // square cells sized by whichever of width/height binds
 	}
 	// Never exceed the allocation. The minimum is a preferred/touch floor used
 	// by parent layout negotiation and inspection contracts, not permission to

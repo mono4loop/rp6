@@ -56,6 +56,46 @@ func TestPhysicalGridFillsWidthWithinBounds(t *testing.T) {
 	assert.Equal(t, fyne.NewSize(103, 103), grid.PreferredSize(fyne.NewSize(1000, 1000)))
 }
 
+// TestPhysicalGridFillGrowsPastCeiling checks SetFill: the square cells grow to
+// whatever the allocation allows (its tighter axis binding) instead of stopping
+// at maxPixels, never paint outside it, keep the configured ceiling when there
+// is no allocation to fill, and go back to the ceiling when fill is turned off.
+func TestPhysicalGridFillGrowsPastCeiling(t *testing.T) {
+	objects := make([]fyne.CanvasObject, 24)
+	for i := range objects {
+		objects[i] = canvas.NewRectangle(color.White)
+	}
+	grid := NewPhysicalGrid(6, 80, 130, objects...)
+	grid.physicalScale = func(fyne.CanvasObject) float32 { return 1 }
+	pad := grid.padding
+
+	// Capped: a wide, tall pane still yields 130px cells.
+	wide := fyne.NewSize(1200, 1000)
+	assert.InDelta(t, 6*130+5*pad, grid.PreferredSize(wide).Width, 0.01)
+
+	grid.SetFill(true)
+	require.True(t, grid.Fill())
+	// Width binds: 6 columns across 1200 - 5 gaps.
+	want := (1200 - 5*pad) / 6
+	assert.InDelta(t, 6*want+5*pad, grid.PreferredSize(wide).Width, 0.01)
+	assert.InDelta(t, 4*want+3*pad, grid.PreferredSize(wide).Height, 0.01)
+	// Height binds when it is the tighter axis: 4 rows in 400 - 3 gaps.
+	short := fyne.NewSize(1200, 400)
+	wantH := (400 - 3*pad) / 4
+	assert.InDelta(t, 6*wantH+5*pad, grid.PreferredSize(short).Width, 0.01)
+	// Laid out, the cells are square and inside the allocation.
+	grid.Object.Resize(short)
+	last := objects[len(objects)-1]
+	assert.InDelta(t, wantH, last.Size().Width, 0.01)
+	assert.InDelta(t, last.Size().Width, last.Size().Height, 0.01)
+	assert.LessOrEqual(t, last.Position().Y+last.Size().Height, short.Height+0.01)
+	// No allocation to fill: the configured ceiling, not infinity.
+	assert.InDelta(t, 6*130+5*pad, grid.PreferredSize(fyne.Size{}).Width, 0.01)
+
+	grid.SetFill(false)
+	assert.InDelta(t, 6*130+5*pad, grid.PreferredSize(wide).Width, 0.01)
+}
+
 func TestPhysicalGridNeverEscapesConstrainedAllocation(t *testing.T) {
 	objects := make([]fyne.CanvasObject, 6)
 	for i := range objects {

@@ -121,28 +121,59 @@ page play PLAY {
     }
   }
 
-  // Phone (mobile portrait): the VU strip, page nav and toggles sit along the
-  // bottom; the racks stack down the top.
+  // Phone (mobile portrait — the Pixel 10 Pro / Pro XL): a 419-440dp-wide and
+  // only ~850-900dp-tall canvas once Android's status bar and gesture nav are
+  // taken out, so vertical space is the whole game. The pads own the centre and
+  // everything else is kept as short as possible, so toggling a rack on doesn't
+  // crush them:
+  //
+  //   - the PLAY/LOOP page nav rides beside TEMPO (which needs ~200dp of the
+  //     width) instead of taking its own row at the bottom;
+  //   - the sample-pak list shows two keys before scrolling (`paks(rows: 2)`)
+  //     rather than the 150dp list the desktop stacks;
+  //   - the optional racks stack above the pads — the kit picker up top, the
+  //     play surfaces (FX, keyboard) next to the pads — with the VU strip, the
+  //     toggles and the status bar along the bottom;
+  //   - the pad rack's frame fills the width like every other rack
+  //     (`expand: horizontal`) and the square pads grow past their usual
+  //     130px ceiling to use it (`cells: fill`) — width-bound with nothing else
+  //     shown, height-bound (so still ≥ 80px) once racks stack above them.
+  //
+  // With any two of PAKS / FX / KEYS shown the pads keep their full 130px size
+  // on both Pixels; only all three at once on the smaller Pro drops them below
+  // the 80px floor. The sequencer is wider than the screen, so it stays off.
+  //
+  //   ┌─────────────┬────────────┐
+  //   │  transport  │  pagenav   │
+  //   ├─────────────┴────────────┤
+  //   │  paks / fx / keys (opt.) │
+  //   ├──────────────────────────┤
+  //   │           pads           │
+  //   ├──────────────────────────┤
+  //   │   vu / toggles / status  │
+  //   └──────────────────────────┘
   layout phone when mobile {
     Border {
       top: VBox {
-        transport
+        Border {
+          left:   transport
+          center: pagenav
+        }
         p6 if p6_active
+        paks(rows: 2)
         fx
         keysfx if !p6_active
         keys
-        paks
         seq if !seq_docked
       }
       center: Split {
         horizontal: true
         offset: 0.5
-        leading:  pads if pads_visible
+        leading:  pads(layout: paged, expand: horizontal, cells: fill) if pads_visible
         trailing: seq if seq_docked
       }
       bottom: VBox {
         vu(orientation: horizontal)
-        pagenav
         toggles
         status
       }
