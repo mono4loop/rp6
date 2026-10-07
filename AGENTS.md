@@ -77,7 +77,9 @@ class-compliant **USB MIDI** port:
   (see the bottom-bar toggles below).
 - **Application pages** (`docs/architecture/layouts.md` §12): the UI is split into
   named pages, only one attached to the canvas at a time, switched by backlit
-  **PLAY / LOOP** keys at the start of the bottom bar (also **Ctrl+Shift+←/→**).
+  **PLAY / LOOP** keys at the start of the bottom bar — beside TEMPO on phones,
+  where the bottom bar is too narrow and every row costs the pads height — (also
+  **Ctrl+Shift+←/→**).
   **PLAY** is the default page (pads, sequencer, effects, paks); **LOOP** holds
   the **recorder / looper** (`internal/recorder`, `cmd/rp6/recorderrack.go`) — 4
   tracks by default (`defaultRecorderTracks`), raised per variant via the layout
@@ -600,11 +602,18 @@ selects the granular source A1..H6).
   left**, or force-shown racks leak into the next layout (they cram its stacks and
   push content off-screen). `applyRackShow` records each forced rack's prior
   visibility in `u.forced` (keyed by id, generic — any rack any variant forces);
-  `setConsole` restores them on the way out. Do the restore in the **single-
-  threaded toggle action, not inside `relayout`** — a resize-driven relayout can
-  otherwise hide racks mid-build and (in tests) race the shaper. Also: after a
-  synchronous relayout that handled a full-screen flip, set `u.lastFullScreen`
-  yourself so `onCanvasResize` doesn't fire a *second*, redundant relayout.
+  `setConsole` / `setPage` restore them on the way out, and `selectLayout` also
+  restores them whenever the selected variant **changes** (before the build, on
+  the serialized UI loop) — that second hook is what catches the **resize-driven**
+  switch, which has no toggle action: on Android the first size event can reach
+  Fyne before gomobile has read the DPI (`PixelsPerPt` 0 → scale 1), so a phone's
+  canvas first reads as its *pixel* size (1344×2992 = tablet-class), the tablet
+  variant is entered, and its `paks`/`keys(show: true)` used to leak into the
+  phone layout once the real scale settled (PAKS + KEYS on at every launch).
+  Never restore *mid-build* or from an ad-hoc goroutine (the shaper race). Also:
+  after a synchronous relayout that handled a full-screen flip, set
+  `u.lastFullScreen` yourself so `onCanvasResize` doesn't fire a *second*,
+  redundant relayout.
 - **Don't move a CanvasObject tree between windows — rebuild it.** Fyne keys the
   object→canvas association in a global 1:1 map (`internal/cache/canvases.go`,
   `SetCanvasForObject` uses `LoadOrStore`), so re-parenting the *same* tree to a
@@ -695,7 +704,9 @@ selects the granular source A1..H6).
   effective canvas pixel mapping into logical sizes. Normal pads prefer 80-130
   physical pixels, dense pads 65-75, and sequencer steps 40-50. Permit one pixel
   for edge rounding. The grid must never exceed its allocation even when the
-  preferred floor cannot fit.
+  preferred floor cannot fit. The phone variants lift the 130px ceiling with
+  `pads(cells: fill)` (cells grow, square, to whatever the pane allows), so
+  their contracts use a wider range with the same 80px floor.
 - **Late Wayland scale changes require a real relayout.** Fyne's content-scale
   callback updates framebuffer scale and repaints but does not guarantee layout.
   RP6 polls effective `PixelCoordinateForPosition` scale from the main-started

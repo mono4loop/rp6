@@ -118,6 +118,20 @@ func NewPadGrid(cfg PadGridConfig) *PadGrid {
 // Object returns the CanvasObject to place in a layout.
 func (g *PadGrid) Object() fyne.CanvasObject { return g.obj }
 
+// SetFillCells lets the square cells grow past CellMaxPixels to fill the space
+// the grid is given (see PhysicalGrid.SetFill); off restores the ceiling. No-op
+// for a grid built without physical-pixel bounds.
+func (g *PadGrid) SetFillCells(on bool) {
+	if g.grid == nil {
+		return
+	}
+	g.grid.SetFill(on)
+}
+
+// FillCells reports whether the cells grow past CellMaxPixels to fill the grid's
+// allocation.
+func (g *PadGrid) FillCells() bool { return g.grid != nil && g.grid.Fill() }
+
 // PreferredSize returns the tightly-packed page selector + square grid size for
 // an available allocation. Unbounded legacy grids return their MinSize.
 func (g *PadGrid) PreferredSize(available fyne.Size) fyne.Size {

@@ -30,6 +30,7 @@ type layoutScenario struct {
 	console      bool
 	mobile       bool
 	tablet       bool
+	insets       screenInsets // pixels the platform keeps content out of (phones: phoneInsets)
 	configure    func(*ui)
 	required     []string
 	hidden       []string
@@ -40,6 +41,24 @@ type layoutScenario struct {
 	padPixels    [2]int
 	stepPixels   [2]int
 }
+
+// screenInsets are the physical pixels a platform keeps app content out of, so
+// a scenario measures the area the app really lays out in rather than the panel.
+type screenInsets struct{ top, right, bottom, left int }
+
+// apply returns the content area left of a panel size after the insets.
+func (in screenInsets) apply(p uiinspect.PixelSize) uiinspect.PixelSize {
+	return uiinspect.PixelSize{Width: p.Width - in.left - in.right, Height: p.Height - in.top - in.bottom}
+}
+
+// phoneInsets is what an Android phone takes off its panel before Fyne lays the
+// app out: the status bar / display cutout (200px on the Pixel 10 Pro and Pro
+// XL, per `dumpsys window`), the gesture navigation bar (72px), and the mobile
+// driver padding the content by theme.Padding (4dp = 12px at 3x) on every side
+// (Fyne's mobile canvas sizes content to its InteractiveArea). Without these the
+// harness is ~90dp taller than the phone and passes layouts the device crams —
+// which is how the phone layout regressed.
+var phoneInsets = screenInsets{top: 200 + 12, right: 12, bottom: 72 + 12, left: 12}
 
 // layoutScenarios mirror resolutions.txt: the fixed set of supported form
 // factors (see docs/architecture/layouts.md). Each target maps to exactly one
@@ -121,14 +140,31 @@ var layoutScenarios = []layoutScenario{
 		pixel:      uiinspect.PixelSize{Width: 1344, Height: 2992},
 		scale:      3,
 		mobile:     true,
+		insets:     phoneInsets,
 		configure:  phoneScene,
 		required:   []string{"rack.transport", "rack.pads", "rack.vu", "rack.navigation", "rack.status"},
 		hidden:     []string{"rack.p6", "rack.pad-fx", "rack.keys-fx", "rack.sequencer", "rack.keyboard", "rack.paks"},
 		fit:        []string{"rack.transport", "rack.pads", "rack.vu", "rack.navigation", "rack.status", "pads.grid"},
 		overlaps:   []string{"rack.transport", "rack.pads", "rack.vu", "rack.navigation", "rack.status"},
 		touch:      phoneTouchTargets(),
-		notes:      []string{"486 ppi maps to Fyne's Android 3x scale bucket; logical canvas is 448x997.3. Sequencer and optional racks are left off."},
-		padPixels:  [2]int{80, 130},
+		notes:      []string{"486 ppi maps to Fyne's Android 3x scale bucket; the app's content area is 440x898.7 once the status bar, gesture nav and driver padding are taken off the 448x997.3 panel (phoneInsets). Page nav beside TEMPO; sequencer and optional racks left off; the pads fill the rack width (pads(cells: fill), 184px cells)."},
+		padPixels:  [2]int{165, 190},
+	},
+	{
+		name:       "pixel-10-pro-xl-racks-1344x2992",
+		formFactor: "phone-portrait-racks",
+		pixel:      uiinspect.PixelSize{Width: 1344, Height: 2992},
+		scale:      3,
+		mobile:     true,
+		insets:     phoneInsets,
+		configure:  phoneRacksScene,
+		required:   []string{"rack.transport", "rack.paks", "rack.keyboard", "rack.pads", "rack.vu", "rack.navigation", "rack.status"},
+		hidden:     []string{"rack.p6", "rack.pad-fx", "rack.keys-fx", "rack.sequencer"},
+		fit:        []string{"rack.transport", "rack.paks", "rack.keyboard", "rack.pads", "rack.vu", "rack.navigation", "rack.status", "pads.grid", "paks.list", "keyboard.keys"},
+		overlaps:   []string{"rack.transport", "rack.paks", "rack.keyboard", "rack.pads", "rack.vu", "rack.navigation", "rack.status"},
+		touch:      phoneTouchTargets(),
+		notes:      []string{"Pixel 10 Pro XL with the PAKS + KEYS racks toggled on above the pads — the state the phone was found crammed in. The two-key pak list (paks(rows: 2)) and the page nav beside TEMPO leave the 4x6 pads height-bound but still above their usual 130px ceiling."},
+		padPixels:  [2]int{80, 190},
 	},
 	{
 		name:       "pixel-10-pro-1280x2856",
@@ -136,14 +172,31 @@ var layoutScenarios = []layoutScenario{
 		pixel:      uiinspect.PixelSize{Width: 1280, Height: 2856},
 		scale:      3,
 		mobile:     true,
+		insets:     phoneInsets,
 		configure:  phoneScene,
 		required:   []string{"rack.transport", "rack.pads", "rack.vu", "rack.navigation", "rack.status"},
 		hidden:     []string{"rack.p6", "rack.pad-fx", "rack.keys-fx", "rack.sequencer", "rack.keyboard", "rack.paks"},
 		fit:        []string{"rack.transport", "rack.pads", "rack.vu", "rack.navigation", "rack.status", "pads.grid"},
 		overlaps:   []string{"rack.transport", "rack.pads", "rack.vu", "rack.navigation", "rack.status"},
 		touch:      phoneTouchTargets(),
-		notes:      []string{"495 ppi maps to Fyne's Android 3x scale bucket; logical canvas is 426.7x952. Sequencer and optional racks are left off."},
-		padPixels:  [2]int{80, 130},
+		notes:      []string{"495 ppi maps to Fyne's Android 3x scale bucket; the app's content area is 418.7x853.3 once the status bar, gesture nav and driver padding are taken off the 426.7x952 panel (phoneInsets). Page nav beside TEMPO; sequencer and optional racks left off; the pads fill the rack width (pads(cells: fill), 173px cells)."},
+		padPixels:  [2]int{165, 190},
+	},
+	{
+		name:       "pixel-10-pro-racks-1280x2856",
+		formFactor: "phone-portrait-racks",
+		pixel:      uiinspect.PixelSize{Width: 1280, Height: 2856},
+		scale:      3,
+		mobile:     true,
+		insets:     phoneInsets,
+		configure:  phoneRacksScene,
+		required:   []string{"rack.transport", "rack.paks", "rack.keyboard", "rack.pads", "rack.vu", "rack.navigation", "rack.status"},
+		hidden:     []string{"rack.p6", "rack.pad-fx", "rack.keys-fx", "rack.sequencer"},
+		fit:        []string{"rack.transport", "rack.paks", "rack.keyboard", "rack.pads", "rack.vu", "rack.navigation", "rack.status", "pads.grid", "paks.list", "keyboard.keys"},
+		overlaps:   []string{"rack.transport", "rack.paks", "rack.keyboard", "rack.pads", "rack.vu", "rack.navigation", "rack.status"},
+		touch:      phoneTouchTargets(),
+		notes:      []string{"The smaller Pixel 10 Pro with the PAKS + KEYS racks toggled on above the pads: the tightest supported phone state (height-bound, ~123px cells). Adding the FX rack on top of these two is the one phone state that drops the pads below the 80px floor."},
+		padPixels:  [2]int{80, 190},
 	},
 	{
 		name:       "oneplus-pad-3-3392x2400",
@@ -203,14 +256,15 @@ var layoutScenarios = []layoutScenario{
 		pixel:      uiinspect.PixelSize{Width: 1344, Height: 2992},
 		scale:      3,
 		mobile:     true,
-		configure:  loopScene,
+		insets:     phoneInsets,
+		configure:  loopPhoneScene,
 		required:   []string{"rack.transport", "rack.recorder", "rack.pads", "rack.vu", "rack.navigation", "rack.status"},
 		hidden:     []string{"rack.p6", "rack.pad-fx", "rack.keys-fx", "rack.sequencer", "rack.keyboard", "rack.paks"},
 		fit:        []string{"rack.transport", "rack.recorder", "rack.pads", "rack.vu", "rack.navigation", "rack.status", "pads.grid"},
 		overlaps:   []string{"rack.transport", "rack.recorder", "rack.pads", "rack.vu", "rack.navigation", "rack.status"},
-		touch:      loopTouchTargets(),
-		notes:      []string{"LOOP page on a phone (Pixel 10 Pro XL): the recorder above the pads, VU + page nav + toggles along the bottom."},
-		padPixels:  [2]int{80, 130},
+		touch:      withoutConsole(loopTouchTargets()),
+		notes:      []string{"LOOP page on a phone (Pixel 10 Pro XL, content area less phoneInsets): page nav beside TEMPO, the recorder above the pads (height-bound pads, ~145px), VU + toggles along the bottom."},
+		padPixels:  [2]int{80, 190},
 	},
 	{
 		name:       "oneplus-pad-3-loop-3392x2400",
@@ -310,7 +364,10 @@ func captureLayoutScenario(t *testing.T, scenario layoutScenario) uiinspect.Bund
 		u.activePage = scenario.page // navigate to the scenario's page before the first relayout
 		u.updatePageNav()            // light the active page's key (setPage does this in the app)
 	}
-	logical := fyne.NewSize(float32(scenario.pixel.Width)/scenario.scale, float32(scenario.pixel.Height)/scenario.scale)
+	// The content area is the panel less the insets the platform keeps content
+	// out of (phones: phoneInsets), converted to logical units by the scale.
+	area := scenario.insets.apply(scenario.pixel)
+	logical := fyne.NewSize(float32(area.Width)/scenario.scale, float32(area.Height)/scenario.scale)
 	u.relayout()
 	if scenario.configure != nil {
 		scenario.configure(u)
@@ -339,7 +396,7 @@ func captureLayoutScenario(t *testing.T, scenario layoutScenario) uiinspect.Bund
 
 	bundle, err := uiinspect.CaptureBundle(w.Canvas(), u.inspectionMetadata(scenario.name, scenario.formFactor, scenario.notes...), u.inspectionTargets())
 	require.NoError(t, err)
-	assert.Equal(t, scenario.pixel, bundle.Snapshot.Canvas.Pixel)
+	assert.Equal(t, area, bundle.Snapshot.Canvas.Pixel)
 
 	if updateLayoutArtifacts() {
 		dir := filepath.Join("testdata", "layout-inspection")
@@ -410,12 +467,20 @@ func tabletScene(u *ui) {
 	u.setStatus("emulator online - tablet layout scene")
 }
 
-func phoneScene(u *ui) {
-	// JAM is not compiled into Android/iOS builds; hide the desktop-only test
-	// process's contribution so this scene measures the real mobile control set.
+// hideDesktopOnlyControls removes the bottom-bar controls a phone build doesn't
+// compile or place — the JAM toggles (desktop-only) and the CONSOLE key (omitted
+// on mobile, see build) — from the desktop test process, so a phone scene
+// measures the real phone bottom bar. The CONSOLE key alone is 87dp, enough to
+// overfill the Pixel 10 Pro's bar.
+func hideDesktopOnlyControls(u *ui) {
 	for _, control := range u.jamControls {
 		control.Hide()
 	}
+	u.consoleBtn.Hide()
+}
+
+func phoneScene(u *ui) {
+	hideDesktopOnlyControls(u)
 	u.setVisible(u.fxRack.Object(), u.padFXBtn, false)
 	u.setVisible(u.keyboardFXRack.Object(), u.keysFXBtn, false)
 	u.setVisible(u.seqRack.Object(), u.seqBtn, false)
@@ -425,6 +490,38 @@ func phoneScene(u *ui) {
 	u.setVisible(u.meterArea, u.meterBtn, true)
 	u.setConnected(true)
 	u.setStatus("emulator online")
+}
+
+// phoneRacksScene is the phone with the optional PAKS + KEYS racks toggled on
+// above the pads — the state the Pixel 10 Pro XL was found crammed in — with a
+// few paks installed, so the contract proves the pads keep their physical size
+// with both racks stacked above them.
+func phoneRacksScene(u *ui) {
+	phoneScene(u)
+	u.setVisible(u.paksRack.Object(), u.paksBtn, true)
+	u.setVisible(u.keyboardRack.Object(), u.keysBtn, true)
+	u.paksRack.lister = inspectionPakItems
+	u.paksRack.refresh("/kits/modular-hits")
+	u.setStatus("emulator online - paks + keys shown")
+}
+
+// loopPhoneScene is loopScene on a phone, less the controls a phone build
+// doesn't have (see hideDesktopOnlyControls).
+func loopPhoneScene(u *ui) {
+	loopScene(u)
+	hideDesktopOnlyControls(u)
+}
+
+// withoutConsole drops the CONSOLE key from a touch-target list for the phone
+// scenes, where it's hidden (see hideDesktopOnlyControls).
+func withoutConsole(ids []string) []string {
+	out := make([]string, 0, len(ids))
+	for _, id := range ids {
+		if id != "navigation.console" {
+			out = append(out, id)
+		}
+	}
+	return out
 }
 
 // loopScene sets up the LOOP page (the recorder is force-shown by the loop
@@ -470,9 +567,11 @@ func desktopTouchTargets() []string {
 	}, activePadIDs(24)...)
 }
 
+// phoneTouchTargets are the phone's finger targets: the rack toggles (no CONSOLE
+// key on mobile), the pad tools and the 24 visible pad cells.
 func phoneTouchTargets() []string {
 	return append([]string{
-		"navigation.play", "navigation.p6", "navigation.fx", "navigation.paks", "navigation.vu", "navigation.console",
+		"navigation.play", "navigation.p6", "navigation.fx", "navigation.paks", "navigation.vu",
 		"pads.float", "pads.listen", "pads.layout", "pads.store", "pads.device",
 	}, activePadIDs(24)...)
 }

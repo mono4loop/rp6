@@ -12,21 +12,21 @@
       "sequencerDocked": false
     },
     "notes": [
-      "495 ppi maps to Fyne's Android 3x scale bucket; logical canvas is 426.7x952. Sequencer and optional racks are left off."
+      "495 ppi maps to Fyne's Android 3x scale bucket; the app's content area is 418.7x853.3 once the status bar, gesture nav and driver padding are taken off the 426.7x952 panel (phoneInsets). Page nav beside TEMPO; sequencer and optional racks left off; the pads fill the rack width (pads(cells: fill), 173px cells)."
     ]
   },
   "canvas": {
     "logical": {
-      "width": 426.66666,
-      "height": 952
+      "width": 418.66666,
+      "height": 853.3333
     },
     "pixel": {
-      "width": 1280,
-      "height": 2856
+      "width": 1256,
+      "height": 2560
     },
     "scale": 3
   },
-  "imageSHA256": "74676c9eaaee08336b06c748a659eec3e2ab54a5230f2d88baa1a758bdb0b0ce",
+  "imageSHA256": "17ccdc0aba1dd30de3c755fe7f6ce3531f80e489547720eb46d534a1b24e85ae",
   "elements": [
     {
       "id": "layout.root",
@@ -41,24 +41,24 @@
       "rect": {
         "x": 4,
         "y": 4,
-        "width": 418.66666,
-        "height": 944
+        "width": 410.66666,
+        "height": 845.3333
       },
       "visibleRect": {
         "x": 4,
         "y": 4,
-        "width": 418.66666,
-        "height": 944
+        "width": 410.66666,
+        "height": 845.3333
       },
       "pixelRect": {
         "x": 12,
         "y": 12,
-        "width": 1256,
-        "height": 2832
+        "width": 1232,
+        "height": 2536
       },
       "minSize": {
-        "width": 413.20312,
-        "height": 492.8958
+        "width": 402,
+        "height": 492.52603
       },
       "underMin": false,
       "clipped": false,
@@ -77,19 +77,19 @@
       "rect": {
         "x": 4,
         "y": 4,
-        "width": 418.66666,
+        "width": 200,
         "height": 82
       },
       "visibleRect": {
         "x": 4,
         "y": 4,
-        "width": 418.66666,
+        "width": 200,
         "height": 82
       },
       "pixelRect": {
         "x": 12,
         "y": 12,
-        "width": 1256,
+        "width": 600,
         "height": 246
       },
       "minSize": {
@@ -222,19 +222,19 @@
         "x": 4,
         "y": 90,
         "width": 775.40625,
-        "height": 309.60156
+        "height": 310
       },
       "visibleRect": {
         "x": 4,
         "y": 90,
-        "width": 422.66666,
-        "height": 309.60156
+        "width": 414.66666,
+        "height": 310
       },
       "pixelRect": {
         "x": 12,
         "y": 270,
         "width": 2326,
-        "height": 928
+        "height": 930
       },
       "minSize": {
         "width": 538.34375,
@@ -355,7 +355,7 @@
       },
       "minSize": {
         "width": 194,
-        "height": 252.15625
+        "height": 173.5625
       },
       "underMin": false,
       "clipped": false,
@@ -374,31 +374,31 @@
       "rect": {
         "x": 4,
         "y": 90,
-        "width": 418.66666,
-        "height": 620.1406
+        "width": 410.66666,
+        "height": 583.17706
       },
       "visibleRect": {
         "x": 4,
         "y": 90,
-        "width": 418.66666,
-        "height": 620.1406
+        "width": 410.66666,
+        "height": 583.17706
       },
       "pixelRect": {
         "x": 12,
         "y": 270,
-        "width": 1256,
-        "height": 1860
+        "width": 1232,
+        "height": 1749
       },
       "minSize": {
-        "width": 366,
-        "height": 169.03645
+        "width": 402,
+        "height": 230.36978
       },
       "underMin": false,
       "clipped": false,
       "annotated": true,
       "state": {
         "floating": false,
-        "layout": 1,
+        "layout": 0,
         "page": 0
       }
     },
@@ -414,20 +414,20 @@
       "duplicate": false,
       "rect": {
         "x": 4,
-        "y": 714.1406,
-        "width": 418.66666,
+        "y": 677.17706,
+        "width": 410.66666,
         "height": 59.078125
       },
       "visibleRect": {
         "x": 4,
-        "y": 714.1406,
-        "width": 418.66666,
+        "y": 677.17706,
+        "width": 410.66666,
         "height": 59.078125
       },
       "pixelRect": {
         "x": 12,
-        "y": 2142,
-        "width": 1256,
+        "y": 2031,
+        "width": 1232,
         "height": 177
       },
       "minSize": {
@@ -450,24 +450,24 @@
       "duplicate": false,
       "rect": {
         "x": 4,
-        "y": 838.9219,
-        "width": 418.66666,
+        "y": 740.2552,
+        "width": 410.66666,
         "height": 60
       },
       "visibleRect": {
         "x": 4,
-        "y": 838.9219,
-        "width": 418.66666,
+        "y": 740.2552,
+        "width": 410.66666,
         "height": 60
       },
       "pixelRect": {
         "x": 12,
-        "y": 2516,
-        "width": 1256,
+        "y": 2220,
+        "width": 1232,
         "height": 180
       },
       "minSize": {
-        "width": 413.20312,
+        "width": 322.14062,
         "height": 60
       },
       "underMin": false,
@@ -486,20 +486,20 @@
       "duplicate": false,
       "rect": {
         "x": 4,
-        "y": 902.9219,
-        "width": 418.66666,
+        "y": 804.2552,
+        "width": 410.66666,
         "height": 45.078125
       },
       "visibleRect": {
         "x": 4,
-        "y": 902.9219,
-        "width": 418.66666,
+        "y": 804.2552,
+        "width": 410.66666,
         "height": 45.078125
       },
       "pixelRect": {
         "x": 12,
-        "y": 2708,
-        "width": 1256,
+        "y": 2412,
+        "width": 1232,
         "height": 136
       },
       "minSize": {
@@ -718,7 +718,7 @@
       "visibleRect": {
         "x": 26,
         "y": 102,
-        "width": 400.66666,
+        "width": 392.66666,
         "height": 58
       },
       "pixelRect": {
@@ -753,7 +753,7 @@
       "visibleRect": {
         "x": 26,
         "y": 164,
-        "width": 400.66666,
+        "width": 392.66666,
         "height": 34
       },
       "pixelRect": {
@@ -783,19 +783,19 @@
         "x": 26,
         "y": 202,
         "width": 731.40625,
-        "height": 185.60156
+        "height": 186
       },
       "visibleRect": {
         "x": 26,
         "y": 202,
-        "width": 400.66666,
-        "height": 185.60156
+        "width": 392.66666,
+        "height": 186
       },
       "pixelRect": {
         "x": 78,
         "y": 606,
         "width": 2194,
-        "height": 556
+        "height": 558
       },
       "minSize": {
         "width": 306.3333,
@@ -1014,8 +1014,8 @@
       "visibleRect": {
         "x": 422,
         "y": 102,
-        "width": 4.6666565,
-        "height": 58
+        "width": 0,
+        "height": 0
       },
       "pixelRect": {
         "x": 1266,
@@ -1331,7 +1331,7 @@
       },
       "minSize": {
         "width": 150,
-        "height": 150
+        "height": 71.40625
       },
       "underMin": false,
       "clipped": true
@@ -1540,19 +1540,19 @@
       "occurrences": 1,
       "duplicate": false,
       "rect": {
-        "x": 98,
+        "x": 134,
         "y": 102,
         "width": 32,
         "height": 46
       },
       "visibleRect": {
-        "x": 98,
+        "x": 134,
         "y": 102,
         "width": 32,
         "height": 46
       },
       "pixelRect": {
-        "x": 294,
+        "x": 402,
         "y": 306,
         "width": 96,
         "height": 138
@@ -1564,7 +1564,7 @@
       "underMin": false,
       "clipped": false,
       "state": {
-        "state": 1
+        "state": 0
       }
     },
     {
@@ -1578,19 +1578,19 @@
       "occurrences": 1,
       "duplicate": false,
       "rect": {
-        "x": 186.66666,
+        "x": 178.66666,
         "y": 102,
         "width": 32,
         "height": 46
       },
       "visibleRect": {
-        "x": 186.66666,
+        "x": 178.66666,
         "y": 102,
         "width": 32,
         "height": 46
       },
       "pixelRect": {
-        "x": 560,
+        "x": 536,
         "y": 306,
         "width": 96,
         "height": 138
@@ -1618,19 +1618,19 @@
       "occurrences": 1,
       "duplicate": false,
       "rect": {
-        "x": 222.66666,
+        "x": 214.66666,
         "y": 102,
         "width": 178,
         "height": 46
       },
       "visibleRect": {
-        "x": 222.66666,
+        "x": 214.66666,
         "y": 102,
         "width": 178,
         "height": 46
       },
       "pixelRect": {
-        "x": 668,
+        "x": 644,
         "y": 306,
         "width": 534,
         "height": 138
@@ -1656,26 +1656,26 @@
       "occurrences": 1,
       "duplicate": false,
       "rect": {
-        "x": 73.33333,
+        "x": 26,
         "y": 152,
-        "width": 280,
-        "height": 128.36978
+        "width": 366.66666,
+        "height": 280.8142
       },
       "visibleRect": {
-        "x": 73.33333,
+        "x": 26,
         "y": 152,
-        "width": 280,
-        "height": 128.36978
+        "width": 366.66666,
+        "height": 280.8142
       },
       "pixelRect": {
-        "x": 219,
+        "x": 78,
         "y": 456,
-        "width": 841,
-        "height": 385
+        "width": 1100,
+        "height": 842
       },
       "minSize": {
-        "width": 246.375,
-        "height": 95.03645
+        "width": 205.78125,
+        "height": 156.36978
       },
       "underMin": false,
       "clipped": false
@@ -1692,20 +1692,20 @@
       "duplicate": false,
       "rect": {
         "x": 65.671875,
-        "y": 726.1406,
-        "width": 334.99478,
+        "y": 689.17706,
+        "width": 326.99478,
         "height": 35.078125
       },
       "visibleRect": {
         "x": 65.671875,
-        "y": 726.1406,
-        "width": 334.99478,
+        "y": 689.17706,
+        "width": 326.99478,
         "height": 35.078125
       },
       "pixelRect": {
         "x": 197,
-        "y": 2178,
-        "width": 1005,
+        "y": 2067,
+        "width": 981,
         "height": 105
       },
       "minSize": {
@@ -1727,19 +1727,19 @@
       "duplicate": false,
       "rect": {
         "x": 26,
-        "y": 850.9219,
+        "y": 752.2552,
         "width": 32,
         "height": 36
       },
       "visibleRect": {
         "x": 26,
-        "y": 850.9219,
+        "y": 752.2552,
         "width": 32,
         "height": 36
       },
       "pixelRect": {
         "x": 78,
-        "y": 2552,
+        "y": 2256,
         "width": 96,
         "height": 108
       },
@@ -1767,19 +1767,19 @@
       "duplicate": false,
       "rect": {
         "x": 62,
-        "y": 850.9219,
+        "y": 752.2552,
         "width": 45.78125,
         "height": 36
       },
       "visibleRect": {
         "x": 62,
-        "y": 850.9219,
+        "y": 752.2552,
         "width": 45.78125,
         "height": 36
       },
       "pixelRect": {
         "x": 186,
-        "y": 2552,
+        "y": 2256,
         "width": 137,
         "height": 108
       },
@@ -1807,19 +1807,19 @@
       "duplicate": false,
       "rect": {
         "x": 111.78125,
-        "y": 850.9219,
+        "y": 752.2552,
         "width": 41.8125,
         "height": 36
       },
       "visibleRect": {
         "x": 111.78125,
-        "y": 850.9219,
+        "y": 752.2552,
         "width": 41.8125,
         "height": 36
       },
       "pixelRect": {
         "x": 335,
-        "y": 2552,
+        "y": 2256,
         "width": 125,
         "height": 108
       },
@@ -1847,19 +1847,19 @@
       "duplicate": false,
       "rect": {
         "x": 157.59375,
-        "y": 850.9219,
+        "y": 752.2552,
         "width": 58.265625,
         "height": 36
       },
       "visibleRect": {
         "x": 157.59375,
-        "y": 850.9219,
+        "y": 752.2552,
         "width": 58.265625,
         "height": 36
       },
       "pixelRect": {
         "x": 472,
-        "y": 2552,
+        "y": 2256,
         "width": 175,
         "height": 108
       },
@@ -1887,19 +1887,19 @@
       "duplicate": false,
       "rect": {
         "x": 219.85938,
-        "y": 850.9219,
+        "y": 752.2552,
         "width": 44.28125,
         "height": 36
       },
       "visibleRect": {
         "x": 219.85938,
-        "y": 850.9219,
+        "y": 752.2552,
         "width": 44.28125,
         "height": 36
       },
       "pixelRect": {
         "x": 659,
-        "y": 2552,
+        "y": 2256,
         "width": 133,
         "height": 108
       },
@@ -1921,25 +1921,25 @@
       "label": "Toggle console layout",
       "role": "button",
       "present": true,
-      "selfVisible": true,
-      "effectiveVisible": true,
+      "selfVisible": false,
+      "effectiveVisible": false,
       "occurrences": 1,
       "duplicate": false,
       "rect": {
         "x": 268.14062,
-        "y": 850.9219,
+        "y": 752.2552,
         "width": 87.0625,
         "height": 36
       },
       "visibleRect": {
         "x": 268.14062,
-        "y": 850.9219,
+        "y": 752.2552,
         "width": 87.0625,
         "height": 36
       },
       "pixelRect": {
         "x": 804,
-        "y": 2552,
+        "y": 2256,
         "width": 261,
         "height": 108
       },
@@ -1966,22 +1966,22 @@
       "occurrences": 1,
       "duplicate": false,
       "rect": {
-        "x": 4,
-        "y": 777.21875,
-        "width": 418.66666,
-        "height": 57.703125
+        "x": 208,
+        "y": 4,
+        "width": 206.66666,
+        "height": 82
       },
       "visibleRect": {
-        "x": 4,
-        "y": 777.21875,
-        "width": 418.66666,
-        "height": 57.703125
+        "x": 208,
+        "y": 4,
+        "width": 206.66666,
+        "height": 82
       },
       "pixelRect": {
-        "x": 12,
-        "y": 2331,
-        "width": 1256,
-        "height": 173
+        "x": 624,
+        "y": 12,
+        "width": 620,
+        "height": 246
       },
       "minSize": {
         "width": 167.75,
@@ -2005,22 +2005,22 @@
       "occurrences": 1,
       "duplicate": false,
       "rect": {
-        "x": 26,
-        "y": 789.21875,
+        "x": 230,
+        "y": 16,
         "width": 57.8125,
-        "height": 33.703125
+        "height": 58
       },
       "visibleRect": {
-        "x": 26,
-        "y": 789.21875,
+        "x": 230,
+        "y": 16,
         "width": 57.8125,
-        "height": 33.703125
+        "height": 58
       },
       "pixelRect": {
-        "x": 78,
-        "y": 2367,
+        "x": 690,
+        "y": 48,
         "width": 173,
-        "height": 101
+        "height": 174
       },
       "minSize": {
         "width": 57.8125,
@@ -2046,22 +2046,22 @@
       "occurrences": 1,
       "duplicate": false,
       "rect": {
-        "x": 87.8125,
-        "y": 789.21875,
+        "x": 291.8125,
+        "y": 16,
         "width": 61.9375,
-        "height": 33.703125
+        "height": 58
       },
       "visibleRect": {
-        "x": 87.8125,
-        "y": 789.21875,
+        "x": 291.8125,
+        "y": 16,
         "width": 61.9375,
-        "height": 33.703125
+        "height": 58
       },
       "pixelRect": {
-        "x": 263,
-        "y": 2367,
+        "x": 875,
+        "y": 48,
         "width": 186,
-        "height": 101
+        "height": 174
       },
       "minSize": {
         "width": 61.9375,
@@ -3047,22 +3047,22 @@
       "occurrences": 1,
       "duplicate": false,
       "rect": {
-        "x": 73.33333,
+        "x": 26,
         "y": 189.70312,
-        "width": 43.33333,
-        "height": 43.33333
+        "width": 57.77777,
+        "height": 57.77777
       },
       "visibleRect": {
-        "x": 73.33333,
+        "x": 26,
         "y": 189.70312,
-        "width": 43.33333,
-        "height": 43.33333
+        "width": 57.77777,
+        "height": 57.77777
       },
       "pixelRect": {
-        "x": 219,
+        "x": 78,
         "y": 569,
-        "width": 130,
-        "height": 130
+        "width": 173,
+        "height": 173
       },
       "minSize": {
         "width": 1,
@@ -3087,22 +3087,22 @@
       "occurrences": 1,
       "duplicate": false,
       "rect": {
-        "x": 120.66666,
+        "x": 87.77777,
         "y": 189.70312,
-        "width": 43.33333,
-        "height": 43.33333
+        "width": 57.77777,
+        "height": 57.77777
       },
       "visibleRect": {
-        "x": 120.66666,
+        "x": 87.77777,
         "y": 189.70312,
-        "width": 43.33333,
-        "height": 43.33333
+        "width": 57.77777,
+        "height": 57.77777
       },
       "pixelRect": {
-        "x": 361,
+        "x": 263,
         "y": 569,
-        "width": 130,
-        "height": 130
+        "width": 173,
+        "height": 173
       },
       "minSize": {
         "width": 1,
@@ -3127,22 +3127,22 @@
       "occurrences": 1,
       "duplicate": false,
       "rect": {
-        "x": 167.99998,
+        "x": 149.55554,
         "y": 189.70312,
-        "width": 43.33333,
-        "height": 43.33333
+        "width": 57.77777,
+        "height": 57.77777
       },
       "visibleRect": {
-        "x": 167.99998,
+        "x": 149.55554,
         "y": 189.70312,
-        "width": 43.33333,
-        "height": 43.33333
+        "width": 57.77777,
+        "height": 57.77777
       },
       "pixelRect": {
-        "x": 503,
+        "x": 448,
         "y": 569,
-        "width": 130,
-        "height": 130
+        "width": 173,
+        "height": 173
       },
       "minSize": {
         "width": 1,
@@ -3167,22 +3167,22 @@
       "occurrences": 1,
       "duplicate": false,
       "rect": {
-        "x": 215.33331,
+        "x": 211.33331,
         "y": 189.70312,
-        "width": 43.33333,
-        "height": 43.33333
+        "width": 57.77777,
+        "height": 57.77777
       },
       "visibleRect": {
-        "x": 215.33331,
+        "x": 211.33331,
         "y": 189.70312,
-        "width": 43.333313,
-        "height": 43.33333
+        "width": 57.77777,
+        "height": 57.77777
       },
       "pixelRect": {
-        "x": 645,
+        "x": 633,
         "y": 569,
-        "width": 130,
-        "height": 130
+        "width": 174,
+        "height": 173
       },
       "minSize": {
         "width": 1,
@@ -3207,22 +3207,22 @@
       "occurrences": 1,
       "duplicate": false,
       "rect": {
-        "x": 262.66663,
+        "x": 273.11108,
         "y": 189.70312,
-        "width": 43.33333,
-        "height": 43.33333
+        "width": 57.77777,
+        "height": 57.77777
       },
       "visibleRect": {
-        "x": 262.66663,
+        "x": 273.11108,
         "y": 189.70312,
-        "width": 43.333313,
-        "height": 43.33333
+        "width": 57.77777,
+        "height": 57.77777
       },
       "pixelRect": {
-        "x": 787,
+        "x": 819,
         "y": 569,
-        "width": 130,
-        "height": 130
+        "width": 173,
+        "height": 173
       },
       "minSize": {
         "width": 1,
@@ -3247,22 +3247,22 @@
       "occurrences": 1,
       "duplicate": false,
       "rect": {
-        "x": 309.99997,
+        "x": 334.88885,
         "y": 189.70312,
-        "width": 43.33333,
-        "height": 43.33333
+        "width": 57.77777,
+        "height": 57.77777
       },
       "visibleRect": {
-        "x": 309.99997,
+        "x": 334.88885,
         "y": 189.70312,
-        "width": 43.333344,
-        "height": 43.33333
+        "width": 57.77777,
+        "height": 57.77777
       },
       "pixelRect": {
-        "x": 929,
+        "x": 1004,
         "y": 569,
-        "width": 131,
-        "height": 130
+        "width": 173,
+        "height": 173
       },
       "minSize": {
         "width": 1,
@@ -3287,22 +3287,22 @@
       "occurrences": 1,
       "duplicate": false,
       "rect": {
-        "x": 73.33333,
-        "y": 237.03645,
-        "width": 43.33333,
-        "height": 43.33333
+        "x": 26,
+        "y": 251.4809,
+        "width": 57.77777,
+        "height": 57.77777
       },
       "visibleRect": {
-        "x": 73.33333,
-        "y": 237.03645,
-        "width": 43.33333,
-        "height": 43.33333
+        "x": 26,
+        "y": 251.4809,
+        "width": 57.77777,
+        "height": 57.77777
       },
       "pixelRect": {
-        "x": 219,
-        "y": 711,
-        "width": 130,
-        "height": 130
+        "x": 78,
+        "y": 754,
+        "width": 173,
+        "height": 173
       },
       "minSize": {
         "width": 1,
@@ -3327,22 +3327,22 @@
       "occurrences": 1,
       "duplicate": false,
       "rect": {
-        "x": 120.66666,
-        "y": 237.03645,
-        "width": 43.33333,
-        "height": 43.33333
+        "x": 87.77777,
+        "y": 251.4809,
+        "width": 57.77777,
+        "height": 57.77777
       },
       "visibleRect": {
-        "x": 120.66666,
-        "y": 237.03645,
-        "width": 43.33333,
-        "height": 43.33333
+        "x": 87.77777,
+        "y": 251.4809,
+        "width": 57.77777,
+        "height": 57.77777
       },
       "pixelRect": {
-        "x": 361,
-        "y": 711,
-        "width": 130,
-        "height": 130
+        "x": 263,
+        "y": 754,
+        "width": 173,
+        "height": 173
       },
       "minSize": {
         "width": 1,
@@ -3367,22 +3367,22 @@
       "occurrences": 1,
       "duplicate": false,
       "rect": {
-        "x": 167.99998,
-        "y": 237.03645,
-        "width": 43.33333,
-        "height": 43.33333
+        "x": 149.55554,
+        "y": 251.4809,
+        "width": 57.77777,
+        "height": 57.77777
       },
       "visibleRect": {
-        "x": 167.99998,
-        "y": 237.03645,
-        "width": 43.33333,
-        "height": 43.33333
+        "x": 149.55554,
+        "y": 251.4809,
+        "width": 57.77777,
+        "height": 57.77777
       },
       "pixelRect": {
-        "x": 503,
-        "y": 711,
-        "width": 130,
-        "height": 130
+        "x": 448,
+        "y": 754,
+        "width": 173,
+        "height": 173
       },
       "minSize": {
         "width": 1,
@@ -3407,22 +3407,22 @@
       "occurrences": 1,
       "duplicate": false,
       "rect": {
-        "x": 215.33331,
-        "y": 237.03645,
-        "width": 43.33333,
-        "height": 43.33333
+        "x": 211.33331,
+        "y": 251.4809,
+        "width": 57.77777,
+        "height": 57.77777
       },
       "visibleRect": {
-        "x": 215.33331,
-        "y": 237.03645,
-        "width": 43.333313,
-        "height": 43.33333
+        "x": 211.33331,
+        "y": 251.4809,
+        "width": 57.77777,
+        "height": 57.77777
       },
       "pixelRect": {
-        "x": 645,
-        "y": 711,
-        "width": 130,
-        "height": 130
+        "x": 633,
+        "y": 754,
+        "width": 174,
+        "height": 173
       },
       "minSize": {
         "width": 1,
@@ -3447,22 +3447,22 @@
       "occurrences": 1,
       "duplicate": false,
       "rect": {
-        "x": 262.66663,
-        "y": 237.03645,
-        "width": 43.33333,
-        "height": 43.33333
+        "x": 273.11108,
+        "y": 251.4809,
+        "width": 57.77777,
+        "height": 57.77777
       },
       "visibleRect": {
-        "x": 262.66663,
-        "y": 237.03645,
-        "width": 43.333313,
-        "height": 43.33333
+        "x": 273.11108,
+        "y": 251.4809,
+        "width": 57.77777,
+        "height": 57.77777
       },
       "pixelRect": {
-        "x": 787,
-        "y": 711,
-        "width": 130,
-        "height": 130
+        "x": 819,
+        "y": 754,
+        "width": 173,
+        "height": 173
       },
       "minSize": {
         "width": 1,
@@ -3487,22 +3487,22 @@
       "occurrences": 1,
       "duplicate": false,
       "rect": {
-        "x": 309.99997,
-        "y": 237.03645,
-        "width": 43.33333,
-        "height": 43.33333
+        "x": 334.88885,
+        "y": 251.4809,
+        "width": 57.77777,
+        "height": 57.77777
       },
       "visibleRect": {
-        "x": 309.99997,
-        "y": 237.03645,
-        "width": 43.333344,
-        "height": 43.33333
+        "x": 334.88885,
+        "y": 251.4809,
+        "width": 57.77777,
+        "height": 57.77777
       },
       "pixelRect": {
-        "x": 929,
-        "y": 711,
-        "width": 131,
-        "height": 130
+        "x": 1004,
+        "y": 754,
+        "width": 173,
+        "height": 173
       },
       "minSize": {
         "width": 1,
@@ -3513,6 +3513,486 @@
       "state": {
         "badges": 0,
         "label": "B6",
+        "selected": false
+      }
+    },
+    {
+      "id": "pads.cell.13",
+      "kind": "pad",
+      "label": "C1",
+      "role": "button",
+      "present": true,
+      "selfVisible": true,
+      "effectiveVisible": true,
+      "occurrences": 1,
+      "duplicate": false,
+      "rect": {
+        "x": 26,
+        "y": 313.25867,
+        "width": 57.77777,
+        "height": 57.77777
+      },
+      "visibleRect": {
+        "x": 26,
+        "y": 313.25867,
+        "width": 57.77777,
+        "height": 57.77777
+      },
+      "pixelRect": {
+        "x": 78,
+        "y": 939,
+        "width": 173,
+        "height": 174
+      },
+      "minSize": {
+        "width": 1,
+        "height": 1
+      },
+      "underMin": false,
+      "clipped": false,
+      "state": {
+        "badges": 0,
+        "label": "C1",
+        "selected": false
+      }
+    },
+    {
+      "id": "pads.cell.14",
+      "kind": "pad",
+      "label": "C2",
+      "role": "button",
+      "present": true,
+      "selfVisible": true,
+      "effectiveVisible": true,
+      "occurrences": 1,
+      "duplicate": false,
+      "rect": {
+        "x": 87.77777,
+        "y": 313.25867,
+        "width": 57.77777,
+        "height": 57.77777
+      },
+      "visibleRect": {
+        "x": 87.77777,
+        "y": 313.25867,
+        "width": 57.77777,
+        "height": 57.77777
+      },
+      "pixelRect": {
+        "x": 263,
+        "y": 939,
+        "width": 173,
+        "height": 174
+      },
+      "minSize": {
+        "width": 1,
+        "height": 1
+      },
+      "underMin": false,
+      "clipped": false,
+      "state": {
+        "badges": 0,
+        "label": "C2",
+        "selected": false
+      }
+    },
+    {
+      "id": "pads.cell.15",
+      "kind": "pad",
+      "label": "C3",
+      "role": "button",
+      "present": true,
+      "selfVisible": true,
+      "effectiveVisible": true,
+      "occurrences": 1,
+      "duplicate": false,
+      "rect": {
+        "x": 149.55554,
+        "y": 313.25867,
+        "width": 57.77777,
+        "height": 57.77777
+      },
+      "visibleRect": {
+        "x": 149.55554,
+        "y": 313.25867,
+        "width": 57.77777,
+        "height": 57.77777
+      },
+      "pixelRect": {
+        "x": 448,
+        "y": 939,
+        "width": 173,
+        "height": 174
+      },
+      "minSize": {
+        "width": 1,
+        "height": 1
+      },
+      "underMin": false,
+      "clipped": false,
+      "state": {
+        "badges": 0,
+        "label": "C3",
+        "selected": false
+      }
+    },
+    {
+      "id": "pads.cell.16",
+      "kind": "pad",
+      "label": "C4",
+      "role": "button",
+      "present": true,
+      "selfVisible": true,
+      "effectiveVisible": true,
+      "occurrences": 1,
+      "duplicate": false,
+      "rect": {
+        "x": 211.33331,
+        "y": 313.25867,
+        "width": 57.77777,
+        "height": 57.77777
+      },
+      "visibleRect": {
+        "x": 211.33331,
+        "y": 313.25867,
+        "width": 57.77777,
+        "height": 57.77777
+      },
+      "pixelRect": {
+        "x": 633,
+        "y": 939,
+        "width": 174,
+        "height": 174
+      },
+      "minSize": {
+        "width": 1,
+        "height": 1
+      },
+      "underMin": false,
+      "clipped": false,
+      "state": {
+        "badges": 0,
+        "label": "C4",
+        "selected": false
+      }
+    },
+    {
+      "id": "pads.cell.17",
+      "kind": "pad",
+      "label": "C5",
+      "role": "button",
+      "present": true,
+      "selfVisible": true,
+      "effectiveVisible": true,
+      "occurrences": 1,
+      "duplicate": false,
+      "rect": {
+        "x": 273.11108,
+        "y": 313.25867,
+        "width": 57.77777,
+        "height": 57.77777
+      },
+      "visibleRect": {
+        "x": 273.11108,
+        "y": 313.25867,
+        "width": 57.77777,
+        "height": 57.77777
+      },
+      "pixelRect": {
+        "x": 819,
+        "y": 939,
+        "width": 173,
+        "height": 174
+      },
+      "minSize": {
+        "width": 1,
+        "height": 1
+      },
+      "underMin": false,
+      "clipped": false,
+      "state": {
+        "badges": 0,
+        "label": "C5",
+        "selected": false
+      }
+    },
+    {
+      "id": "pads.cell.18",
+      "kind": "pad",
+      "label": "C6",
+      "role": "button",
+      "present": true,
+      "selfVisible": true,
+      "effectiveVisible": true,
+      "occurrences": 1,
+      "duplicate": false,
+      "rect": {
+        "x": 334.88885,
+        "y": 313.25867,
+        "width": 57.77777,
+        "height": 57.77777
+      },
+      "visibleRect": {
+        "x": 334.88885,
+        "y": 313.25867,
+        "width": 57.77777,
+        "height": 57.77777
+      },
+      "pixelRect": {
+        "x": 1004,
+        "y": 939,
+        "width": 173,
+        "height": 174
+      },
+      "minSize": {
+        "width": 1,
+        "height": 1
+      },
+      "underMin": false,
+      "clipped": false,
+      "state": {
+        "badges": 0,
+        "label": "C6",
+        "selected": false
+      }
+    },
+    {
+      "id": "pads.cell.19",
+      "kind": "pad",
+      "label": "D1",
+      "role": "button",
+      "present": true,
+      "selfVisible": true,
+      "effectiveVisible": true,
+      "occurrences": 1,
+      "duplicate": false,
+      "rect": {
+        "x": 26,
+        "y": 375.03644,
+        "width": 57.77777,
+        "height": 57.77777
+      },
+      "visibleRect": {
+        "x": 26,
+        "y": 375.03644,
+        "width": 57.77777,
+        "height": 57.77777
+      },
+      "pixelRect": {
+        "x": 78,
+        "y": 1125,
+        "width": 173,
+        "height": 173
+      },
+      "minSize": {
+        "width": 1,
+        "height": 1
+      },
+      "underMin": false,
+      "clipped": false,
+      "state": {
+        "badges": 0,
+        "label": "D1",
+        "selected": false
+      }
+    },
+    {
+      "id": "pads.cell.20",
+      "kind": "pad",
+      "label": "D2",
+      "role": "button",
+      "present": true,
+      "selfVisible": true,
+      "effectiveVisible": true,
+      "occurrences": 1,
+      "duplicate": false,
+      "rect": {
+        "x": 87.77777,
+        "y": 375.03644,
+        "width": 57.77777,
+        "height": 57.77777
+      },
+      "visibleRect": {
+        "x": 87.77777,
+        "y": 375.03644,
+        "width": 57.77777,
+        "height": 57.77777
+      },
+      "pixelRect": {
+        "x": 263,
+        "y": 1125,
+        "width": 173,
+        "height": 173
+      },
+      "minSize": {
+        "width": 1,
+        "height": 1
+      },
+      "underMin": false,
+      "clipped": false,
+      "state": {
+        "badges": 0,
+        "label": "D2",
+        "selected": false
+      }
+    },
+    {
+      "id": "pads.cell.21",
+      "kind": "pad",
+      "label": "D3",
+      "role": "button",
+      "present": true,
+      "selfVisible": true,
+      "effectiveVisible": true,
+      "occurrences": 1,
+      "duplicate": false,
+      "rect": {
+        "x": 149.55554,
+        "y": 375.03644,
+        "width": 57.77777,
+        "height": 57.77777
+      },
+      "visibleRect": {
+        "x": 149.55554,
+        "y": 375.03644,
+        "width": 57.77777,
+        "height": 57.77777
+      },
+      "pixelRect": {
+        "x": 448,
+        "y": 1125,
+        "width": 173,
+        "height": 173
+      },
+      "minSize": {
+        "width": 1,
+        "height": 1
+      },
+      "underMin": false,
+      "clipped": false,
+      "state": {
+        "badges": 0,
+        "label": "D3",
+        "selected": false
+      }
+    },
+    {
+      "id": "pads.cell.22",
+      "kind": "pad",
+      "label": "D4",
+      "role": "button",
+      "present": true,
+      "selfVisible": true,
+      "effectiveVisible": true,
+      "occurrences": 1,
+      "duplicate": false,
+      "rect": {
+        "x": 211.33331,
+        "y": 375.03644,
+        "width": 57.77777,
+        "height": 57.77777
+      },
+      "visibleRect": {
+        "x": 211.33331,
+        "y": 375.03644,
+        "width": 57.77777,
+        "height": 57.77777
+      },
+      "pixelRect": {
+        "x": 633,
+        "y": 1125,
+        "width": 174,
+        "height": 173
+      },
+      "minSize": {
+        "width": 1,
+        "height": 1
+      },
+      "underMin": false,
+      "clipped": false,
+      "state": {
+        "badges": 0,
+        "label": "D4",
+        "selected": false
+      }
+    },
+    {
+      "id": "pads.cell.23",
+      "kind": "pad",
+      "label": "D5",
+      "role": "button",
+      "present": true,
+      "selfVisible": true,
+      "effectiveVisible": true,
+      "occurrences": 1,
+      "duplicate": false,
+      "rect": {
+        "x": 273.11108,
+        "y": 375.03644,
+        "width": 57.77777,
+        "height": 57.77777
+      },
+      "visibleRect": {
+        "x": 273.11108,
+        "y": 375.03644,
+        "width": 57.77777,
+        "height": 57.77777
+      },
+      "pixelRect": {
+        "x": 819,
+        "y": 1125,
+        "width": 173,
+        "height": 173
+      },
+      "minSize": {
+        "width": 1,
+        "height": 1
+      },
+      "underMin": false,
+      "clipped": false,
+      "state": {
+        "badges": 0,
+        "label": "D5",
+        "selected": false
+      }
+    },
+    {
+      "id": "pads.cell.24",
+      "kind": "pad",
+      "label": "D6",
+      "role": "button",
+      "present": true,
+      "selfVisible": true,
+      "effectiveVisible": true,
+      "occurrences": 1,
+      "duplicate": false,
+      "rect": {
+        "x": 334.88885,
+        "y": 375.03644,
+        "width": 57.77777,
+        "height": 57.77777
+      },
+      "visibleRect": {
+        "x": 334.88885,
+        "y": 375.03644,
+        "width": 57.77777,
+        "height": 57.77777
+      },
+      "pixelRect": {
+        "x": 1004,
+        "y": 1125,
+        "width": 173,
+        "height": 173
+      },
+      "minSize": {
+        "width": 1,
+        "height": 1
+      },
+      "underMin": false,
+      "clipped": false,
+      "state": {
+        "badges": 0,
+        "label": "D6",
         "selected": false
       }
     },
@@ -13579,8 +14059,8 @@
       "visibleRect": {
         "x": 26,
         "y": 378,
-        "width": 400.66666,
-        "height": 9.6015625
+        "width": 392.66666,
+        "height": 10
       },
       "pixelRect": {
         "x": 78,
@@ -13619,7 +14099,7 @@
         "x": 26,
         "y": 378,
         "width": 44,
-        "height": 9.6015625
+        "height": 10
       },
       "pixelRect": {
         "x": 78,
@@ -13659,7 +14139,7 @@
         "x": 74,
         "y": 378,
         "width": 16.666664,
-        "height": 9.6015625
+        "height": 10
       },
       "pixelRect": {
         "x": 222,
@@ -13697,7 +14177,7 @@
         "x": 93.666664,
         "y": 378,
         "width": 16.666664,
-        "height": 9.6015625
+        "height": 10
       },
       "pixelRect": {
         "x": 281,
@@ -13735,7 +14215,7 @@
         "x": 113.33333,
         "y": 378,
         "width": 16.666672,
-        "height": 9.6015625
+        "height": 10
       },
       "pixelRect": {
         "x": 340,
@@ -13773,7 +14253,7 @@
         "x": 133,
         "y": 378,
         "width": 16.666672,
-        "height": 9.6015625
+        "height": 10
       },
       "pixelRect": {
         "x": 399,
@@ -13811,7 +14291,7 @@
         "x": 152.66666,
         "y": 378,
         "width": 16.666672,
-        "height": 9.6015625
+        "height": 10
       },
       "pixelRect": {
         "x": 457,
@@ -13849,7 +14329,7 @@
         "x": 172.33333,
         "y": 378,
         "width": 16.666672,
-        "height": 9.6015625
+        "height": 10
       },
       "pixelRect": {
         "x": 517,
@@ -13887,7 +14367,7 @@
         "x": 192,
         "y": 378,
         "width": 16.666672,
-        "height": 9.6015625
+        "height": 10
       },
       "pixelRect": {
         "x": 576,
@@ -13925,7 +14405,7 @@
         "x": 211.66666,
         "y": 378,
         "width": 16.666672,
-        "height": 9.6015625
+        "height": 10
       },
       "pixelRect": {
         "x": 635,
@@ -13963,7 +14443,7 @@
         "x": 231.33333,
         "y": 378,
         "width": 16.666672,
-        "height": 9.6015625
+        "height": 10
       },
       "pixelRect": {
         "x": 694,
@@ -14001,7 +14481,7 @@
         "x": 251,
         "y": 378,
         "width": 16.666656,
-        "height": 9.6015625
+        "height": 10
       },
       "pixelRect": {
         "x": 753,
@@ -14039,7 +14519,7 @@
         "x": 270.66666,
         "y": 378,
         "width": 16.666656,
-        "height": 9.6015625
+        "height": 10
       },
       "pixelRect": {
         "x": 812,
@@ -14077,7 +14557,7 @@
         "x": 290.3333,
         "y": 378,
         "width": 16.666656,
-        "height": 9.6015625
+        "height": 10
       },
       "pixelRect": {
         "x": 870,
@@ -14115,7 +14595,7 @@
         "x": 310,
         "y": 378,
         "width": 16.666656,
-        "height": 9.6015625
+        "height": 10
       },
       "pixelRect": {
         "x": 930,
@@ -14153,7 +14633,7 @@
         "x": 329.66666,
         "y": 378,
         "width": 16.666656,
-        "height": 9.6015625
+        "height": 10
       },
       "pixelRect": {
         "x": 989,
@@ -14191,7 +14671,7 @@
         "x": 349.3333,
         "y": 378,
         "width": 16.666656,
-        "height": 9.6015625
+        "height": 10
       },
       "pixelRect": {
         "x": 1048,
@@ -14229,7 +14709,7 @@
         "x": 369,
         "y": 378,
         "width": 16.666656,
-        "height": 9.6015625
+        "height": 10
       },
       "pixelRect": {
         "x": 1107,
@@ -14267,7 +14747,7 @@
         "x": 26,
         "y": 378,
         "width": 16.666664,
-        "height": 9.6015625
+        "height": 10
       },
       "pixelRect": {
         "x": 78,
@@ -14305,7 +14785,7 @@
         "x": 45.666664,
         "y": 378,
         "width": 16.666664,
-        "height": 9.6015625
+        "height": 10
       },
       "pixelRect": {
         "x": 137,
@@ -14343,7 +14823,7 @@
         "x": 65.33333,
         "y": 378,
         "width": 16.666664,
-        "height": 9.6015625
+        "height": 10
       },
       "pixelRect": {
         "x": 195,
@@ -14381,7 +14861,7 @@
         "x": 85,
         "y": 378,
         "width": 16.666664,
-        "height": 9.6015625
+        "height": 10
       },
       "pixelRect": {
         "x": 255,
@@ -14419,7 +14899,7 @@
         "x": 104.666664,
         "y": 378,
         "width": 16.666664,
-        "height": 9.6015625
+        "height": 10
       },
       "pixelRect": {
         "x": 314,
@@ -14457,7 +14937,7 @@
         "x": 124.33333,
         "y": 378,
         "width": 16.666672,
-        "height": 9.6015625
+        "height": 10
       },
       "pixelRect": {
         "x": 373,
@@ -14495,7 +14975,7 @@
         "x": 144,
         "y": 378,
         "width": 16.666672,
-        "height": 9.6015625
+        "height": 10
       },
       "pixelRect": {
         "x": 432,
@@ -14533,7 +15013,7 @@
         "x": 163.66666,
         "y": 378,
         "width": 16.666672,
-        "height": 9.6015625
+        "height": 10
       },
       "pixelRect": {
         "x": 490,
@@ -14571,7 +15051,7 @@
         "x": 183.33333,
         "y": 378,
         "width": 16.666672,
-        "height": 9.6015625
+        "height": 10
       },
       "pixelRect": {
         "x": 550,
@@ -14609,7 +15089,7 @@
         "x": 203,
         "y": 378,
         "width": 16.666672,
-        "height": 9.6015625
+        "height": 10
       },
       "pixelRect": {
         "x": 609,
@@ -14647,7 +15127,7 @@
         "x": 222.66666,
         "y": 378,
         "width": 16.666672,
-        "height": 9.6015625
+        "height": 10
       },
       "pixelRect": {
         "x": 668,
@@ -14685,7 +15165,7 @@
         "x": 242.33333,
         "y": 378,
         "width": 16.666672,
-        "height": 9.6015625
+        "height": 10
       },
       "pixelRect": {
         "x": 727,
@@ -14723,7 +15203,7 @@
         "x": 262,
         "y": 378,
         "width": 16.666656,
-        "height": 9.6015625
+        "height": 10
       },
       "pixelRect": {
         "x": 786,
@@ -14761,7 +15241,7 @@
         "x": 281.66666,
         "y": 378,
         "width": 16.666656,
-        "height": 9.6015625
+        "height": 10
       },
       "pixelRect": {
         "x": 845,
@@ -14799,7 +15279,7 @@
         "x": 301.3333,
         "y": 378,
         "width": 16.666656,
-        "height": 9.6015625
+        "height": 10
       },
       "pixelRect": {
         "x": 903,
@@ -14837,7 +15317,7 @@
         "x": 321,
         "y": 378,
         "width": 16.666656,
-        "height": 9.6015625
+        "height": 10
       },
       "pixelRect": {
         "x": 963,
@@ -14875,7 +15355,7 @@
         "x": 26,
         "y": 378,
         "width": 16.666664,
-        "height": 9.6015625
+        "height": 10
       },
       "pixelRect": {
         "x": 78,
@@ -14913,7 +15393,7 @@
         "x": 45.666664,
         "y": 378,
         "width": 16.666664,
-        "height": 9.6015625
+        "height": 10
       },
       "pixelRect": {
         "x": 137,
@@ -14951,7 +15431,7 @@
         "x": 65.33333,
         "y": 378,
         "width": 16.666664,
-        "height": 9.6015625
+        "height": 10
       },
       "pixelRect": {
         "x": 195,
@@ -14989,7 +15469,7 @@
         "x": 85,
         "y": 378,
         "width": 16.666664,
-        "height": 9.6015625
+        "height": 10
       },
       "pixelRect": {
         "x": 255,
@@ -15027,7 +15507,7 @@
         "x": 104.666664,
         "y": 378,
         "width": 16.666664,
-        "height": 9.6015625
+        "height": 10
       },
       "pixelRect": {
         "x": 314,
@@ -15065,7 +15545,7 @@
         "x": 124.33333,
         "y": 378,
         "width": 16.666672,
-        "height": 9.6015625
+        "height": 10
       },
       "pixelRect": {
         "x": 373,
@@ -15103,7 +15583,7 @@
         "x": 144,
         "y": 378,
         "width": 16.666672,
-        "height": 9.6015625
+        "height": 10
       },
       "pixelRect": {
         "x": 432,
@@ -15141,7 +15621,7 @@
         "x": 163.66666,
         "y": 378,
         "width": 16.666672,
-        "height": 9.6015625
+        "height": 10
       },
       "pixelRect": {
         "x": 490,
@@ -15179,7 +15659,7 @@
         "x": 183.33333,
         "y": 378,
         "width": 16.666672,
-        "height": 9.6015625
+        "height": 10
       },
       "pixelRect": {
         "x": 550,
@@ -15217,7 +15697,7 @@
         "x": 203,
         "y": 378,
         "width": 16.666672,
-        "height": 9.6015625
+        "height": 10
       },
       "pixelRect": {
         "x": 609,
@@ -15255,7 +15735,7 @@
         "x": 222.66666,
         "y": 378,
         "width": 16.666672,
-        "height": 9.6015625
+        "height": 10
       },
       "pixelRect": {
         "x": 668,
@@ -15293,7 +15773,7 @@
         "x": 242.33333,
         "y": 378,
         "width": 16.666672,
-        "height": 9.6015625
+        "height": 10
       },
       "pixelRect": {
         "x": 727,
@@ -15331,7 +15811,7 @@
         "x": 262,
         "y": 378,
         "width": 16.666656,
-        "height": 9.6015625
+        "height": 10
       },
       "pixelRect": {
         "x": 786,
@@ -15369,7 +15849,7 @@
         "x": 281.66666,
         "y": 378,
         "width": 16.666656,
-        "height": 9.6015625
+        "height": 10
       },
       "pixelRect": {
         "x": 845,
@@ -15407,7 +15887,7 @@
         "x": 301.3333,
         "y": 378,
         "width": 16.666656,
-        "height": 9.6015625
+        "height": 10
       },
       "pixelRect": {
         "x": 903,
@@ -15445,7 +15925,7 @@
         "x": 321,
         "y": 378,
         "width": 16.666656,
-        "height": 9.6015625
+        "height": 10
       },
       "pixelRect": {
         "x": 963,
@@ -15483,7 +15963,7 @@
         "x": 26,
         "y": 378,
         "width": 16.666664,
-        "height": 9.6015625
+        "height": 10
       },
       "pixelRect": {
         "x": 78,
@@ -15521,7 +16001,7 @@
         "x": 45.666664,
         "y": 378,
         "width": 16.666664,
-        "height": 9.6015625
+        "height": 10
       },
       "pixelRect": {
         "x": 137,
@@ -15559,7 +16039,7 @@
         "x": 65.33333,
         "y": 378,
         "width": 16.666664,
-        "height": 9.6015625
+        "height": 10
       },
       "pixelRect": {
         "x": 195,
@@ -15597,7 +16077,7 @@
         "x": 85,
         "y": 378,
         "width": 16.666664,
-        "height": 9.6015625
+        "height": 10
       },
       "pixelRect": {
         "x": 255,
@@ -15635,7 +16115,7 @@
         "x": 104.666664,
         "y": 378,
         "width": 16.666664,
-        "height": 9.6015625
+        "height": 10
       },
       "pixelRect": {
         "x": 314,
@@ -15673,7 +16153,7 @@
         "x": 124.33333,
         "y": 378,
         "width": 16.666672,
-        "height": 9.6015625
+        "height": 10
       },
       "pixelRect": {
         "x": 373,
@@ -15711,7 +16191,7 @@
         "x": 144,
         "y": 378,
         "width": 16.666672,
-        "height": 9.6015625
+        "height": 10
       },
       "pixelRect": {
         "x": 432,
@@ -15749,7 +16229,7 @@
         "x": 163.66666,
         "y": 378,
         "width": 16.666672,
-        "height": 9.6015625
+        "height": 10
       },
       "pixelRect": {
         "x": 490,
@@ -15787,7 +16267,7 @@
         "x": 183.33333,
         "y": 378,
         "width": 16.666672,
-        "height": 9.6015625
+        "height": 10
       },
       "pixelRect": {
         "x": 550,
@@ -15825,7 +16305,7 @@
         "x": 203,
         "y": 378,
         "width": 16.666672,
-        "height": 9.6015625
+        "height": 10
       },
       "pixelRect": {
         "x": 609,
@@ -15863,7 +16343,7 @@
         "x": 222.66666,
         "y": 378,
         "width": 16.666672,
-        "height": 9.6015625
+        "height": 10
       },
       "pixelRect": {
         "x": 668,
@@ -15901,7 +16381,7 @@
         "x": 242.33333,
         "y": 378,
         "width": 16.666672,
-        "height": 9.6015625
+        "height": 10
       },
       "pixelRect": {
         "x": 727,
@@ -15939,7 +16419,7 @@
         "x": 262,
         "y": 378,
         "width": 16.666656,
-        "height": 9.6015625
+        "height": 10
       },
       "pixelRect": {
         "x": 786,
@@ -15977,7 +16457,7 @@
         "x": 281.66666,
         "y": 378,
         "width": 16.666656,
-        "height": 9.6015625
+        "height": 10
       },
       "pixelRect": {
         "x": 845,
@@ -16015,7 +16495,7 @@
         "x": 301.3333,
         "y": 378,
         "width": 16.666656,
-        "height": 9.6015625
+        "height": 10
       },
       "pixelRect": {
         "x": 903,
@@ -16053,7 +16533,7 @@
         "x": 321,
         "y": 378,
         "width": 16.666656,
-        "height": 9.6015625
+        "height": 10
       },
       "pixelRect": {
         "x": 963,

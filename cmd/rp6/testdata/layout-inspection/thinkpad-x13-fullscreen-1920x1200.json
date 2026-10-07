@@ -26,7 +26,7 @@
     },
     "scale": 1
   },
-  "imageSHA256": "ff6415de4ca7019fc8d3b992ea6eebf7ba7fac42aa508154bf9ab83fc33642ef",
+  "imageSHA256": "abba714692b43acc403bfdb6fe42fa8936c6510817f7ab9b46a49d2e8a743c3f",
   "elements": [
     {
       "id": "layout.root",
@@ -1540,19 +1540,19 @@
       "occurrences": 1,
       "duplicate": false,
       "rect": {
-        "x": 371.09937,
+        "x": 407.09937,
         "y": 16,
         "width": 32,
         "height": 46
       },
       "visibleRect": {
-        "x": 371.09937,
+        "x": 407.09937,
         "y": 16,
         "width": 32,
         "height": 46
       },
       "pixelRect": {
-        "x": 371,
+        "x": 407,
         "y": 16,
         "width": 32,
         "height": 46

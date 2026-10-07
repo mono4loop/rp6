@@ -6,7 +6,9 @@ import (
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
+	"fyne.io/fyne/v2/theme"
 
+	"github.com/mono4loop/rp6/internal/ui/components"
 	"github.com/mono4loop/rp6/internal/ui/layoutlang"
 	"github.com/mono4loop/rp6/internal/ui/layoutspec"
 
@@ -211,6 +213,80 @@ func TestVUOrientationPerVariant(t *testing.T) {
 // TestConsoleRevealsFx checks the `show: true` property in the console layout
 // reveals the FX rack on entry, and that a manual toggle while the console stays
 // shown is respected (not clobbered on the next relayout).
+// TestResizeDrivenVariantSwitchRestoresForcedRacks reproduces the Android
+// launch race: the first canvas size can arrive at Fyne scale 1 (gomobile has
+// not read the DPI yet), so a phone briefly reads as tablet-sized and enters the
+// tablet variant — whose paks/keys `show: true` must not leak into the phone
+// variant that replaces it once the real scale settles. A resize-driven switch
+// has no toggle action to restore the forced racks, so selectLayout does it.
+func TestResizeDrivenVariantSwitchRestoresForcedRacks(t *testing.T) {
+	u := newTestUI(t)
+	require.False(t, u.paksRack.Object().Visible(), "paks start hidden")
+	require.False(t, u.keyboardRack.Object().Visible(), "keyboard starts hidden")
+
+	mobile, tablet := true, true
+	u.mobileForTest, u.tabletForTest = &mobile, &tablet
+	u.relayout() // the bogus scale-1 size: tablet-class
+	require.Equal(t, "tablet", u.activeVariant)
+	assert.True(t, u.paksRack.Object().Visible(), "tablet force-shows paks")
+	assert.True(t, u.keyboardRack.Object().Visible(), "tablet force-shows the keyboard")
+
+	tablet = false
+	u.relayout() // the real size: a phone
+	require.Equal(t, "phone", u.activeVariant)
+	assert.False(t, u.paksRack.Object().Visible(), "leaving the tablet variant restores paks")
+	assert.False(t, u.keyboardRack.Object().Visible(), "leaving the tablet variant restores the keyboard")
+	assert.False(t, u.paksBtn.On(), "the PAKS toggle follows")
+}
+
+// TestPhoneFillsPadCells checks the phone variant's `pads(cells: fill)` lets the
+// pad cells grow past their physical ceiling, that the setting survives a grid
+// rebuild (density change), and that leaving the phone variant restores the
+// ceiling for every other layout.
+func TestPhoneFillsPadCells(t *testing.T) {
+	u := newTestUI(t)
+	require.False(t, u.grid.FillCells(), "desktop window keeps the 130px ceiling")
+
+	mobile, tablet := true, false
+	u.mobileForTest, u.tabletForTest = &mobile, &tablet
+	u.relayout()
+	require.Equal(t, "phone", u.activeVariant)
+	assert.True(t, u.grid.FillCells(), "phone lifts the ceiling")
+
+	u.setLayout(layoutDense) // rebuilds the grid
+	assert.True(t, u.grid.FillCells(), "a rebuilt grid keeps the variant's fill")
+
+	mobile = false
+	u.relayout()
+	require.Equal(t, "window", u.activeVariant)
+	assert.False(t, u.grid.FillCells(), "leaving the phone restores the ceiling")
+}
+
+// TestPhoneBoundsPaksList checks the phone variant's `paks(rows: 2)` keeps the
+// sample-pak list to two keys (so the rack doesn't crush the pads below it),
+// and that leaving the phone variant restores the desktop's default list height.
+func TestPhoneBoundsPaksList(t *testing.T) {
+	u := newTestUI(t)
+	def := u.paksRack.scroll.MinSize().Height
+	assert.InDelta(t, paksListMin, def, 0.01, "desktop window keeps the default list height")
+
+	// The 900x760 test window is tablet-sized (smallest side >= 600), so pin the
+	// form factor to a phone explicitly.
+	mobile, tablet := true, false
+	u.mobileForTest, u.tabletForTest = &mobile, &tablet
+	u.relayout()
+	require.Equal(t, "phone", u.activeVariant)
+	short := u.paksRack.scroll.MinSize().Height
+	assert.Less(t, short, def, "phone bounds the list below the default")
+	key := components.NewRackToggle("A", storeAccent, nil).MinSize().Height
+	assert.InDelta(t, 2*key+theme.Padding(), short, 0.01, "two keys plus the gap between them")
+
+	mobile = false
+	u.relayout()
+	require.Equal(t, "window", u.activeVariant)
+	assert.InDelta(t, def, u.paksRack.scroll.MinSize().Height, 0.01, "leaving the phone restores the default")
+}
+
 func TestConsoleRevealsFx(t *testing.T) {
 	u := newTestUI(t) // starts windowed; fx hidden by default
 	require.False(t, u.fxRack.Object().Visible(), "fx hidden by default")

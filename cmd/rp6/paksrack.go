@@ -37,7 +37,13 @@ type paksRack struct {
 
 	filter    string // current filter text (case-insensitive name substring)
 	activeDir string // samples dir of the loaded pak ("" = none), kept across rebuilds
+	listRows  int    // pak keys the list shows before scrolling (0 = paksListMin tall)
 }
+
+// paksListMin is the list's default minimum (logical) size: tall enough to be
+// usable stacked above the pads on the desktop, and it grows to fill a rail
+// (console/tablet). Phones bound it to a few keys instead — see setListRows.
+const paksListMin = 150
 
 func newPaksRack(lister func() []pakItem, onSelect func(dir string), onStore func()) *paksRack {
 	r := &paksRack{lister: lister, onSelect: onSelect, onStore: onStore}
@@ -66,9 +72,33 @@ func newPaksRack(lister func() []pakItem, onSelect func(dir string), onStore fun
 
 	r.listBox = container.NewVBox()
 	sc := container.NewVScroll(r.listBox)
-	sc.SetMinSize(fyne.NewSize(150, 150)) // usable height when stacked; grows to fill a rail
+	sc.SetMinSize(fyne.NewSize(paksListMin, paksListMin))
 	r.scroll = sc
 	return r
+}
+
+// setListRows bounds the list's minimum height to about `rows` pak keys, so the
+// rack stays short where vertical space is scarce (a phone stacks it above the
+// pads) and the rest scrolls; rows <= 0 restores the paksListMin default. This
+// is the `paks(rows: N)` layout property (see ui.applyPaksRows); it changes
+// only the minimum — in a rail the list still grows to fill. Idempotent.
+func (r *paksRack) setListRows(rows int) {
+	if rows < 0 {
+		rows = 0
+	}
+	if rows == r.listRows {
+		return
+	}
+	r.listRows = rows
+	h := float32(paksListMin)
+	if rows > 0 {
+		// Measure a key as the list renders it (theme-dependent), plus the
+		// VBox gap between rows.
+		key := components.NewRackToggle("A", storeAccent, nil).MinSize().Height
+		h = float32(rows)*key + float32(rows-1)*theme.Padding()
+	}
+	r.scroll.SetMinSize(fyne.NewSize(paksListMin, h))
+	r.scroll.Refresh()
 }
 
 // Object returns the CanvasObject to place in a layout.
