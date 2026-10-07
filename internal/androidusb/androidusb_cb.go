@@ -35,6 +35,33 @@ func logMsg(s string) {
 //export goUSBLog
 func goUSBLog(msg *C.char) { logMsg(C.GoString(msg)) }
 
+// asker is the scan thread's USB permission policy (see permAsker).
+var asker permAsker
+
+//export goUSBScanBegin
+func goUSBScanBegin() { asker.beginScan() }
+
+// goUSBUngranted reports a MIDI device found without permission; it returns 1
+// when the scan should request permission for it now.
+//
+//export goUSBUngranted
+func goUSBUngranted(id *C.char, name *C.char, audio C.int) C.int {
+	ask, hint := asker.ungranted(C.GoString(id), C.GoString(name), audio != 0)
+	if hint != "" {
+		logMsg(hint)
+	}
+	if ask {
+		return 1
+	}
+	return 0
+}
+
+//export goUSBGranted
+func goUSBGranted(id *C.char) { asker.granted(C.GoString(id)) }
+
+//export goUSBScanEnd
+func goUSBScanEnd(complete C.int) { asker.endScan(complete != 0) }
+
 // goUSBDevice registers a discovered USB-MIDI device with the bridge so the
 // p6 / midiin backends can find it. hasIn/hasOut are 1/0 (currently input only).
 //

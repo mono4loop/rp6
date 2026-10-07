@@ -20,12 +20,17 @@ extern void goUSBData(char* id, unsigned char* data, int n);
 extern void goUSBRemove(char* id);
 extern void goUSBOutputReady(char* id);
 extern void goUSBLog(char* msg);
+extern void goUSBScanBegin(void);
+extern int  goUSBUngranted(char* id, char* name, int audio);
+extern void goUSBGranted(char* id);
+extern void goUSBScanEnd(int complete);
 
 #define TAG "rp6usb"
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, TAG, __VA_ARGS__)
 
 // Android USB / MIDI constants.
 #define USB_CLASS_AUDIO      1
+#define USB_SUBCLASS_AUDIOSTREAMING 2
 #define USB_SUBCLASS_MIDI    3
 #define USB_DIR_IN        0x80
 #define USB_XFER_BULK        2
@@ -174,6 +179,33 @@ static jobject find_midi_iface(JNIEnv* env, jobject dev, jobject* inEp, jobject*
     return NULL;
 }
 
+// has_audio_capture reports whether the device has an audio-streaming interface
+// with an IN endpoint (it can record, like the P-6). Android refuses such
+// devices while the Microphone access privacy toggle is off, so this picks the
+// hint shown when permission stays refused. UsbDevice.getHasAudioCapture is
+// hidden API, hence the descriptor walk.
+static int has_audio_capture(JNIEnv* env, jobject dev) {
+    int found = 0;
+    jint nif = (*env)->CallIntMethod(env, dev, m_ifCount);
+    for (jint i = 0; i < nif && !found; i++) {
+        jobject intf = (*env)->CallObjectMethod(env, dev, m_getIf, i);
+        if (intf == NULL) continue;
+        if ((*env)->CallIntMethod(env, intf, m_ifClass) == USB_CLASS_AUDIO &&
+            (*env)->CallIntMethod(env, intf, m_ifSub) == USB_SUBCLASS_AUDIOSTREAMING) {
+            jint nep = (*env)->CallIntMethod(env, intf, m_epCount);
+            for (jint e = 0; e < nep && !found; e++) {
+                jobject ep = (*env)->CallObjectMethod(env, intf, m_getEp, e);
+                if (ep == NULL) continue;
+                found = ((*env)->CallIntMethod(env, ep, m_epDir) == USB_DIR_IN);
+                (*env)->DeleteLocalRef(env, ep);
+            }
+        }
+        (*env)->DeleteLocalRef(env, intf);
+    }
+    (*env)->ExceptionClear(env);
+    return found;
+}
+
 // rp6_usb_send transmits raw USB-MIDI event packets to the active device's
 // bulk-OUT endpoint. Called from Go's OutputPort.Send on whatever goroutine
 // fired the MIDI (attaches that thread to the JVM on first use). No-op when no
@@ -279,14 +311,17 @@ static void read_device(JNIEnv* env, jobject dev, char* id, char* name) {
     log_str("rp6usb: device closed");
 }
 
-// scan_once looks for one MIDI-capable device. If it needs permission, it asks
-// and returns; otherwise it reads it (blocking) until disconnect.
+// scan_once looks for one MIDI-capable device with permission and reads it
+// (blocking) until disconnect. Devices without permission are skipped; Go's
+// permAsker says when to request it (once per attach, not every scan).
 static void scan_once(JNIEnv* env) {
     jobject list = (*env)->CallObjectMethod(env, g_usbmgr, m_getDeviceList);
     if (list == NULL) return;
     jobject vals = (*env)->CallObjectMethod(env, list, m_values);
     jobject it = (*env)->CallObjectMethod(env, vals, m_iterator);
+    int complete = 1;
 
+    goUSBScanBegin();
     while ((*env)->CallBooleanMethod(env, it, m_hasNext)) {
         jobject dev = (*env)->CallObjectMethod(env, it, m_next);
         if (dev == NULL) continue;
@@ -299,22 +334,31 @@ static void scan_once(JNIEnv* env) {
         if (intf)  (*env)->DeleteLocalRef(env, intf);
         if (!isMidi) { (*env)->DeleteLocalRef(env, dev); continue; }
 
-        jboolean granted = (*env)->CallBooleanMethod(env, g_usbmgr, m_hasPermission, dev);
-        if (!granted) {
-            request_permission(env, dev);
-            (*env)->DeleteLocalRef(env, dev);
-            break; // wait for the grant; picked up on the next scan
-        }
-
         char* id   = jstr(env, (jstring)(*env)->CallObjectMethod(env, dev, m_devName));
         char* name = jstr(env, (jstring)(*env)->CallObjectMethod(env, dev, m_prodName));
         (*env)->ExceptionClear(env);
-        read_device(env, dev, id ? id : (char*)"usbmidi", name);
+        char* key = id ? id : (char*)"usbmidi";
+
+        jboolean granted = (*env)->CallBooleanMethod(env, g_usbmgr, m_hasPermission, dev);
+        if (!granted) {
+            // The grant arrives asynchronously and is picked up by a later scan.
+            if (goUSBUngranted(key, name ? name : key, has_audio_capture(env, dev)))
+                request_permission(env, dev);
+            free(id);
+            free(name);
+            (*env)->DeleteLocalRef(env, dev);
+            continue;
+        }
+
+        goUSBGranted(key);
+        read_device(env, dev, key, name);
         free(id);
         free(name);
         (*env)->DeleteLocalRef(env, dev);
+        complete = 0;
         break; // one device at a time
     }
+    goUSBScanEnd(complete);
     (*env)->DeleteLocalRef(env, it);
     (*env)->DeleteLocalRef(env, vals);
     (*env)->DeleteLocalRef(env, list);

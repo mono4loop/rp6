@@ -250,7 +250,11 @@ internal/androidusb/ (android) reads USB-MIDI straight from Go over JNI — no
                     midibridge. usbmidi.go is the pure-Go USB-MIDI packet decoder
                     (DecodeUSBMIDI, unit-tested); androidusb_android.go is the
                     cgo/JNI reader; androidusb_cb.go the //export callbacks;
-                    androidusb_stub.go a no-op elsewhere. Wired by cmd/rp6/
+                    permission.go the pure-Go ask-once-per-attach permission
+                    policy (Android refuses audio-capture devices like the P-6
+                    while Microphone access is off, even after OK — never
+                    re-request every scan); androidusb_stub.go a no-op
+                    elsewhere. Wired by cmd/rp6/
                     android.go (startAndroidMIDI). This is how Android USB MIDI
                     actually works today (see docs/android-midi.md)
 internal/store/     sequence persistence (NO Fyne, NO p6); (profile,slot) ->

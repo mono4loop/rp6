@@ -102,6 +102,25 @@ If the permission dialog never appears, some devices need
 `<uses-feature android:name="android.hardware.usb.host"/>` in the manifest —
 see "Custom manifest" below.
 
+## USB permission and Microphone access
+
+rp6 asks for USB permission **once per attach**, not on every scan
+(`permission.go`, `permAsker`). Android can keep refusing after the user taps
+OK: `UsbManager.hasPermission` returns false for any device with audio capture
+while the **Microphone access** privacy toggle is off, and the P-6 is a USB
+audio device. Asking on every 2 s scan used to re-open the dialog forever
+(GitHub issue #2). Now, if the device is still refused ~6 s after the request,
+the status bar says so once (`P-6 needs Microphone access on (or replug)`) and
+rp6 waits:
+
+- Turning Microphone access on connects within 2 s; the grant is already
+  recorded.
+- Replugging asks again (so does losing permission after a successful connect).
+
+Reproduce with the P-6 on the phone and adb over Wi-Fi:
+`adb shell cmd sensor_privacy enable 0 microphone` (and `disable` to restore).
+`dumpsys usb` lists recorded grants under `permissions_manager`.
+
 ## Known limitations / remaining work
 
 - **One device at a time.** The scan attaches the first MIDI device it finds;
