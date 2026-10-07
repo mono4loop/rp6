@@ -91,9 +91,11 @@ run it under `timeout` and treat a timeout as a failure.
 
 - **No modifiers.** Ctrl+click (Ctrl+click Clear deletes the whole sequence)
   and the Ctrl+Shift shortcuts can't be scripted. Tap the buttons instead.
-- **`quit` skips RP6's shutdown.** It doesn't autosave the working sequence
-  or send MIDI Stop to a P-6. Stop the transport before quitting; with
-  throwaway XDG directories nothing is lost.
+- **`quit` is a normal quit.** It runs RP6's shutdown through Fyne's lifecycle
+  stop hook: the working sequence and recorder takes are autosaved, a playing
+  P-6 is sent MIDI Stop, and the devices are released — the same as closing
+  the window or Ctrl+Q. Point `XDG_DATA_HOME` at a throwaway directory if a
+  take shouldn't leave anything behind.
 - **Main window only.** A floated pad rack lives in a window of its own,
   which the script doesn't see. Dock it first.
 - **No `scroll` or `hover` on Android.** Drag a knob instead.

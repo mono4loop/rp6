@@ -495,6 +495,14 @@ also **verified live** against real hardware.
   disconnected exactly once per connection (generation + `u.devLost` guards) and
   is safe from any goroutine (`fyne.Do`). `close()` bumps the generation so
   teardown-time goroutine failures don't marshal onto the tearing-down loop.
+  **Every exit path runs `close()` exactly once** (`sync.Once`): the window
+  close intercept and Ctrl+Q call it directly, and `hookLifecycle` registers it
+  as Fyne's `Lifecycle().SetOnStopped` hook for the quits those don't see —
+  `App.Quit` from anywhere (an autopilot `quit`) and Android destroying the
+  activity. The hook runs after the run loop has terminated; that's fine because
+  Fyne runs `fyne.Do` inline once drained, `driver.Run` waits for the hook before
+  returning, and `close()` never blocks on the loop. Keep it that way: no
+  `fyne.DoAndWait` on something the loop must service.
   The **top-rack DeviceBadge** reflects this lifecycle: cyan=emulator,
   amber=P-6, plus Offline/Searching/Online state.
 - **Auto-fallback to the emulator + auto-reconnect (no Reconnect button).** If
@@ -572,6 +580,11 @@ selects the granular source A1..H6).
 - Custom widgets: embed `widget.BaseWidget`, call `ExtendBaseWidget(self)`,
   implement `CreateRenderer`. Renderers implement `Layout/MinSize/Refresh/
   Objects/Destroy`. See any file in `components/` for the pattern.
+- **Don't `SetOnTypedKey` on mobile.** Fyne's mobile driver routes every typed
+  key through that hook and only falls back to its own Back handling (finishing
+  the Android activity) when none is set — the desktop-only F11 hook used to
+  leave Back dead on phones. Back is the graceful exit on Android: finish →
+  activity destroyed → the lifecycle stop hook → `close()` (autosave, MIDI Stop).
 - **Modifier+click** (e.g. Ctrl+click the seq Clear key to delete the whole
   sequence) isn't available
   from `Tapped` (a `*fyne.PointEvent` has no modifiers). Implement

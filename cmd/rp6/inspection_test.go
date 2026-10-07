@@ -103,6 +103,22 @@ var layoutScenarios = []layoutScenario{
 		stepPixels: [2]int{40, 50},
 	},
 	{
+		name:       "thinkpad-x13-fullscreen-p6-1920x1200",
+		formFactor: "laptop-fullscreen-p6",
+		pixel:      uiinspect.PixelSize{Width: 1920, Height: 1200},
+		scale:      1,
+		console:    true,
+		configure:  p6ConsoleScene,
+		required:   []string{"rack.transport", "rack.p6", "rack.pad-fx", "rack.sequencer", "rack.keyboard", "rack.paks", "rack.pads", "rack.vu", "rack.navigation", "rack.status"},
+		hidden:     []string{"rack.keys-fx"},
+		fit:        []string{"rack.transport", "rack.p6", "rack.pad-fx", "rack.sequencer", "rack.keyboard", "rack.paks", "rack.pads", "rack.vu", "rack.navigation", "rack.status", "pads.grid", "sequencer.grid", "paks.list", "keyboard.keys"},
+		overlaps:   []string{"rack.transport", "rack.p6", "rack.pad-fx", "rack.sequencer", "rack.keyboard", "rack.paks", "rack.pads", "rack.vu", "rack.navigation", "rack.status"},
+		touch:      append(desktopTouchTargets(), activeSequencerStepIDs(6, 16)...),
+		notes:      []string{"Desktop console with the P-6 hardware backend: the P-6 rack spans the bottom with Play, PATTERN and the four Delay/Reverb knobs on a single row (the console is the one desktop arrangement wide enough), above the keyboard."},
+		padPixels:  [2]int{80, 130},
+		stepPixels: [2]int{40, 50},
+	},
+	{
 		name:       "thinkpad-x13-fullscreen-1920x1200",
 		formFactor: "laptop-fullscreen",
 		pixel:      uiinspect.PixelSize{Width: 1920, Height: 1200},
@@ -196,6 +212,22 @@ var layoutScenarios = []layoutScenario{
 		overlaps:   []string{"rack.transport", "rack.paks", "rack.keyboard", "rack.pads", "rack.vu", "rack.navigation", "rack.status"},
 		touch:      phoneTouchTargets(),
 		notes:      []string{"The smaller Pixel 10 Pro with the PAKS + KEYS racks toggled on above the pads: the tightest supported phone state (height-bound, ~123px cells). Adding the FX rack on top of these two is the one phone state that drops the pads below the 80px floor."},
+		padPixels:  [2]int{80, 190},
+	},
+	{
+		name:       "pixel-10-pro-p6-1280x2856",
+		formFactor: "phone-portrait-p6",
+		pixel:      uiinspect.PixelSize{Width: 1280, Height: 2856},
+		scale:      3,
+		mobile:     true,
+		insets:     phoneInsets,
+		configure:  phoneP6Scene,
+		required:   []string{"rack.transport", "rack.p6", "rack.pads", "rack.vu", "rack.navigation", "rack.status"},
+		hidden:     []string{"rack.pad-fx", "rack.keys-fx", "rack.sequencer", "rack.keyboard", "rack.paks"},
+		fit:        []string{"rack.transport", "rack.p6", "rack.pads", "rack.vu", "rack.navigation", "rack.status", "pads.grid"},
+		overlaps:   []string{"rack.transport", "rack.p6", "rack.pads", "rack.vu", "rack.navigation", "rack.status"},
+		touch:      phoneTouchTargets(),
+		notes:      []string{"The Pixel 10 Pro driving a P-6 over USB-C: the P-6 rack's four Delay/Reverb knobs split 2+2 so the rack fits the phone's width (one row of four overflowed it), above the pads."},
 		padPixels:  [2]int{80, 190},
 	},
 	{
@@ -453,6 +485,16 @@ func p6WindowScene(u *ui) {
 	u.setStatus("P-6 online - window layout scene")
 }
 
+// p6ConsoleScene is the desktop console with the P-6 hardware backend: the
+// console scene's racks plus the P-6 rack (its one-row arrangement) along the
+// bottom, in place of the emulator's keyboard FX.
+func p6ConsoleScene(u *ui) {
+	desktopConsoleScene(u)
+	u.useEmu = false
+	u.applyBackendGating()
+	u.setStatus("P-6 online - console layout scene")
+}
+
 func tabletScene(u *ui) {
 	// The tablet variant force-shows paks + keyboard (show: true); the sequencer
 	// is undocked in the centre column and the pads share it, so show them here.
@@ -503,6 +545,16 @@ func phoneRacksScene(u *ui) {
 	u.paksRack.lister = inspectionPakItems
 	u.paksRack.refresh("/kits/modular-hits")
 	u.setStatus("emulator online - paks + keys shown")
+}
+
+// phoneP6Scene is the phone with the P-6 hardware as the active backend, so the
+// P-6 rack (transport, PATTERN, Delay/Reverb) is placed above the pads.
+func phoneP6Scene(u *ui) {
+	phoneScene(u)
+	u.useEmu = false
+	u.applyBackendGating() // reveals the P-6 rack
+	u.setConnected(true)
+	u.setStatus("P-6 online - phone layout scene")
 }
 
 // loopPhoneScene is loopScene on a phone, less the controls a phone build

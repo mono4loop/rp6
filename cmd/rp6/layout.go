@@ -89,14 +89,7 @@ func (u *ui) pageValid(id string) bool {
 // by device size, and desktop fullscreen is the console. See docs/architecture/
 // layouts.md (fixed-form-factor policy) and resolutions.txt for the target set.
 func (u *ui) layoutEnv(size fyne.Size) layoutlang.Env {
-	mobile := onMobile
-	if u.mobileForTest != nil {
-		mobile = *u.mobileForTest
-	}
-	tablet := isTabletSize(size)
-	if u.tabletForTest != nil {
-		tablet = *u.tabletForTest
-	}
+	mobile, tablet := u.formFactor(size)
 	env := layoutlang.Env{
 		Bools: map[string]bool{
 			// Platform, detected at boot (compile-time build tags).
@@ -119,6 +112,65 @@ func (u *ui) layoutEnv(size fyne.Size) layoutlang.Env {
 		},
 	}
 	return env
+}
+
+// formFactor classifies a canvas size: mobile is the boot-time platform
+// (compile-time build tags) and tablet a tablet-class screen (isTabletSize),
+// both overridable per instance by the inspection tests.
+func (u *ui) formFactor(size fyne.Size) (mobile, tablet bool) {
+	mobile = onMobile
+	if u.mobileForTest != nil {
+		mobile = *u.mobileForTest
+	}
+	tablet = isTabletSize(size)
+	if u.tabletForTest != nil {
+		tablet = *u.tabletForTest
+	}
+	return mobile, tablet
+}
+
+// rackKey is the part of the rack-internal environment that `rack` blocks
+// branch on (see rackEnv): phone (a mobile build on a non-tablet screen, by the
+// current canvas size) and console (desktop full screen — the only desktop
+// arrangement wide enough for the P-6 rack's single row). The racks whose block
+// uses these flags are recomposed when the key changes (see relayout).
+type rackKey struct {
+	phone, console bool
+}
+
+// rackKeyNow computes the rack key for the current canvas size and console
+// intent (the same classification layoutEnv uses). At build the size is still
+// unknown, so a mobile build starts as a phone and a tablet recomposes at its
+// first real size; the console flag is the intent, so entering/leaving the
+// console recomposes synchronously in setConsole's relayout.
+func (u *ui) rackKeyNow() rackKey {
+	mobile, tablet := u.formFactor(u.canvasSize())
+	return rackKey{
+		phone:   mobile && !tablet,
+		console: !mobile && !onWeb && u.isFullScreen(),
+	}
+}
+
+// rackRegistry maps the top-level rack ids the layout document references to
+// their current objects. Built fresh on every use because the P-6 and
+// keyboard-FX racks are recomposed when the phone form factor flips (see
+// composeP6), so their objects change identity.
+func (u *ui) rackRegistry() layoutspec.Registry {
+	return layoutspec.Registry{
+		"transport": u.transportRack,
+		"p6":        u.p6Obj,
+		"fx":        u.fxRack.Object(),
+		"keysfx":    u.keyboardFXRack.Object(),
+		"seq":       u.seqRack.Object(),
+		"rec":       u.recRack.Object(),
+		"keys":      u.keyboardRack.Object(),
+		"paks":      u.paksRack.Object(),
+		"pads":      u.padRackObj,
+		"vu":        u.meterArea,
+		"toggles":   u.controlBar,
+		"pagenav":   u.pageNav,
+		"status":    u.statusBar,
+	}
 }
 
 // selectLayout compiles the active layout document for the current environment,
@@ -358,13 +410,23 @@ func (u *ui) composeRack(name string, reg layoutspec.Registry, fallback func() f
 	return fallback()
 }
 
-// rackEnv is the condition environment for rack-internal blocks. Rack internals
-// are composed once (not on every resize), so only the boot-time platform flags
-// are meaningful here.
+// rackEnv is the condition environment for rack-internal blocks: the boot-time
+// platform flags, the mobile form factor (`phone` / `tablet`) by the current
+// canvas size, and `console` (desktop full screen, the wide desktop
+// arrangement) with the raw `fullscreen` intent. Rack internals are composed at
+// build and, for the racks whose block depends on these (`rack p6`: one row in
+// the console, two in the window, 2+2 on phones; `rack keysfx`: 3+2 on phones),
+// recomposed whenever the rackKey changes; see relayout / composeP6.
 func (u *ui) rackEnv() layoutlang.Env {
+	mobile, tablet := u.formFactor(u.canvasSize())
+	key := u.rackKeyNow()
 	return layoutlang.Env{Bools: map[string]bool{
-		"mobile":  onMobile,
-		"web":     onWeb,
-		"desktop": !onMobile && !onWeb,
+		"mobile":     mobile,
+		"web":        onWeb,
+		"desktop":    !mobile && !onWeb,
+		"tablet":     mobile && tablet,
+		"phone":      key.phone,
+		"fullscreen": u.isFullScreen(),
+		"console":    key.console,
 	}}
 }

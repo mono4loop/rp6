@@ -262,6 +262,93 @@ func TestPhoneFillsPadCells(t *testing.T) {
 	assert.False(t, u.grid.FillCells(), "leaving the phone restores the ceiling")
 }
 
+// TestPhoneSplitsWideRacks: the P-6 rack's four Delay/Reverb knobs and the
+// keyboard-FX rack's five knobs don't fit a phone in one row, so their rack
+// blocks split them 2+2 / 3+2 there. The racks are recomposed when the phone
+// form factor flips, and every other form factor keeps the single row.
+func TestPhoneSplitsWideRacks(t *testing.T) {
+	u := newTestUI(t)
+	rows := func(o fyne.CanvasObject) int {
+		c, ok := o.(*fyne.Container)
+		require.True(t, ok)
+		return len(c.Objects)
+	}
+	keysfxContent := func() fyne.CanvasObject {
+		return u.keyboardFXRack.Object().(*components.RackPanel).InspectionChildren()[0]
+	}
+	require.Equal(t, 2, rows(u.p6Inner), "desktop: the Play/PATTERN row and one knob row")
+	require.Equal(t, 5, rows(keysfxContent()), "desktop: five knobs in one row")
+
+	mobile, tablet := true, false
+	u.mobileForTest, u.tabletForTest = &mobile, &tablet
+	u.relayout()
+	assert.True(t, u.rackKey.phone)
+	assert.Equal(t, 3, rows(u.p6Inner), "phone: the knobs split 2+2")
+	assert.Equal(t, 2, rows(keysfxContent()), "phone: the keyboard FX knobs split 3+2")
+	assert.Same(t, u.p6Obj, u.rackRegistry()["p6"], "the registry follows the recomposed rack")
+
+	tablet = true
+	u.relayout()
+	assert.False(t, u.rackKey.phone)
+	assert.Equal(t, 2, rows(u.p6Inner), "tablet keeps the single knob row")
+	assert.Equal(t, 5, rows(keysfxContent()))
+}
+
+// TestConsoleJoinsP6Rows: the desktop console is the one desktop arrangement
+// wide enough for the P-6 rack's Play, PATTERN and four Delay/Reverb knobs on a
+// single row, so its block puts them there; the fixed window keeps the knobs
+// on a second row, and leaving the console wraps them again.
+func TestConsoleJoinsP6Rows(t *testing.T) {
+	u := newTestUI(t)
+	rows := func(o fyne.CanvasObject) int {
+		c, ok := o.(*fyne.Container)
+		require.True(t, ok)
+		return len(c.Objects)
+	}
+	require.Equal(t, 2, rows(u.p6Inner), "window: two rows")
+
+	u.fullScreen = true
+	u.relayout()
+	require.Equal(t, "console", u.activeVariant)
+	assert.True(t, u.rackKey.console)
+	require.Equal(t, 1, rows(u.p6Inner), "console: one row")
+	row := u.p6Inner.(*fyne.Container).Objects[0].(*fyne.Container)
+	assert.Len(t, row.Objects, 8, "Play, separator, PATTERN, separator, four knobs")
+	assert.Same(t, u.p6Obj, u.rackRegistry()["p6"])
+
+	u.fullScreen = false
+	u.relayout()
+	require.Equal(t, "window", u.activeVariant)
+	assert.Equal(t, 2, rows(u.p6Inner), "back in the window: two rows again")
+}
+
+// TestRestoreForcedRacksSurvivesRecompose: a variant's `show:` record must be
+// restored on the rack's *current* object. Here KEYS FX is shown on a phone,
+// the tablet variant force-hides it (recording the prior state on the object of
+// that moment), and the rack is recomposed again on the way back to the phone —
+// the restore has to find the new object by id, not act on the stale one.
+func TestRestoreForcedRacksSurvivesRecompose(t *testing.T) {
+	u := newTestUI(t)
+	u.useEmu = true // the tablet variant only places (and force-hides) KEYS FX on the emulator
+	u.applyBackendGating()
+	mobile, tablet := true, false
+	u.mobileForTest, u.tabletForTest = &mobile, &tablet
+	u.relayout()
+	require.Equal(t, "phone", u.activeVariant)
+	u.setVisible(u.keyboardFXRack.Object(), u.keysFXBtn, true)
+
+	tablet = true
+	u.relayout()
+	require.Equal(t, "tablet", u.activeVariant)
+	require.False(t, u.keyboardFXRack.Object().Visible(), "the tablet variant hides KEYS FX")
+
+	tablet = false
+	u.relayout()
+	require.Equal(t, "phone", u.activeVariant)
+	assert.True(t, u.keyboardFXRack.Object().Visible(), "leaving the tablet restores KEYS FX on the recomposed rack")
+	assert.True(t, u.keysFXBtn.On())
+}
+
 // TestPhoneBoundsPaksList checks the phone variant's `paks(rows: 2)` keeps the
 // sample-pak list to two keys (so the rack doesn't crush the pads below it),
 // and that leaving the phone variant restores the desktop's default list height.

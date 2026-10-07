@@ -231,13 +231,21 @@ rack transport {
 // rack is hidden and its toggle disabled on the emulator (see applyBackendGating);
 // the layout only places it `if p6_active`. Note there's no RackPanel here — Go
 // wraps these controls in the P-6's yellow tinted plate (device-specific styling).
-// Play + PATTERN sit on the top row and the four Delay/Reverb knobs wrap onto a
-// second row so the whole rack fits the fixed 850-wide window (six knobs in one
-// row overflow it); full-width variants (console/tablet) just show two rows.
+// The arrangement follows the width the rack gets (it's full-width everywhere):
+//   - desktop console (full screen): Play, PATTERN and the four Delay/Reverb
+//     knobs on ONE row — the only desktop arrangement wide enough (`console`);
+//   - the fixed 850-wide window and the tablet: Play + PATTERN on top, the four
+//     knobs wrapped onto a second row (six controls in one row overflow 850);
+//   - phones (~420-440dp): not even four knobs fit a row, so they split 2+2.
+// `phone` / `console` are rack-env flags; the rack is recomposed when either
+// flips (see composeP6).
 rack p6 {
   VBox {
-    HBox { play; Separator; pattern }
-    HBox { delayTime; delayLevel; reverbTime; reverbLevel }
+    HBox { play; Separator; pattern; Separator; delayTime; delayLevel; reverbTime; reverbLevel } if console
+    HBox { play; Separator; pattern } if !console
+    HBox { delayTime; delayLevel; reverbTime; reverbLevel } if !console && !phone
+    HBox { delayTime; delayLevel } if phone
+    HBox { reverbTime; reverbLevel } if phone
   }
 }
 
@@ -257,8 +265,17 @@ rack fx {
   RackPanel { HBox { fxRoll; Separator; fxRate } }
 }
 
+// The emulator's keyboard effects: five knobs in one row everywhere but phones,
+// where that row is wider than the screen, so they split 3+2 (recomposed on the
+// phone flag like `rack p6`).
 rack keysfx {
-  RackPanel { HBox { keysFXTone; keysFXComp; keysFXChorus; keysFXDelay; keysFXReverb } }
+  RackPanel {
+    HBox { keysFXTone; keysFXComp; keysFXChorus; keysFXDelay; keysFXReverb } if !phone
+    VBox {
+      HBox { keysFXTone; keysFXComp; keysFXChorus }
+      HBox { keysFXDelay; keysFXReverb }
+    } if phone
+  }
 }
 
 rack pads {

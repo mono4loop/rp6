@@ -173,6 +173,22 @@ block positions:
 The layout positions the holder; Go fills/regenerates its children. This is the
 boundary: **static composition → layout file; generation/behavior → Go.**
 
+Rack blocks evaluate the same `mobile` / `web` / `desktop` flags as variants plus
+**`phone`** and **`tablet`** (the mobile form factor by the current canvas size),
+**`fullscreen`** (the console intent) and **`console`** (`desktop && fullscreen`,
+the one desktop arrangement that is full-screen wide). Most racks are composed
+once at build, but `rack p6` arranges its controls per width — Play, PATTERN and
+the four Delay/Reverb knobs on one row in the console, the knobs wrapped onto a
+second row in the 850-wide window and on the tablet, and split 2+2 on phones —
+and `rack keysfx` splits its five knobs 3+2 on phones, so `relayout` recomposes
+exactly those two whenever the `rackKey` (phone, console) changes (`composeP6` /
+`composeKeysFX`; a mobile build learns phone-vs-tablet from its first real size,
+and the console toggle's synchronous relayout flips the console flag). Re-
+parenting the same sub-widgets within the same window is fine; the recomposed
+rack's object changes identity, which is why `rackRegistry` is rebuilt on every
+use and `restoreForcedRacks` looks racks up by id rather than trusting the
+object it recorded.
+
 ### Compose *once* — the object→canvas 1:1 rule
 
 Fyne keys the object→canvas association **1:1** (`SetCanvasForObject` /
@@ -290,7 +306,8 @@ page is a self-contained block, so concatenation just appends pages; rack blocks
 are top-level and shared. `loadLayout()` parses it in `build()` (pure, no I/O,
 safe in tests) and records the declared pages.
 
-Flow: `build()` → `loadLayout()`; each rack composed once via `composeRack`;
+Flow: `build()` → `loadLayout()`; each rack composed via `composeRack` (once —
+except the P-6 and keyboard-FX racks, recomposed when the phone flag flips);
 `relayout()` builds the registry, calls `selectLayout` (→ `Document.Select` +
 `layoutspec.BuildConfig` with `configureComponent`), and swaps the result into
 the stable `contentHolder` (whose `sizeWatch` reports resizes to

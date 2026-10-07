@@ -202,6 +202,20 @@ type ui struct {
 	// Same reset-in-relayout lifecycle as paksRows; re-applied on grid rebuilds.
 	padFill bool
 
+	// closeOnce makes close() run its shutdown exactly once: the interactive
+	// exit paths run it before quitting, and Fyne's lifecycle stop hook runs it
+	// again afterwards (see hookLifecycle).
+	closeOnce sync.Once
+
+	// p6Reg / keysFXReg are the sub-widget registries of the two racks whose
+	// `rack` block branches on the rack key (phone: knob rows split; console:
+	// the P-6 rack on one row); composeP6 / composeKeysFX rebuild the rack from
+	// them when the key changes (see relayout). p6Inner is the P-6 plate's
+	// content (the composed block), kept for tests/inspection.
+	p6Reg, keysFXReg layoutspec.Registry
+	p6Inner          fyne.CanvasObject
+	rackKey          rackKey
+
 	// mobileForTest/tabletForTest override the compile-time platform for the
 	// headless layout-inspection harness only (the real platform is a build-tag
 	// constant, so a desktop test binary can't otherwise exercise the phone/
@@ -329,13 +343,14 @@ func (u *ui) build(w fyne.Window) {
 	}, u.fxRack.defaultObject)
 	u.keyboardFX = loadKeyboardFX()
 	u.keyboardFXRack = newKeyboardFXRack(u.keyboardFX, u.setKeyboardFX)
-	u.keyboardFXRack.obj = u.composeRack("keysfx", layoutspec.Registry{
+	u.keysFXReg = layoutspec.Registry{
 		"keysFXTone":   u.keyboardFXRack.tone.Object(),
 		"keysFXComp":   u.keyboardFXRack.comp.Object(),
 		"keysFXChorus": u.keyboardFXRack.chorus.Object(),
 		"keysFXDelay":  u.keyboardFXRack.delay.Object(),
 		"keysFXReverb": u.keyboardFXRack.reverb.Object(),
-	}, u.keyboardFXRack.defaultObject)
+	}
+	u.composeKeysFX()
 	u.seqRack = newSequencerRack(u.seq,
 		func() {
 			if u.root != nil {
@@ -439,20 +454,16 @@ func (u *ui) build(w fyne.Window) {
 	// Connection LED seated in the plate (black-bezel, like a mounted indicator),
 	// paired with the "P-6" nameplate as its lead; setConnected drives its color.
 	u.p6LED = components.NewLEDBordered(ledRed)
-	p6Inner := u.recomposeRack("p6", layoutspec.Registry{
+	u.p6Reg = layoutspec.Registry{
 		"play":        u.playBtn,
 		"pattern":     u.patternStep.Object(),
 		"delayTime":   delayTime.Object(),
 		"delayLevel":  delayLevel.Object(),
 		"reverbTime":  reverbTime.Object(),
 		"reverbLevel": reverbLevel.Object(),
-	})
-	if p6Inner == nil {
-		p6Inner = container.NewHBox(
-			u.playBtn, widget.NewSeparator(), u.patternStep.Object(), widget.NewSeparator(),
-			delayTime.Object(), delayLevel.Object(), reverbTime.Object(), reverbLevel.Object())
 	}
-	u.p6Obj = components.NewRackPanelTinted(p6Inner, p6PlateColor, "P-6", u.p6LED)
+	u.composeP6()
+	u.rackKey = u.rackKeyNow() // the form factor the rack blocks were composed for
 
 	// Master meter, framed as a rack panel (toggleable). A short "VU" cap keeps
 	// it compact. It rides at the top beside TEMPO (default) or along the bottom
@@ -552,12 +563,19 @@ func (u *ui) build(w fyne.Window) {
 
 	// F11 toggles full screen, which switches to the "console" layout (Fyne has
 	// no built-in full-screen key, and a modifier-less key can't be an
-	// AddShortcut, so we handle it via the canvas typed-key hook).
-	w.Canvas().SetOnTypedKey(func(ev *fyne.KeyEvent) {
-		if ev.Name == fyne.KeyF11 {
-			u.toggleFullScreen()
-		}
-	})
+	// AddShortcut, so we handle it via the canvas typed-key hook). Desktop only:
+	// Fyne's mobile driver routes every typed key through this hook and only
+	// falls back to its own back handling (finishing the Android activity) when
+	// none is set, so installing it on a phone left the Back gesture dead — and
+	// the app without a graceful exit (the activity's destroy is what runs
+	// close() there, see hookLifecycle).
+	if !onMobile {
+		w.Canvas().SetOnTypedKey(func(ev *fyne.KeyEvent) {
+			if ev.Name == fyne.KeyF11 {
+				u.toggleFullScreen()
+			}
+		})
+	}
 	// Ctrl+Shift+Enter is the always-works alternative (a modified shortcut fires
 	// regardless of keyboard focus, unlike the F11 typed-key above). Bind both the
 	// main Return and the numpad Enter.
@@ -616,21 +634,16 @@ func (u *ui) relayout() {
 		u.consoleBtn.SetOn(u.isFullScreen())
 	}
 
-	reg := layoutspec.Registry{
-		"transport": u.transportRack,
-		"p6":        u.p6Obj,
-		"fx":        u.fxRack.Object(),
-		"keysfx":    u.keyboardFXRack.Object(),
-		"seq":       u.seqRack.Object(),
-		"rec":       u.recRack.Object(),
-		"keys":      u.keyboardRack.Object(),
-		"paks":      u.paksRack.Object(),
-		"pads":      u.padRackObj,
-		"vu":        u.meterArea,
-		"toggles":   u.controlBar,
-		"pagenav":   u.pageNav,
-		"status":    u.statusBar,
+	// Rack internals whose block branches on the rack key (phone: the P-6 and
+	// keyboard-FX knob rows split; console: the P-6 rack joins onto one row)
+	// are recomposed when it changes — a mobile build learns phone-vs-tablet
+	// from its first real size, and the console flag flips with the toggle.
+	if key := u.rackKeyNow(); key != u.rackKey {
+		u.rackKey = key
+		u.composeP6()
+		u.composeKeysFX()
 	}
+	reg := u.rackRegistry()
 
 	u.root = u.selectLayout(reg)
 	if u.paksRack != nil {
@@ -913,6 +926,42 @@ func (u *ui) buildPadRack() {
 	if u.selPad >= 0 {
 		bank, number := padBankNumber(u.selPad)
 		u.grid.Select(u.gridPos(bank, number))
+	}
+}
+
+// composeP6 (re)builds the P-6 rack's tinted plate from its `rack p6` block
+// (or the stock Go row when there's no block). It runs at build and again from
+// relayout whenever the rack key changes, because the block arranges the
+// controls per form factor: Play, PATTERN and the four Delay/Reverb knobs on
+// one row in the desktop console, the knobs wrapped onto a second row in the
+// fixed window, and split 2+2 on phones. The sub-widgets are the same objects re-parented within the same
+// window — allowed; the 1:1 object→canvas rule only forbids a second window —
+// and the previous plate is simply dropped. Visibility carries over so the
+// backend gating / P-6 toggle state isn't disturbed.
+func (u *ui) composeP6() {
+	inner := u.recomposeRack("p6", u.p6Reg)
+	if inner == nil {
+		inner = container.NewHBox(
+			u.playBtn, widget.NewSeparator(), u.patternStep.Object(), widget.NewSeparator(),
+			u.p6Reg["delayTime"], u.p6Reg["delayLevel"], u.p6Reg["reverbTime"], u.p6Reg["reverbLevel"])
+	}
+	visible := u.p6Obj == nil || u.p6Obj.Visible()
+	u.p6Inner = inner
+	u.p6Obj = components.NewRackPanelTinted(inner, p6PlateColor, "P-6", u.p6LED)
+	if !visible {
+		u.p6Obj.Hide()
+	}
+}
+
+// composeKeysFX (re)builds the keyboard-FX rack from its `rack keysfx` block,
+// the same way and for the same reason as composeP6 (five knobs in one row
+// overflow a phone; the block splits them 3+2 there).
+func (u *ui) composeKeysFX() {
+	r := u.keyboardFXRack
+	visible := r.obj == nil || r.obj.Visible()
+	r.obj = u.composeRack("keysfx", u.keysFXReg, r.defaultObject)
+	if !visible {
+		r.obj.Hide()
 	}
 }
 
@@ -1427,8 +1476,13 @@ type savedRack struct {
 // variant forced it. Called on a variant switch, before the new variant's
 // overrides are (re)applied during the build.
 func (u *ui) restoreForcedRacks() {
-	for _, s := range u.forced {
-		u.setVisible(s.obj, s.btn, s.on && !s.btn.Disabled())
+	reg := u.rackRegistry()
+	for id, s := range u.forced {
+		obj := s.obj
+		if cur, ok := reg[id]; ok && cur != nil {
+			obj = cur // the rack may have been recomposed since it was recorded (composeP6)
+		}
+		u.setVisible(obj, s.btn, s.on && !s.btn.Disabled())
 	}
 	u.forced = nil
 }
@@ -3108,8 +3162,25 @@ func (u *ui) setStatus(msg string) {
 	}
 }
 
-func (u *ui) close() {
-	u.stopMeter() // stop UI animators before the run loop tears down
+// close shuts RP6 down: stops the animators, watchers, engines and transport,
+// autosaves the working sequence and recorder takes, closes the store, the
+// audio and the MIDI devices, and docks a floated pad window. Every exit path
+// funnels here — the window close intercept and Ctrl+Q call it directly, and
+// Fyne's lifecycle stop hook (hookLifecycle) calls it for the quits those two
+// don't see: App.Quit from anywhere (an autopilot `quit`) and, on Android, the
+// activity being destroyed. It is idempotent (closeOnce) because the direct
+// callers quit afterwards, which fires the hook a second time, and several
+// steps (closing stop channels) would panic if repeated.
+//
+// It may therefore run after the Fyne run loop has terminated (the hook path):
+// that is safe because Fyne runs fyne.Do inline once the loop has drained, and
+// nothing here waits on the loop. Closing an already-closed window is a no-op.
+func (u *ui) close() { u.closeOnce.Do(u.shutdown) }
+
+// shutdown is close()'s body; call close(), never this directly.
+func (u *ui) shutdown() {
+	log.Printf("rp6: shutting down") // one line per exit, so logcat/journal show which exits ran it
+	u.stopMeter()                    // stop UI animators before the run loop tears down
 	u.stopRelayoutWatch()
 	u.stopDeviceWatch()
 	u.stopJam()
@@ -3264,6 +3335,23 @@ func main() {
 		a.Quit()
 	})
 
+	// Quits that bypass the two paths above — App.Quit called from anywhere
+	// (an autopilot `quit`), and Android destroying the activity — still run
+	// the same shutdown through Fyne's lifecycle stop hook.
+	u.hookLifecycle(a.Lifecycle())
+
 	u.attachAutopilot() // no-op unless built with -tags autopilot and given a script
 	w.ShowAndRun()
+}
+
+// hookLifecycle registers close() as the app's lifecycle stop hook, so a quit
+// that doesn't come through the window close intercept or Ctrl+Q still
+// autosaves, sends the P-6 MIDI Stop and releases the devices. Fyne fires the
+// hook on App.Quit (desktop: queued by the run loop after it terminates, and
+// driver.Run waits for it before returning, so it completes before main does)
+// and on Android when the activity is destroyed (App.Quit is a no-op there).
+// close() is idempotent, so the interactive paths that call it before quitting
+// are unaffected by the hook running afterwards.
+func (u *ui) hookLifecycle(l fyne.Lifecycle) {
+	l.SetOnStopped(u.close)
 }
