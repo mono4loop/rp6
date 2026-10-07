@@ -26,7 +26,7 @@ env:
   # Overridable via repo Actions variables (gh variable set …), else these
   # defaults. ANDROID_ABI: `android/arm64` for phones, `android` for universal.
   ANDROID_ABI: ${{ vars.ANDROID_ABI || 'android/arm64' }}
-  NDK_VERSION: ${{ vars.ANDROID_NDK_VERSION || '27.2.12479018' }}
+  NDK_VERSION: ${{ vars.ANDROID_NDK_VERSION || '30.0.16248370' }}
 
 jobs:
   apk:
