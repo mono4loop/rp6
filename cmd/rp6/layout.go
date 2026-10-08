@@ -85,7 +85,7 @@ func (u *ui) pageValid(id string) bool {
 // compile time by build tags) and the discrete form factor the size resolves to
 // (a tablet-class touchscreen, plus the fullscreen/console intent) so a size maps
 // to exactly one designed variant. There is deliberately no continuous "compact"
-// adaptation: windowed desktop is a single fixed size, mobile is phone-or-tablet
+// adaptation: windowed desktop is 850x950, mobile is phone-or-tablet
 // by device size, and desktop fullscreen is the console. See docs/architecture/
 // layouts.md (fixed-form-factor policy) and resolutions.txt for the target set.
 func (u *ui) layoutEnv(size fyne.Size) layoutlang.Env {
@@ -131,11 +131,13 @@ func (u *ui) formFactor(size fyne.Size) (mobile, tablet bool) {
 
 // rackKey is the part of the rack-internal environment that `rack` blocks
 // branch on (see rackEnv): phone (a mobile build on a non-tablet screen, by the
-// current canvas size) and console (desktop full screen — the only desktop
-// arrangement wide enough for the P-6 rack's single row). The racks whose block
-// uses these flags are recomposed when the key changes (see relayout).
+// current canvas size), console (desktop full screen or maximized — the only
+// desktop arrangement wide enough for the P-6 rack's single row with PATTERN)
+// and p6 (the P-6 is the active backend: PATTERN joins TEMPO outside the
+// console). The racks whose block uses these flags are recomposed when the key
+// changes (see relayout).
 type rackKey struct {
-	phone, console bool
+	phone, console, p6 bool
 }
 
 // rackKeyNow computes the rack key for the current canvas size and console
@@ -148,6 +150,7 @@ func (u *ui) rackKeyNow() rackKey {
 	return rackKey{
 		phone:   mobile && !tablet,
 		console: !mobile && !onWeb && u.isFullScreen(),
+		p6:      !u.useEmu,
 	}
 }
 
@@ -187,6 +190,7 @@ func (u *ui) selectLayout(reg layoutspec.Registry) fyne.CanvasObject {
 	name, _ := u.layoutDoc.SelectedNameForPage(u.activePage, env)
 	u.variantChanged = name != u.activeVariant
 	if u.variantChanged {
+		u.diagVariant(name)
 		// Leaving a variant undoes its `show:` overrides before the incoming one
 		// applies its own — however the switch happened. The toggle actions
 		// (setConsole, setPage) restore earlier and this is then a no-op; it
@@ -258,6 +262,7 @@ func (u *ui) configureComponent(id string, props map[string]string) {
 	case "seq":
 		u.applyRackShow("seq", props, u.seqRack.Object(), u.seqBtn)
 		u.applyDefaultTracks(props)
+		u.applySeqRows(props)
 		u.applyRackExpand(u.seqRack.Object(), props)
 	case "pads":
 		u.applyDefaultPadLayout(props)
@@ -301,6 +306,18 @@ func (u *ui) applyPaksRows(props map[string]string) {
 	if v, ok := props["rows"]; ok {
 		if n, err := strconv.Atoi(v); err == nil {
 			u.paksRows = n
+		}
+	}
+}
+
+// applySeqRows records a `seq(rows: N)` property — the most step rows the
+// sequencer reserves height for; more tracks or bars scroll inside it, so a
+// saved sequence can't push the window past the screen. Same record-then-apply
+// lifecycle as applyPaksRows (u.seqRows, applied by relayout).
+func (u *ui) applySeqRows(props map[string]string) {
+	if v, ok := props["rows"]; ok {
+		if n, err := strconv.Atoi(v); err == nil {
+			u.seqRows = n
 		}
 	}
 }
@@ -370,13 +387,14 @@ func (u *ui) applyDefaultPadLayout(props map[string]string) {
 	}
 }
 
-// isFullScreen reports whether the "mixing console" layout is active — our own
-// intent (set by toggleFullScreen on desktop via F11 / Ctrl+Shift+Enter, or by
-// the CONSOLE button on any platform), NOT the window's FullScreen() flag. On
-// mobile it's off by default (the console is a wide layout that doesn't suit a
-// phone), but a user on a large tablet can turn it on with the CONSOLE button.
+// isFullScreen reports whether the "mixing console" layout is active: our own
+// full-screen intent (set by toggleFullScreen on desktop via F11 /
+// Ctrl+Shift+Enter, or by the CONSOLE button on any platform), NOT the window's
+// FullScreen() flag, or a maximized desktop window (syncMaximized). On mobile
+// it's off by default (the console is a wide layout that doesn't suit a phone),
+// but a user on a large tablet can turn it on with the CONSOLE button.
 func (u *ui) isFullScreen() bool {
-	return u.fullScreen
+	return u.fullScreen || u.maximized
 }
 
 // recomposeRack arranges a rack's *internal* controls from its `rack NAME { … }`
@@ -428,5 +446,6 @@ func (u *ui) rackEnv() layoutlang.Env {
 		"phone":      key.phone,
 		"fullscreen": u.isFullScreen(),
 		"console":    key.console,
+		"p6_active":  key.p6,
 	}}
 }

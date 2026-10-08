@@ -1,6 +1,28 @@
-* Thinkpad X13 - 1920x1200 (16:10) full screen
-* Thinkpad X13 - 850 x 950 window mode
+Desktop screens (panel @ desktop scale). Every desktop variant must fit each one:
+the window variant at the windowed size (850x950, shorter on short screens), the
+console maximized (the screen less ~69 for GNOME's top bar and title bar) and
+full screen. cmd/rp6/screens_test.go (TestContentFitsScreens) checks the content
+minimums against these budgets; keep the two lists in step.
+* 1920x1080@1 - full HD
+* 1920x1080@1.25 - full HD laptop at 125%
+* 1920x1200@1 - Thinkpad X13, 100%
+* 1920x1200@1.25 - Thinkpad X13 at 125% (1536x960 logical; maximized 1536x891)
+* 2256x1504@1.5 - Framework 13
+* 2560x1440@1 - QHD
+* 2560x1440@1.25 - QHD at 125%
+* 2560x1600@2 - WQXGA laptop at 200% (1280x800 logical, the smallest supported)
+* 2880x1800@2 - Retina-class laptop at 200%
+* 3440x1440@1 - Asus ROG 34" ultrawide (21:9)
+* 3840x2160@1.5 - 4K at 150%
+* 3840x2160@2 - 4K at 200%
+* 1366x768@1 - unsupported: neither variant fits (the console needs ~1600 logical width, the window ~800 height)
+
+The gate can't see what the compositor decides: libdecor's title-bar
+double-click, Mutter's maximize constraints, real panel heights (KDE, docks) or
+multi-monitor placement. Check those by hand: double-click the title bar for the
+console, again for the window.
+
+Mobile devices
 * Pixel 10 Pro XL - OLED LTPO 1344x2992 a 486 ppp
 * Pixel 10 Pro - OLED LTPO de 1280x2856 a 495 ppp
-* Asus Rog 34" - 3440x1440 (21:9) full screen
 * One Plus Pad 3 - 3392x2400 (7:5) 315 ppp

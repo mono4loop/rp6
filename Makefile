@@ -15,7 +15,7 @@ BINARY_NAME := rp6
 # Tests deliberately run without tags so Fyne's thread-safety checks stay on.
 TAGS ?= capture wayland migrated_fynedo jam
 
-.PHONY: build install run test inspect-layouts fmt vet check clean serve web android android-release icon
+.PHONY: build install run test inspect-layouts smoke-maximize fmt vet check clean serve web android android-release icon
 
 build:
 	go build -tags "$(TAGS)" -ldflags "-s -w" -o build/$(BINARY_NAME) ./cmd/$(BINARY_NAME)
@@ -134,6 +134,12 @@ test:
 # manifests for every device listed in resolutions.txt.
 inspect-layouts:
 	RP6_UPDATE_LAYOUT_ARTIFACTS=1 go test ./cmd/rp6 -run TestCurrentLayoutsAtTargetResolutions -count=1 -v
+
+# Live check on a real Wayland display: maximize and restore the real app (an
+# autopilot-only F9) and check from the RP6_DIAG log that the compositor sized
+# the maximize and the layout switched. See scripts/smoke-maximize.sh.
+smoke-maximize:
+	./scripts/smoke-maximize.sh
 
 fmt:
 	gofmt -w .

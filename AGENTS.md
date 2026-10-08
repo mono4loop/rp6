@@ -112,6 +112,7 @@ make run          # go run -tags "capture wayland migrated_fynedo" ./cmd/rp6  (n
 make build        # -> build/rp6  (capture backend + native Wayland + fyne.Do model)
 make test         # go test ./...  (NO build tags -> no audio backend needed)
 make check        # fmt + vet + test + staticcheck (incl. -tags capture on audio)
+make smoke-maximize  # live, needs a Wayland display: maximize/restore the real app, check the log
 ```
 
 The default build tags are **`capture wayland migrated_fynedo`**:
@@ -369,7 +370,15 @@ cmd/rp6/pak.go        (desktop) sample-pak CLI (pak create/install/list), the -p
 cmd/rp6/autopilot.go  attaches Fade's autopilot to the main window (-tags
                     autopilot; a no-op otherwise): Named resolves script names
                     through inspectionTargets(), Idle = no sample pak loading
-                    (loadingSamples) and no relayout queued. See docs/autopilot.md
+                    (loadingSamples) and no relayout queued. See docs/autopilot.md.
+                    autopilot_keys.go (-tags autopilot) binds F9 to maximize/
+                    restore for `make smoke-maximize`
+cmd/rp6/nativewin*.go the nativeWindow seam to window state Fyne hides: maximize
+                    state/requests and the monitor mode. nativewin_wayland.go
+                    (wayland tag) gets GLFW's window from Fyne's wl_surface;
+                    nativewin_stub.go returns nil elsewhere. See layouts.md §8
+cmd/rp6/screens_test.go the desktop screen matrix + TestContentFitsScreens: every
+                    desktop variant's content min fits every resolutions.txt screen
 ```
 
 ### The one rule that matters
@@ -659,6 +668,20 @@ selects the granular source A1..H6).
   objects, so normal `Refresh()` works there (flash included) with no repaint
   hacks. (Docking a rack that stays in the *same* window — e.g. the sequencer
   side-column, or the density grid swap — is fine; that's not a window change.)
+- **Maximize needs a resizable window, minimums that fit, and polling.** On
+  GNOME, libdecor and Mutter refuse to maximize a fixed-size window (min ==
+  max), so the desktop window is resizable — with **no artificial minimum**:
+  Mutter also won't size a maximize whose minimum exceeds the work area (it
+  flags the window maximized and leaves the size), and Fyne grows any window
+  back to its content minimum. So every desktop variant's content minimum must
+  fit every supported screen (`TestContentFitsScreens`, `resolutions.txt`).
+  Fyne has no maximize API or event: `nativewin_wayland.go` gets GLFW's window
+  from the `wl_surface` Fyne exposes and `syncMaximized` reads `glfw.Maximized`
+  on every resize and every meter tick (an unsized maximize never resizes); a
+  maximized window shows the console. The windowed size is fitted to the screen
+  (`windowedSize`, learned work area or monitor mode ÷ scale − 100). Wayland-only
+  (`wayland` tag); elsewhere `native` is nil. Details:
+  `docs/architecture/layouts.md` §8.
 - **Keep widget footprints fixed if they swap content**, or the layout jumps —
   either reserve the space (`container.NewGridWrap`) or make the widget always
   render the same layout rather than hiding/showing sub-objects on state change.
@@ -700,7 +723,8 @@ selects the granular source A1..H6).
   rule — see §6's note on `onCanvasResize`.
 - **`newTestUI` sizes the window like production (`w.Resize(900, 760)`).** On
   desktop the form factor is discrete (see `docs/architecture/layouts.md`): a
-  windowed desktop is the fixed `window` variant, full screen is `console`, and
+  windowed desktop is the `window` variant (850×950, shorter on short screens),
+  full screen or maximized is `console`, and
   mobile is `phone`/`tablet` by device size. There is no continuous
   `compact`/hysteresis reflow. Because `mobile`/`web`/`desktop` are compile-time
   constants (a desktop test binary is always `desktop`), the inspection harness
@@ -731,10 +755,18 @@ selects the granular source A1..H6).
   `cmd/rp6/testdata/layout-inspection/`. Never judge only the annotated image:
   inspect the clean render too, then use JSON for exact geometry and state.
 - **Test real production states, not only curated showcases.** Required scenarios
-  are the fixed set in `resolutions.txt` — the `850x950` fixed window, the two
-  desktop full-screen consoles (16:10 + 21:9), the two phones, and the tablet —
-  plus the `1.25x -> 2x` late-scale regression guard. Curated scenes once hid the
-  actual `850x1`/`1px` sequencer bug.
+  cover the `850x950` window, the two desktop full-screen consoles (16:10 + 21:9),
+  the X13 maximized at 1.25 and a 2x laptop maximized, the P-6 window on
+  1920x1080 at 1.25, the two phones, and the tablet — plus the `1.25x -> 2x`
+  late-scale regression guard. Curated scenes once hid the actual `850x1`/`1px`
+  sequencer bug. **Test at real desktop scales:** the X13 used to be modelled at
+  1x only, which hid that its 1.25 screen couldn't hold the window or console.
+  `TestContentFitsScreens` checks every desktop screen in `resolutions.txt`.
+- **Compositor behaviour needs a live check on the real app.** Headless tests
+  and a toy probe window passed while the real app couldn't maximize. Run
+  `make smoke-maximize` after window sizing/maximize changes: it maximizes and
+  restores the actual app (an autopilot-only F9) and checks the `RP6_DIAG` log.
+  The title-bar double-click itself stays a hand check (libdecor draws the bar).
 - **Containment is different from rack non-overlap.** A child can paint outside
   its rack while rack rectangles remain disjoint because Fyne containers usually
   do not clip. Contracts must require pad cells inside `pads.grid`, pad controls

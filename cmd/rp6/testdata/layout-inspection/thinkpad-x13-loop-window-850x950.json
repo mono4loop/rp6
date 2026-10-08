@@ -7,6 +7,7 @@
     "backend": "emulator",
     "state": {
       "console": false,
+      "maximized": false,
       "padFloating": false,
       "page": "loop",
       "sequencerDocked": false
@@ -26,7 +27,7 @@
     },
     "scale": 1
   },
-  "imageSHA256": "93339a91cb6d4d7e55cf4858afc1d6c98549d47b74f6821d8a4eba5576bdd5df",
+  "imageSHA256": "b101d6f6706cb1cd67a55f389ab61aba61ed180870f5bed3007b1adb89faf8bc",
   "elements": [
     {
       "id": "layout.root",
@@ -57,8 +58,8 @@
         "height": 942
       },
       "minSize": {
-        "width": 620.9531,
-        "height": 779.09375
+        "width": 720.7344,
+        "height": 730.0156
       },
       "underMin": false,
       "clipped": false,
@@ -301,19 +302,19 @@
       "duplicate": false,
       "rect": {
         "x": 4,
-        "y": 836.9219,
+        "y": 886,
         "width": 0,
         "height": 0
       },
       "visibleRect": {
         "x": 4,
-        "y": 836.9219,
+        "y": 886,
         "width": 0,
         "height": 0
       },
       "pixelRect": {
         "x": 4,
-        "y": 836,
+        "y": 886,
         "width": 0,
         "height": 0
       },
@@ -375,19 +376,19 @@
         "x": 4,
         "y": 394.3125,
         "width": 842,
-        "height": 438.60938
+        "height": 487.6875
       },
       "visibleRect": {
         "x": 4,
         "y": 394.3125,
         "width": 842,
-        "height": 438.60938
+        "height": 487.6875
       },
       "pixelRect": {
         "x": 4,
         "y": 394,
         "width": 842,
-        "height": 438
+        "height": 488
       },
       "minSize": {
         "width": 544,
@@ -450,20 +451,20 @@
       "duplicate": false,
       "rect": {
         "x": 175.75,
-        "y": 836.9219,
-        "width": 670.25,
+        "y": 886,
+        "width": 449.20312,
         "height": 60
       },
       "visibleRect": {
         "x": 175.75,
-        "y": 836.9219,
-        "width": 670.25,
+        "y": 886,
+        "width": 449.20312,
         "height": 60
       },
       "pixelRect": {
         "x": 175,
-        "y": 836,
-        "width": 671,
+        "y": 886,
+        "width": 449,
         "height": 60
       },
       "minSize": {
@@ -485,25 +486,25 @@
       "occurrences": 1,
       "duplicate": false,
       "rect": {
-        "x": 4,
-        "y": 900.9219,
-        "width": 842,
-        "height": 45.078125
+        "x": 628.9531,
+        "y": 886,
+        "width": 217.04688,
+        "height": 60
       },
       "visibleRect": {
-        "x": 4,
-        "y": 900.9219,
-        "width": 842,
-        "height": 45.078125
+        "x": 628.9531,
+        "y": 886,
+        "width": 217.04688,
+        "height": 60
       },
       "pixelRect": {
-        "x": 4,
-        "y": 900,
-        "width": 842,
-        "height": 46
+        "x": 628,
+        "y": 886,
+        "width": 218,
+        "height": 60
       },
       "minSize": {
-        "width": 270.5,
+        "width": 95.78125,
         "height": 45.078125
       },
       "underMin": false,
@@ -1167,19 +1168,19 @@
       "duplicate": false,
       "rect": {
         "x": 4,
-        "y": 836.9219,
+        "y": 886,
         "width": 132,
         "height": 34
       },
       "visibleRect": {
         "x": 4,
-        "y": 836.9219,
+        "y": 886,
         "width": 132,
         "height": 34
       },
       "pixelRect": {
         "x": 4,
-        "y": 836,
+        "y": 886,
         "width": 132,
         "height": 34
       },
@@ -1205,19 +1206,19 @@
       "duplicate": false,
       "rect": {
         "x": 4,
-        "y": 874.9219,
+        "y": 924,
         "width": 0,
         "height": -38
       },
       "visibleRect": {
         "x": 4,
-        "y": 874.9219,
+        "y": 924,
         "width": 0,
         "height": 0
       },
       "pixelRect": {
         "x": 4,
-        "y": 874,
+        "y": 924,
         "width": 0,
         "height": -38
       },
@@ -1727,19 +1728,19 @@
       "duplicate": false,
       "rect": {
         "x": 197.75,
-        "y": 848.9219,
+        "y": 898,
         "width": 32,
         "height": 36
       },
       "visibleRect": {
         "x": 197.75,
-        "y": 848.9219,
+        "y": 898,
         "width": 32,
         "height": 36
       },
       "pixelRect": {
         "x": 197,
-        "y": 848,
+        "y": 898,
         "width": 32,
         "height": 36
       },
@@ -1767,19 +1768,19 @@
       "duplicate": false,
       "rect": {
         "x": 233.75,
-        "y": 848.9219,
+        "y": 898,
         "width": 45.78125,
         "height": 36
       },
       "visibleRect": {
         "x": 233.75,
-        "y": 848.9219,
+        "y": 898,
         "width": 45.78125,
         "height": 36
       },
       "pixelRect": {
         "x": 233,
-        "y": 848,
+        "y": 898,
         "width": 46,
         "height": 36
       },
@@ -1807,19 +1808,19 @@
       "duplicate": false,
       "rect": {
         "x": 283.53125,
-        "y": 848.9219,
+        "y": 898,
         "width": 41.8125,
         "height": 36
       },
       "visibleRect": {
         "x": 283.53125,
-        "y": 848.9219,
+        "y": 898,
         "width": 41.8125,
         "height": 36
       },
       "pixelRect": {
         "x": 283,
-        "y": 848,
+        "y": 898,
         "width": 42,
         "height": 36
       },
@@ -1847,19 +1848,19 @@
       "duplicate": false,
       "rect": {
         "x": 329.34375,
-        "y": 848.9219,
+        "y": 898,
         "width": 58.265625,
         "height": 36
       },
       "visibleRect": {
         "x": 329.34375,
-        "y": 848.9219,
+        "y": 898,
         "width": 58.265625,
         "height": 36
       },
       "pixelRect": {
         "x": 329,
-        "y": 848,
+        "y": 898,
         "width": 58,
         "height": 36
       },
@@ -1887,19 +1888,19 @@
       "duplicate": false,
       "rect": {
         "x": 391.60938,
-        "y": 848.9219,
+        "y": 898,
         "width": 44.28125,
         "height": 36
       },
       "visibleRect": {
         "x": 391.60938,
-        "y": 848.9219,
+        "y": 898,
         "width": 44.28125,
         "height": 36
       },
       "pixelRect": {
         "x": 391,
-        "y": 848,
+        "y": 898,
         "width": 44,
         "height": 36
       },
@@ -1927,19 +1928,19 @@
       "duplicate": false,
       "rect": {
         "x": 439.89062,
-        "y": 848.9219,
+        "y": 898,
         "width": 87.0625,
         "height": 36
       },
       "visibleRect": {
         "x": 439.89062,
-        "y": 848.9219,
+        "y": 898,
         "width": 87.0625,
         "height": 36
       },
       "pixelRect": {
         "x": 439,
-        "y": 848,
+        "y": 898,
         "width": 87,
         "height": 36
       },
@@ -1967,19 +1968,19 @@
       "duplicate": false,
       "rect": {
         "x": 4,
-        "y": 836.9219,
+        "y": 886,
         "width": 167.75,
         "height": 60
       },
       "visibleRect": {
         "x": 4,
-        "y": 836.9219,
+        "y": 886,
         "width": 167.75,
         "height": 60
       },
       "pixelRect": {
         "x": 4,
-        "y": 836,
+        "y": 886,
         "width": 167,
         "height": 60
       },
@@ -2006,19 +2007,19 @@
       "duplicate": false,
       "rect": {
         "x": 26,
-        "y": 848.9219,
+        "y": 898,
         "width": 57.8125,
         "height": 36
       },
       "visibleRect": {
         "x": 26,
-        "y": 848.9219,
+        "y": 898,
         "width": 57.8125,
         "height": 36
       },
       "pixelRect": {
         "x": 26,
-        "y": 848,
+        "y": 898,
         "width": 57,
         "height": 36
       },
@@ -2047,19 +2048,19 @@
       "duplicate": false,
       "rect": {
         "x": 87.8125,
-        "y": 848.9219,
+        "y": 898,
         "width": 61.9375,
         "height": 36
       },
       "visibleRect": {
         "x": 87.8125,
-        "y": 848.9219,
+        "y": 898,
         "width": 61.9375,
         "height": 36
       },
       "pixelRect": {
         "x": 87,
-        "y": 848,
+        "y": 898,
         "width": 62,
         "height": 36
       },

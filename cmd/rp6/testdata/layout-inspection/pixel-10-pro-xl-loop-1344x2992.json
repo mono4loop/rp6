@@ -7,6 +7,7 @@
     "backend": "emulator",
     "state": {
       "console": false,
+      "maximized": false,
       "padFloating": false,
       "page": "loop",
       "sequencerDocked": false
@@ -503,7 +504,7 @@
         "height": 136
       },
       "minSize": {
-        "width": 270.5,
+        "width": 95.78125,
         "height": 45.078125
       },
       "underMin": false,

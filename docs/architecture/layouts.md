@@ -107,11 +107,23 @@ layout console when fullscreen {
 
 RP6 uses a **fixed-form-factor policy**: rather than continuously adapting to any
 window size, each layout is designed for a discrete form factor and a size maps
-to exactly one variant. The supported set is `resolutions.txt`; the windowed
-desktop is a single **fixed, non-resizable** size, mobile is phone-or-tablet by
-device size, and desktop full screen is the console. There is deliberately **no
-continuous "compact" reflow and no size-driven rack hiding** — those were the
-main sources of layout bugs (see the git history around this change).
+to exactly one variant. The windowed desktop is the `window` variant at
+**850×950, shorter on short screens** (§8), mobile is phone-or-tablet by device
+size, and desktop full screen or a maximized window is the console. There is
+deliberately **no continuous "compact" reflow and no size-driven rack hiding** —
+those were the main sources of layout bugs (see the git history around this
+change).
+
+The rule that makes this hold across desktops: **every desktop variant's content
+minimum fits the canvas it gets on every supported screen** — the window variant
+in the windowed size, the console maximized and full screen.
+`resolutions.txt` lists the screens (1920×1080 at 1× and 1.25×, the X13's
+1920×1200 at 1× and 1.25×, 2× laptops down to 1280×800 logical, 4K…), and
+`TestContentFitsScreens` (`cmd/rp6/screens_test.go`) measures the minimums
+headlessly at each screen's scale, both backends, both pages. A minimum over
+budget isn't cosmetic: Fyne grows the window to its content minimum (except in
+full screen, where racks get squeezed instead), and Mutter won't size a maximize
+whose minimum exceeds the work area. 1366×768 at 1× is declared unsupported.
 
 `Document.Select(env)` walks variants in order and takes the **first** whose
 `when` matches (a bare `layout` with no `when` is the default / last). The
@@ -120,7 +132,7 @@ environment is built in `cmd/rp6/layout.go` `layoutEnv` each relayout:
 | flag / var | meaning |
 |---|---|
 | `mobile` / `web` / `desktop` | platform, from compile-time build tags (overridable per-scenario in the inspection tests via `mobileForTest`/`tabletForTest`) |
-| `fullscreen` | the user's console intent (desktop only — see §7/§8) |
+| `fullscreen` | the console: the user's full-screen intent or a maximized window (desktop only — see §7/§8) |
 | `tablet` | tablet-class touchscreen (`isTabletSize`: smallest side ≥ 600) |
 | `seq_docked` | sequencer docked as a side column |
 | `pads_visible` | pad grid shown and not floating |
@@ -134,7 +146,7 @@ tablet + console first, so more-specific guards win):
 | `tablet` | `mobile && tablet` | OnePlus Pad 3 3392×2400 |
 | `console` | `fullscreen && desktop` | ThinkPad 1920×1200, Asus ROG 3440×1440 |
 | `phone` | `mobile` | Pixel 10 Pro / Pro XL |
-| `window` | *(default)* | ThinkPad 850×950 windowed |
+| `window` | *(default)* | 850×950 windowed (shorter on short screens) |
 
 A size not in `resolutions.txt` resolves to the nearest of these by the same
 predicates (best-effort): an unlisted desktop full-screen size still gets
@@ -224,7 +236,15 @@ what they mean:
   is generic: any variant + any rack using `show:` is handled, no hardcoded list.
 - **`seq(tracks: N)`** — the sequencer's default track count for the variant
   (`applyDefaultTracks` → `sequencerRack.SetTrackCount`). Variant-entry only, like
-  `show:`. The window variant uses `tracks: 4`; console/tablet use `6`.
+  `show:`. The window variant uses `tracks: 4`; console/tablet use `6`. A loaded
+  sequence restores its own track count, so this is only a default.
+- **`seq(rows: N)`** — the most step rows (bars, in track order) the sequencer
+  reserves height for (`sequencerRack.SetReservedRows`); more tracks or bars
+  scroll inside it. Without a cap the rack reserves every visible row, so an
+  8-track or 4-bar sequence raised the window's minimum past the screen. Reset on
+  every relayout, like `paks(rows:)`. The window uses `rows: 4` (`3` with the P-6,
+  whose rack takes the fourth row's height on 1.25× screens); console and tablet
+  `6`.
 - **`rec(tracks: N)`** — the recorder/looper's default number of **visible** track
   rows for the variant (`applyDefaultRecorderTracks` → `recorderRack.SetTrackCount`;
   the engine keeps its full `recorder.TrackCount` capacity). Variant-entry only,
@@ -256,7 +276,7 @@ what they mean:
   variants set `pads(expand: horizontal)` so the pad rack's frame fills the
   width like every other rack in the stack (the grid stays centred inside).
 
-The window's fixed size + full-screen console interaction is covered in §8; the
+The windowed size + full-screen/maximized console interaction is covered in §8; the
 per-variant default set (which properties each variant declares) is in §4.
 
 ## 8. The full-screen / console gotcha
@@ -269,12 +289,59 @@ Ctrl+Shift+Enter on desktop) and by the bottom-bar **CONSOLE** toggle
 (`toggleConsole`). CONSOLE is **desktop-only** — on mobile the phone/tablet
 variant is chosen by device size, so the toggle is omitted from the bar there.
 
-On desktop `setConsole` drives the OS window: **console = full screen**, while
-**windowed = a single fixed, non-resizable size** (`windowedWidth`×
-`windowedHeight`, `SetFixedSize(true)`). Entering console clears the fixed-size
-lock before `SetFullScreen(true)`; leaving restores the fixed windowed size. The
-tablet gets its own `tablet` variant (a paks rail beside a seq-over-pads column),
-distinct from the desktop console's three-rail split.
+On desktop **console = full screen or maximized** (`isFullScreen` is `fullScreen
+|| maximized`), while **windowed = `windowedSize()`**: the design size
+(`designWidth`×`designHeight`, 850×950) clamped to the screen. `setConsole`
+drives the OS window: entering goes full screen; leaving drops full screen and
+un-maximizes, then resizes back to the windowed size. The tablet gets its own
+`tablet` variant (a paks rail beside a seq-over-pads column), distinct from the
+desktop console's three-rail split.
+
+**Maximize = console.** Double-clicking the title bar (or its maximize button)
+maximizes the window and shows the console; restoring returns to the window
+layout at the windowed size. What makes this work:
+
+- **The window is resizable, with no artificial minimum.** libdecor gates
+  drag-resize, the maximize button and title-bar double-click on one capability
+  bit, and Mutter refuses maximize (and full screen) when min size == max size,
+  so the window isn't `SetFixedSize`. Its drag minimum is the content minimum,
+  which the screen budget test keeps within every supported work area. An
+  earlier 850×950 floor broke maximize on 1.25× laptops: taller than the work
+  area, so Mutter flagged the window maximized without sizing it. The `window`
+  variant tolerates being stretched (`thinkpad-x13-window-stretched-1100x1000`).
+- **Fyne has no maximize API or event.** `nativewin_wayland.go` reaches GLFW
+  through the window's `wl_surface` (Fyne's `driver.NativeWindow`), whose user
+  data GLFW sets to its own window, and reads `glfw.Maximized`. `syncMaximized`
+  re-reads it on every resize *and* every 40 ms meter tick (`pollWindow`): a
+  maximize the compositor can't size never resizes the window, so resize-driven
+  detection alone misses it. A flip queues a relayout, and the variant switch
+  also restores the racks the console force-showed (`selectLayout`). Native
+  Wayland builds only; X11, web and mobile get a nil `nativeWindow` (only full
+  screen selects the console there, and the window keeps the design size).
+  Tests use a fake.
+- **The windowed size fits the screen.** Fyne exposes no screen, and GLFW on
+  Wayland only knows each monitor's mode (its "work area" is the whole mode;
+  `xdg_wm_base` is bound at v1, so no `configure_bounds`). `windowedSize()`
+  clamps the design size to the screen's work area: the canvas the window last
+  had maximized on that screen setup (learned into the `window.workarea.<mode>@<scale>`
+  preference, exact on any desktop), or else the smallest monitor's mode ÷ the
+  window's scale less `screenReserve` (100, for panels and the title bar). The
+  scale is only known once the window is shown, so the window opens at the
+  design size and the meter tick fits it once per screen setup
+  (`fitWindowToScreen`).
+- **The snap back retries.** On un-maximize (or leaving full screen) the
+  compositor restores an earlier frame, which may be a dragged size, so the
+  meter tick resizes the window to `windowedSize()` (`snapToWindowed`). Right
+  after the switch the console's wider minimum is still the window's size limit
+  until Fyne applies the window variant's a frame later, and Fyne grows the
+  window straight back, so the snap retries for up to ~1 s until it sticks.
+  `make smoke-maximize` caught that bounce live.
+
+F11 on a maximized window goes full screen on top, and F11 again leaves the
+console in place, because the compositor returns the window to maximized
+(`syncMaximized` is frozen while full screen). The lit CONSOLE key leaves the
+console however it was entered. Maximize isn't persisted: `console.on` still
+means "start full screen".
 
 `SetFullScreen` is applied asynchronously by Fyne, so the console layout keys off
 the fullscreen *intent* (not pixel size) and its proportional splits reflow as
@@ -313,9 +380,10 @@ except the P-6 and keyboard-FX racks, recomposed when the phone flag flips);
 the stable `contentHolder` (whose `sizeWatch` reports resizes to
 `onCanvasResize`). `onCanvasResize` compares `variantFor(size)` to the active
 variant and requests a relayout **only when the discrete form factor changes** (a
-tablet learning its first size, or the desktop console settling after an async
-`SetFullScreen`) — never continuously while a window is dragged (the windowed
-size is fixed, and the console's splits reflow on their own). A minimal Go
+tablet learning its first size, the desktop console settling after an async
+`SetFullScreen`, or the window being maximized or restored, which the meter
+tick also catches) — never continuously while a window is dragged (the window
+and console variants reflow on their own). A minimal Go
 fallback keeps the window non-blank if the document ever fails to parse (a test
 guards that it always parses).
 
@@ -395,6 +463,9 @@ Current validated targets (the `resolutions.txt` set — one scenario each in
 | target | variant | active racks |
 |---|---|---|
 | ThinkPad X13 850×950 window | `window` | transport, pads, VU, navigation, status |
+| 1920×1080 @1.25 P-6 window (848×794) | `window` | transport + PATTERN, one-row P-6 rack, 3 reserved sequencer rows, pads, VU, navigation + status |
+| ThinkPad X13 @1.25 maximized (1536×891) | `console` | transport, VU, paks, pad FX, docked sequencer, pads, keyboard, navigation, status |
+| 2560×1600 @2 maximized (1280×731) | `console` | the same, on the smallest supported screen |
 | ThinkPad X13 1920×1200 full screen | `console` | transport, VU, paks, pad FX, docked sequencer, pads, keyboard, navigation, status |
 | Asus ROG 3440×1440 full screen | `console` | transport, VU, paks, pad FX, docked sequencer, pads, keyboard, navigation, status |
 | Pixel 10 Pro XL 1344×2992 | `phone` | transport + page nav, pads, VU, navigation, status |

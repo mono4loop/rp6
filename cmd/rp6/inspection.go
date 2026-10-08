@@ -163,7 +163,7 @@ func (u *ui) inspectionMetadata(scenario, formFactor string, notes ...string) ui
 		FormFactor: formFactor,
 		Backend:    backend,
 		State: map[string]any{
-			"console": u.fullScreen, "padFloating": u.padFloating,
+			"console": u.isFullScreen(), "maximized": u.maximized, "padFloating": u.padFloating,
 			"sequencerDocked": u.seqSide, "page": u.activePage,
 		},
 		Notes: notes,

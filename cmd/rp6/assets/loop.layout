@@ -95,7 +95,7 @@ page loop LOOP {
     }
   }
 
-  // LOOP in the fixed desktop window (850x950): a TEMPO + VU strip and the
+  // LOOP in the desktop window (850x950): a TEMPO + VU strip and the
   // recorder on top, the two-bank pad grid filling the space below. The unguarded
   // default variant for this page.
   layout loop-window {
@@ -111,10 +111,9 @@ page loop LOOP {
       bottom: VBox {
         keys
         Border {
-          left:   pagenav
-          center: toggles
+          left:   HBox { pagenav; toggles }
+          center: status
         }
-        status
       }
     }
   }

@@ -24,15 +24,44 @@ func TestSequencerRowsStaySquareInTallRack(t *testing.T) {
 
 func TestSixOneBarTracksDoNotScroll(t *testing.T) {
 	u := newTestUI(t)
+	u.setConsole(true) // the console reserves six rows (seq(rows: 6))
 	u.setVisible(u.seqRack.Object(), u.seqBtn, true)
-	u.seqRack.SetTrackCount(6) // the window variant defaults to 4; test the six-track baseline
-	minimum := u.seqRack.Object().MinSize()
-	u.seqRack.Object().Resize(fyne.NewSize(1000, minimum.Height))
-	u.seqRack.Object().Refresh()
+	u.seqRack.SetTrackCount(6)
+	// Two passes: the reserved height follows the width the rows were laid out at.
+	for range 2 {
+		minimum := u.seqRack.Object().MinSize()
+		u.seqRack.Object().Resize(fyne.NewSize(1000, minimum.Height))
+		u.seqRack.Object().Refresh()
+	}
 
 	assert.LessOrEqual(t, u.seqRack.tracks.Size().Height, u.seqRack.trackBox.Size().Height,
 		"natural sequencer height includes all tracks, gaps and trailing spacer")
 	assert.True(t, u.seqRack.blocks[5].Visible(), "sixth track remains visible")
+}
+
+// TestSequencerRowCapScrolls: the P-6 window reserves three step rows
+// (seq(rows: 3)), so a fourth track scrolls inside the rack instead of raising
+// the window's minimum, and the scroller can reach the real bottom row.
+func TestSequencerRowCapScrolls(t *testing.T) {
+	u := newTestUI(t) // the P-6 backend, windowed
+	require.Equal(t, "window", u.activeVariant)
+	require.Equal(t, 3, u.seqRack.reservedRows)
+	u.seqRack.SetTrackCount(4)
+	capped := u.seqRack.Object().MinSize().Height
+
+	u.seqRack.SetTrackCount(8)
+	assert.Equal(t, capped, u.seqRack.Object().MinSize().Height, "more tracks don't raise the minimum")
+
+	u.seqRack.Object().Resize(fyne.NewSize(850, capped))
+	u.seqRack.Object().Refresh()
+	u.seqRack.Object().Refresh() // the scroll content height follows the laid-out width
+	last := u.seqRack.blocks[7]
+	bottom := last.Position().Y + last.Size().Height
+	assert.Greater(t, bottom, u.seqRack.trackBox.Size().Height, "tracks past the cap overflow the viewport")
+	assert.GreaterOrEqual(t, u.seqRack.tracks.MinSize().Height, bottom, "the scroller can reach the last track")
+
+	u.seqRack.SetReservedRows(0)
+	assert.Greater(t, u.seqRack.Object().MinSize().Height, capped, "uncapped, every row is reserved")
 }
 
 func TestSequencerMultipleBarsStaySquareAndScroll(t *testing.T) {

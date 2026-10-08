@@ -28,6 +28,7 @@ type layoutScenario struct {
 	scale        float32
 	initialScale float32
 	console      bool
+	maximized    bool
 	mobile       bool
 	tablet       bool
 	insets       screenInsets // pixels the platform keeps content out of (phones: phoneInsets)
@@ -64,8 +65,8 @@ var phoneInsets = screenInsets{top: 200 + 12, right: 12, bottom: 72 + 12, left: 
 // factors (see docs/architecture/layouts.md). Each target maps to exactly one
 // designed variant — window (fixed desktop), console (desktop full screen),
 // phone (mobile portrait) or tablet (mobile landscape) — with no continuous
-// adaptation. The final entry is a Wayland scale-change regression guard, not a
-// supported resolution.
+// adaptation. The stretched window and the final entry (a Wayland scale-change
+// regression guard) are not supported resolutions.
 var layoutScenarios = []layoutScenario{
 	{
 		name:       "thinkpad-x13-window-850x950",
@@ -78,7 +79,7 @@ var layoutScenarios = []layoutScenario{
 		fit:        []string{"rack.transport", "rack.sequencer", "rack.pads", "rack.vu", "rack.navigation", "rack.status", "pads.grid", "sequencer.grid"},
 		overlaps:   []string{"rack.transport", "rack.sequencer", "rack.pads", "rack.vu", "rack.navigation", "rack.status"},
 		touch:      append(desktopTouchTargets(), activeSequencerStepIDs(4, 16)...),
-		notes:      []string{"Fixed, non-resizable desktop windowed size (resolutions.txt: 850x950). The sequencer (4 tracks) is shown by default above the 12-pad grid."},
+		notes:      []string{"Desktop windowed size (resolutions.txt: 850x950); the window opens here and can't be dragged smaller. The sequencer (4 tracks) is shown by default above the 12-pad grid."},
 		padPixels:  [2]int{80, 130},
 		stepPixels: [2]int{40, 50},
 	},
@@ -97,9 +98,39 @@ var layoutScenarios = []layoutScenario{
 		// clipped and the padPixels physical contract below still guards the pads.
 		fit:        []string{"rack.transport", "rack.p6", "rack.sequencer", "rack.vu", "rack.navigation", "rack.status", "sequencer.grid"},
 		overlaps:   []string{"rack.transport", "rack.p6", "rack.sequencer", "rack.pads", "rack.vu", "rack.navigation", "rack.status"},
-		touch:      append(desktopTouchTargets(), activeSequencerStepIDs(4, 16)...),
-		notes:      []string{"Same fixed 850x950 window with the P-6 hardware backend: the P-6 rack wraps onto two rows and the 4-track sequencer fits (unclipped) above the 12-pad grid. This is the tightest desktop window, so the mouse-driven pads are compact."},
+		touch:      append(desktopTouchTargets(), activeSequencerStepIDs(3, 16)...),
+		notes:      []string{"Same 850x950 window with the P-6 hardware backend: PATTERN sits beside TEMPO so the P-6 rack (Play + the four Delay/Reverb knobs) is one row, and the sequencer reserves three step rows (seq(rows: 3)) with the fourth track scrolling inside it, so the layout also fits 1920x1080 at 1.25."},
 		padPixels:  [2]int{66, 130},
+		stepPixels: [2]int{40, 50},
+	},
+	{
+		name:       "fhd-125-window-p6-1060x993",
+		formFactor: "desktop-window-p6-125",
+		pixel:      uiinspect.PixelSize{Width: 1060, Height: 993},
+		scale:      1.25,
+		configure:  p6WindowScene,
+		required:   []string{"rack.transport", "rack.p6", "rack.sequencer", "rack.pads", "rack.vu", "rack.navigation", "rack.status"},
+		hidden:     []string{"rack.pad-fx", "rack.keys-fx", "rack.keyboard", "rack.paks"},
+		fit:        []string{"rack.transport", "rack.p6", "rack.sequencer", "rack.vu", "rack.navigation", "rack.status", "sequencer.grid"},
+		overlaps:   []string{"rack.transport", "rack.p6", "rack.sequencer", "rack.pads", "rack.vu", "rack.navigation", "rack.status"},
+		touch:      append(desktopTouchTargets(), activeSequencerStepIDs(3, 16)...),
+		notes:      []string{"The tightest windowed case: the P-6 window on a 1920x1080 screen at 1.25 (1536x864 logical), where the window fits 848x794 under GNOME's top bar and title bar. PATTERN beside TEMPO and the three reserved sequencer rows are what make it fit."},
+		padPixels:  [2]int{66, 130},
+		stepPixels: [2]int{40, 50},
+	},
+	{
+		name:       "thinkpad-x13-window-stretched-1100x1000",
+		formFactor: "desktop-window-stretched",
+		pixel:      uiinspect.PixelSize{Width: 1100, Height: 1000},
+		scale:      1,
+		configure:  productionScene,
+		required:   []string{"rack.transport", "rack.sequencer", "rack.pads", "rack.vu", "rack.navigation", "rack.status"},
+		hidden:     []string{"rack.p6", "rack.pad-fx", "rack.keys-fx", "rack.keyboard", "rack.paks"},
+		fit:        []string{"rack.transport", "rack.sequencer", "rack.pads", "rack.vu", "rack.navigation", "rack.status", "pads.grid", "sequencer.grid"},
+		overlaps:   []string{"rack.transport", "rack.sequencer", "rack.pads", "rack.vu", "rack.navigation", "rack.status"},
+		touch:      append(desktopTouchTargets(), activeSequencerStepIDs(4, 16)...),
+		notes:      []string{"Not a supported resolution: a guard that the window variant tolerates being dragged larger than 850x950 (the window is resizable so that it can be maximized)."},
+		padPixels:  [2]int{80, 130},
 		stepPixels: [2]int{40, 50},
 	},
 	{
@@ -131,6 +162,54 @@ var layoutScenarios = []layoutScenario{
 		overlaps:   []string{"rack.transport", "rack.pad-fx", "rack.sequencer", "rack.keyboard", "rack.paks", "rack.pads", "rack.vu", "rack.navigation", "rack.status"},
 		touch:      append(desktopTouchTargets(), activeSequencerStepIDs(6, 16)...),
 		notes:      []string{"Desktop full-screen mixing console (resolutions.txt: ThinkPad X13 1920x1200)."},
+		padPixels:  [2]int{80, 130},
+		stepPixels: [2]int{40, 50},
+	},
+	{
+		name:       "thinkpad-x13-maximized-1920x1130",
+		formFactor: "laptop-maximized",
+		pixel:      uiinspect.PixelSize{Width: 1920, Height: 1130},
+		scale:      1,
+		maximized:  true,
+		configure:  desktopConsoleScene,
+		required:   []string{"rack.transport", "rack.pad-fx", "rack.sequencer", "rack.keyboard", "rack.paks", "rack.pads", "rack.vu", "rack.navigation", "rack.status"},
+		hidden:     []string{"rack.p6", "rack.keys-fx"},
+		fit:        []string{"rack.transport", "rack.pad-fx", "rack.sequencer", "rack.keyboard", "rack.paks", "rack.pads", "rack.vu", "rack.navigation", "rack.status", "pads.grid", "sequencer.grid", "paks.list", "keyboard.keys"},
+		overlaps:   []string{"rack.transport", "rack.pad-fx", "rack.sequencer", "rack.keyboard", "rack.paks", "rack.pads", "rack.vu", "rack.navigation", "rack.status"},
+		touch:      append(desktopTouchTargets(), activeSequencerStepIDs(6, 16)...),
+		notes:      []string{"The console in a maximized window (title-bar double-click): the 1920x1200 X13 at 1x, less GNOME's top bar and the libdecor title bar."},
+		padPixels:  [2]int{80, 130},
+		stepPixels: [2]int{40, 50},
+	},
+	{
+		name:       "thinkpad-x13-125-maximized-1920x1114",
+		formFactor: "laptop-maximized-125",
+		pixel:      uiinspect.PixelSize{Width: 1920, Height: 1114},
+		scale:      1.25,
+		maximized:  true,
+		configure:  desktopConsoleScene,
+		required:   []string{"rack.transport", "rack.pad-fx", "rack.sequencer", "rack.keyboard", "rack.paks", "rack.pads", "rack.vu", "rack.navigation", "rack.status"},
+		hidden:     []string{"rack.p6", "rack.keys-fx"},
+		fit:        []string{"rack.transport", "rack.pad-fx", "rack.sequencer", "rack.keyboard", "rack.paks", "rack.pads", "rack.vu", "rack.navigation", "rack.status", "pads.grid", "sequencer.grid", "paks.list", "keyboard.keys"},
+		overlaps:   []string{"rack.transport", "rack.pad-fx", "rack.sequencer", "rack.keyboard", "rack.paks", "rack.pads", "rack.vu", "rack.navigation", "rack.status"},
+		touch:      append(desktopTouchTargets(), activeSequencerStepIDs(6, 16)...),
+		notes:      []string{"The console maximized on the ThinkPad X13 at GNOME's 1.25 scale, as measured live: 1536x891 logical (the 1920x1200 panel less the top bar and the libdecor title bar)."},
+		padPixels:  [2]int{80, 130},
+		stepPixels: [2]int{40, 50},
+	},
+	{
+		name:       "wqxga-2x-maximized-2560x1462",
+		formFactor: "laptop-maximized-2x",
+		pixel:      uiinspect.PixelSize{Width: 2560, Height: 1462},
+		scale:      2,
+		maximized:  true,
+		configure:  desktopConsoleScene,
+		required:   []string{"rack.transport", "rack.pad-fx", "rack.sequencer", "rack.keyboard", "rack.paks", "rack.pads", "rack.vu", "rack.navigation", "rack.status"},
+		hidden:     []string{"rack.p6", "rack.keys-fx"},
+		fit:        []string{"rack.transport", "rack.pad-fx", "rack.sequencer", "rack.keyboard", "rack.paks", "rack.pads", "rack.vu", "rack.navigation", "rack.status", "pads.grid", "sequencer.grid", "paks.list", "keyboard.keys"},
+		overlaps:   []string{"rack.transport", "rack.pad-fx", "rack.sequencer", "rack.keyboard", "rack.paks", "rack.pads", "rack.vu", "rack.navigation", "rack.status"},
+		touch:      desktopTouchTargets(),
+		notes:      []string{"The smallest supported screen: a 2560x1600 laptop at 2x (1280x800 logical) with the console maximized, 1280x731 once GNOME's top bar and the title bar are taken off."},
 		padPixels:  [2]int{80, 130},
 		stepPixels: [2]int{40, 50},
 	},
@@ -392,6 +471,7 @@ func captureLayoutScenario(t *testing.T, scenario layoutScenario) uiinspect.Bund
 	u.mobileForTest = &mobile
 	u.tabletForTest = &tablet
 	u.fullScreen = scenario.console
+	u.maximized = scenario.maximized
 	if scenario.page != "" {
 		u.activePage = scenario.page // navigate to the scenario's page before the first relayout
 		u.updatePageNav()            // light the active page's key (setPage does this in the app)

@@ -276,7 +276,7 @@ func TestPhoneSplitsWideRacks(t *testing.T) {
 	keysfxContent := func() fyne.CanvasObject {
 		return u.keyboardFXRack.Object().(*components.RackPanel).InspectionChildren()[0]
 	}
-	require.Equal(t, 2, rows(u.p6Inner), "desktop: the Play/PATTERN row and one knob row")
+	require.Equal(t, 1, rows(u.p6Inner), "desktop: Play and the four knobs on one row (PATTERN sits beside TEMPO)")
 	require.Equal(t, 5, rows(keysfxContent()), "desktop: five knobs in one row")
 
 	mobile, tablet := true, false
@@ -290,36 +290,66 @@ func TestPhoneSplitsWideRacks(t *testing.T) {
 	tablet = true
 	u.relayout()
 	assert.False(t, u.rackKey.phone)
-	assert.Equal(t, 2, rows(u.p6Inner), "tablet keeps the single knob row")
+	assert.Equal(t, 1, rows(u.p6Inner), "tablet keeps the single knob row")
 	assert.Equal(t, 5, rows(keysfxContent()))
 }
 
 // TestConsoleJoinsP6Rows: the desktop console is the one desktop arrangement
 // wide enough for the P-6 rack's Play, PATTERN and four Delay/Reverb knobs on a
-// single row, so its block puts them there; the fixed window keeps the knobs
-// on a second row, and leaving the console wraps them again.
+// single row, so its block puts them there. The window moves PATTERN beside
+// TEMPO instead (the P-6 rack's second row cost it height short screens don't
+// have), and leaving the console moves it back.
 func TestConsoleJoinsP6Rows(t *testing.T) {
 	u := newTestUI(t)
-	rows := func(o fyne.CanvasObject) int {
-		c, ok := o.(*fyne.Container)
+	row := func() *fyne.Container {
+		inner, ok := u.p6Inner.(*fyne.Container)
 		require.True(t, ok)
-		return len(c.Objects)
+		require.Len(t, inner.Objects, 1, "one row")
+		return inner.Objects[0].(*fyne.Container)
 	}
-	require.Equal(t, 2, rows(u.p6Inner), "window: two rows")
+	pattern := u.patternStep.Object()
+	assert.Len(t, row().Objects, 6, "window: Play, separator, four knobs")
+	assert.True(t, treeContains(u.transportRack, pattern), "window: PATTERN beside TEMPO")
 
 	u.fullScreen = true
 	u.relayout()
 	require.Equal(t, "console", u.activeVariant)
 	assert.True(t, u.rackKey.console)
-	require.Equal(t, 1, rows(u.p6Inner), "console: one row")
-	row := u.p6Inner.(*fyne.Container).Objects[0].(*fyne.Container)
-	assert.Len(t, row.Objects, 8, "Play, separator, PATTERN, separator, four knobs")
+	assert.Len(t, row().Objects, 8, "console: Play, separator, PATTERN, separator, four knobs")
+	assert.False(t, treeContains(u.transportRack, pattern), "console: PATTERN back in the P-6 rack")
 	assert.Same(t, u.p6Obj, u.rackRegistry()["p6"])
+	assert.Same(t, u.transportRack, u.rackRegistry()["transport"])
 
 	u.fullScreen = false
 	u.relayout()
 	require.Equal(t, "window", u.activeVariant)
-	assert.Equal(t, 2, rows(u.p6Inner), "back in the window: two rows again")
+	assert.Len(t, row().Objects, 6, "back in the window")
+	assert.True(t, treeContains(u.transportRack, pattern))
+
+	u.useEmu = true
+	u.applyBackendGating()
+	assert.False(t, treeContains(u.transportRack, pattern), "no PATTERN on the emulator")
+}
+
+// treeContains reports whether target is in root's object tree, looking through
+// containers and the rack wrappers that expose their children for inspection.
+func treeContains(root, target fyne.CanvasObject) bool {
+	if root == target {
+		return true
+	}
+	var children []fyne.CanvasObject
+	switch o := root.(type) {
+	case *fyne.Container:
+		children = o.Objects
+	case interface{ InspectionChildren() []fyne.CanvasObject }:
+		children = o.InspectionChildren()
+	}
+	for _, child := range children {
+		if treeContains(child, target) {
+			return true
+		}
+	}
+	return false
 }
 
 // TestRestoreForcedRacksSurvivesRecompose: a variant's `show:` record must be
@@ -577,15 +607,15 @@ func TestWindowContentFitsWithSequencer(t *testing.T) {
 	require.True(t, u.seqRack.Object().Visible(), "precondition: sequencer shown")
 
 	min := u.root.MinSize()
-	assert.LessOrEqualf(t, min.Width, float32(windowedWidth),
-		"window content min width %.0f must fit the fixed %d window", min.Width, windowedWidth)
-	assert.LessOrEqualf(t, min.Height, float32(windowedHeight),
-		"window content min height %.0f must fit the fixed %d window", min.Height, windowedHeight)
+	assert.LessOrEqualf(t, min.Width, float32(designWidth),
+		"window content min width %.0f must fit the fixed %d window", min.Width, designWidth)
+	assert.LessOrEqualf(t, min.Height, float32(designHeight),
+		"window content min height %.0f must fit the fixed %d window", min.Height, designHeight)
 
 	// Lay out at the window size (two passes so the width-aware sequencer minimum
 	// settles) and verify the last track isn't clipped by the scroll viewport.
 	for range 2 {
-		u.contentHolder.Resize(fyne.NewSize(windowedWidth, windowedHeight))
+		u.contentHolder.Resize(fyne.NewSize(designWidth, designHeight))
 		u.contentHolder.Refresh()
 	}
 	last := u.seqRack.blocks[u.seq.Tracks()-1]
@@ -609,11 +639,11 @@ func TestConsoleExitRelaysOutWindow(t *testing.T) {
 	u.setConsole(false)
 	// Simulate the compositor shrinking the window back to the windowed size
 	// (the async settle) with no explicit relayout — the content must reflow.
-	u.contentHolder.Resize(fyne.NewSize(windowedWidth, windowedHeight))
+	u.contentHolder.Resize(fyne.NewSize(designWidth, designHeight))
 	u.contentHolder.Refresh()
 
 	assert.Equal(t, "window", u.activeVariant, "back to the window variant")
-	win := fyne.NewSize(windowedWidth, windowedHeight)
+	win := fyne.NewSize(designWidth, designHeight)
 	racks := map[string]fyne.CanvasObject{
 		"pads": u.padRackObj, "sequencer": u.seqRack.Object(), "transport": u.transportRack,
 		"navigation": u.controlBar, "status": u.statusBar,

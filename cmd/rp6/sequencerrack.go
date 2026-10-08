@@ -67,6 +67,9 @@ type sequencerRack struct {
 	// square-row height (cells grow with width) so the last track isn't clipped;
 	// 0 before the first layout falls back to the floor.
 	lastContentWidth float32
+	// reservedRows caps how many step rows (bars, in track order) the rack's
+	// minimum reserves (`seq(rows: N)`; 0 = all). Rows past the cap scroll.
+	reservedRows int
 
 	armedTrack int // track waiting to adopt the next selected pad (-1 = none)
 
@@ -296,6 +299,32 @@ func (l *sequencerTrackLayout) preferredSize(available fyne.Size) fyne.Size {
 	return fyne.NewSize(assign.Width+theme.Padding()+grids.Width, max(assign.Height, grids.Height))
 }
 
+// preferredRows is the height of the track's first limit visible step rows at
+// the available width (at least the assign key's height) and how many rows that
+// is; limit <= 0 means every row.
+func (l *sequencerTrackLayout) preferredRows(available fyne.Size, limit int) (float32, int) {
+	gridAvailable := available
+	if gridAvailable.Width > 0 {
+		gridAvailable.Width -= l.assign.MinSize().Width + theme.Padding()
+	}
+	var height float32
+	rows := 0
+	for _, grid := range l.bars {
+		if grid == nil || !grid.Object.Visible() {
+			continue
+		}
+		if limit > 0 && rows == limit {
+			break
+		}
+		if rows > 0 {
+			height += theme.Padding()
+		}
+		height += grid.PreferredSize(gridAvailable).Height
+		rows++
+	}
+	return max(l.assign.MinSize().Height, height), rows
+}
+
 func (l *sequencerTrackLayout) Layout(_ []fyne.CanvasObject, size fyne.Size) {
 	preferred := l.preferredSize(size)
 	assignWidth := l.assign.MinSize().Width
@@ -317,7 +346,14 @@ func (l *sequencerTrackLayout) Layout(_ []fyne.CanvasObject, size fyne.Size) {
 // sequencerTracksLayout packs active tracks at their square-grid preferred
 // height. The enclosing vertical Scroll handles overflow rather than stretching
 // the steps to fill arbitrary rack height.
-type sequencerTracksLayout struct{ fixedLast bool }
+type sequencerTracksLayout struct {
+	fixedLast bool
+	// lastWidth is the width the tracks were last laid out at. Rows grow with
+	// width, so MinSize reports the height at that width: the enclosing Scroll
+	// sizes its content from MinSize, and a capped rack (seq(rows: N)) must be
+	// able to scroll to the real bottom row.
+	lastWidth float32
+}
 
 func (l *sequencerTracksLayout) MinSize(objects []fyne.CanvasObject) fyne.Size {
 	visible := visibleObjects(objects)
@@ -330,7 +366,51 @@ func (l *sequencerTracksLayout) MinSize(objects []fyne.CanvasObject) fyne.Size {
 	if len(visible) > 1 {
 		result.Height += float32(len(visible)-1) * theme.Padding()
 	}
+	if l.lastWidth > 0 {
+		result.Height = max(result.Height, l.preferredSize(objects, fyne.NewSize(l.lastWidth, 0)).Height)
+	}
 	return result
+}
+
+// reservedHeight is the height of the first rows step rows (bars, in track
+// order) at the available width, with the gaps and the trailing spacer: what a
+// capped rack (seq(rows: N)) reserves, the rest scrolling. rows <= 0 reserves
+// every row, which is preferredSize's height.
+func (l *sequencerTracksLayout) reservedHeight(objects []fyne.CanvasObject, available fyne.Size, rows int) float32 {
+	visible := visibleObjects(objects)
+	var height float32
+	counted := 0
+	remaining := rows
+	for i, object := range visible {
+		var h float32
+		track, isTrack := sequencerTrackLayoutOf(object)
+		switch {
+		case l.fixedLast && i == len(visible)-1, !isTrack:
+			h = object.MinSize().Height
+		case rows > 0 && remaining <= 0:
+			continue // past the cap: these tracks scroll
+		default:
+			var used int
+			h, used = track.preferredRows(available, remaining)
+			remaining -= used
+		}
+		if counted > 0 {
+			height += theme.Padding()
+		}
+		height += h
+		counted++
+	}
+	return height
+}
+
+// sequencerTrackLayoutOf returns a track block's layout.
+func sequencerTrackLayoutOf(object fyne.CanvasObject) (*sequencerTrackLayout, bool) {
+	block, ok := object.(*fyne.Container)
+	if !ok {
+		return nil, false
+	}
+	layout, ok := block.Layout.(*sequencerTrackLayout)
+	return layout, ok
 }
 
 func (l *sequencerTracksLayout) preferredSize(objects []fyne.CanvasObject, available fyne.Size) fyne.Size {
@@ -356,6 +436,7 @@ func (l *sequencerTracksLayout) preferredSize(objects []fyne.CanvasObject, avail
 }
 
 func (l *sequencerTracksLayout) Layout(objects []fyne.CanvasObject, size fyne.Size) {
+	l.lastWidth = size.Width
 	visible := visibleObjects(objects)
 	y := float32(0)
 	for i, object := range visible {
@@ -441,22 +522,30 @@ func (r *sequencerRack) fitObject(object fyne.CanvasObject) fyne.CanvasObject {
 // console renders 50px rows while the narrow window renders ~45px, and the
 // reservation matches exactly so no track is clipped and the minimum isn't
 // inflated. Before the first layout (lastContentWidth == 0) it falls back to the
-// floor height, keeping the launch-time minimum small (the fixed-size window
-// locks to it) until the accurate value is known.
+// floor height, keeping the launch-time minimum small (the window can't be
+// smaller than it) until the accurate value is known.
+//
+// With a row cap (SetReservedRows) only the first rows are reserved and the
+// rest scroll, so a big saved sequence can't push the window past the screen.
 func (r *sequencerRack) naturalTracksMinSize() fyne.Size {
 	var floorWidth float32
 	for track := 0; track < r.seq.Tracks() && track < len(r.stepGrids); track++ {
 		if len(r.stepGrids[track]) == 0 {
 			continue
 		}
-		assign := r.trackBtns[track].MinSize()
+		// The assign column, not its key: the column holds a fixed 44 width that
+		// can be wider than the key, and reserving the key's width left a split
+		// pane that much short of the row it lays out (1.6 at 1.25 scale).
+		assign := r.blocks[track].Objects[0].MinSize()
 		floorWidth = max(floorWidth, assign.Width+theme.Padding()+r.stepGrids[track][0].MinSize().Width)
 	}
-	height := r.tracksLayout.MinSize(r.tracks.Objects).Height
-	if r.lastContentWidth > 0 {
-		height = r.tracksLayout.preferredSize(r.tracks.Objects, fyne.NewSize(r.lastContentWidth, 0)).Height
-	}
-	return fyne.NewSize(floorWidth, height)
+	available := fyne.NewSize(r.lastContentWidth, 0) // zero width before the first layout: floor rows
+	return fyne.NewSize(floorWidth, r.tracksLayout.reservedHeight(r.tracks.Objects, available, r.reservedRows))
+}
+
+// SetReservedRows caps the step rows the rack reserves height for (0 = all).
+func (r *sequencerRack) SetReservedRows(n int) {
+	r.reservedRows = n
 }
 
 func (r *sequencerRack) toggleDock() {

@@ -8,9 +8,9 @@
 // docs/architecture/layouts.md §12.
 //
 // Variants inside the page are ordered specific-first (the first matching `when`
-// wins): `tablet` (mobile && tablet), `console` (desktop full screen), `phone`
-// (mobile), then the unguarded `window` default (fixed desktop). A widget
-// reference may carry properties: `name(key: value, …)` (e.g.
+// wins): `tablet` (mobile && tablet), `console` (desktop full screen or
+// maximized), `phone` (mobile), then the unguarded `window` default (windowed
+// desktop). A widget reference may carry properties: `name(key: value, …)` (e.g.
 // `vu(orientation: horizontal)`, `seq(tracks: 4)`).
 
 page play PLAY {
@@ -60,7 +60,7 @@ page play PLAY {
       center: Split {
         horizontal: false
         offset: 0.5
-        leading:  seq(tracks: 6) if !seq_docked
+        leading:  seq(tracks: 6, rows: 6) if !seq_docked
         trailing: pads(layout: paged) if pads_visible
       }
     }
@@ -71,20 +71,27 @@ page play PLAY {
   //
   //   ┌───────┬───────────────────────┬───────┐
   //   │ trans │                        │       │
-  //   │  vu   │                        │  seq  │   right rail when undocked
-  //   │ paks  │        pads            │       │
-  //   │  fx   │                        │       │
-  //   ├───────┴───────────────────────┴───────┤
+  //   │  vu   │        pads            │  seq  │   right rail when undocked
+  //   │ paks  │                        │       │
+  //   ├───────┴───────────────┬───────┴───────┤
+  //   │  p6 / keys fx         │      fx       │
+  //   │        keyboard                       │
   //   │        pagenav | toggles / status     │
   //   └───────────────────────────────────────┘
   layout console when fullscreen && desktop {
     Border {
-      // Bottom: the P-6-only rack (full width, only with the P-6 active) or the
-      // emulator's Keys FX rack, above the keyboard (on by default, twice as
-      // tall), the page nav + toggles row, and a full-width status bar.
+      // Bottom: the P-6-only rack (only with the P-6 active) or the emulator's
+      // Keys FX rack sharing a row with pad FX, above the keyboard (on by
+      // default, twice as tall), the page nav + toggles row, and a full-width
+      // status bar.
       bottom: VBox {
-        p6 if p6_active
-        keysfx(show: true) if !p6_active
+        Border {
+          center: VBox {
+            p6 if p6_active
+            keysfx(show: true) if !p6_active
+          }
+          right: fx(show: true)
+        }
         keys(show: true)
         Border {
           left:   pagenav
@@ -93,21 +100,20 @@ page play PLAY {
         status
       }
 
-      // Left rail: transport + the VU meter (horizontal strip) on top, the
-      // sample-pak selector filling the middle, and pad FX at the bottom. Keeping
-      // FX here avoids reserving an otherwise-empty full-height right rail when
-      // the sequencer is docked in the centre split.
+      // Left rail: transport + the VU meter (horizontal strip) on top and the
+      // sample-pak selector filling the rest. The pak list reserves two rows and
+      // pad FX lives in the bottom row: the rail's height binds the console's
+      // minimum, which has to fit a maximized window on 1.25x and 2x laptops.
       left: Border {
         top: VBox {
           transport
           vu(orientation: horizontal)
         }
-        center: paks(show: true)
-        bottom: fx(show: true)
+        center: paks(show: true, rows: 2)
       }
 
       // Right rail: the sequencer when it is not docked in the centre split.
-      right: seq(show: true, tracks: 6) if !seq_docked
+      right: seq(show: true, tracks: 6, rows: 6) if !seq_docked
 
       // Centre: the pads fill the space; when the sequencer is docked it shares
       // the centre as the right pane of a split. The 0.517 offset keeps enough
@@ -116,7 +122,7 @@ page play PLAY {
         horizontal: true
         offset: 0.517
         leading:  pads(layout: paged) if pads_visible
-        trailing: seq(show: true, tracks: 6) if seq_docked
+        trailing: seq(show: true, tracks: 6, rows: 6) if seq_docked
       }
     }
   }
@@ -180,9 +186,10 @@ page play PLAY {
     }
   }
 
-  // Desktop windowed (fixed 850x950): TEMPO and the VU meter share a strip along
-  // the top (the meter fills the width beside the small TEMPO rack), saving the
-  // right-hand column for the pads. The unguarded default variant.
+  // Desktop windowed (850x950, shorter on short screens): TEMPO and the VU meter
+  // share a strip along the top (the meter fills the width beside the TEMPO
+  // rack), saving the right-hand column for the pads. The unguarded default
+  // variant.
   layout window {
     Border {
       top: VBox {
@@ -195,20 +202,24 @@ page play PLAY {
         keysfx if !p6_active
         keys
         paks
-        seq(show: true, tracks: 4, expand: horizontal) if !seq_docked
+        // The sequencer reserves at most `rows` step rows; more tracks or bars
+        // scroll inside it. Three with the P-6, whose rack takes the height of
+        // the fourth on 1.25x screens.
+        seq(show: true, tracks: 4, rows: 4, expand: horizontal) if !seq_docked && !p6_active
+        seq(show: true, tracks: 4, rows: 3, expand: horizontal) if !seq_docked && p6_active
       }
       center: Split {
         horizontal: true
         offset: 0.5
         leading:  pads(layout: twobank, expand: horizontal) if pads_visible
-        trailing: seq(show: true, tracks: 4, expand: horizontal) if seq_docked
+        trailing: seq(show: true, tracks: 4, rows: 4, expand: horizontal) if seq_docked
       }
-      bottom: VBox {
-        Border {
-          left:   pagenav
-          center: toggles
-        }
-        status
+      // One bottom row: page nav, toggles, then the status filling the rest
+      // (truncated when long). A row of its own cost ~50 of height that 1.25x
+      // and 2x laptops don't have.
+      bottom: Border {
+        left:   HBox { pagenav; toggles }
+        center: status
       }
     }
   }
@@ -222,8 +233,11 @@ page play PLAY {
 // rack keeps its built-in Go arrangement. Rack blocks are top-level (outside any
 // page) and shared by every variant of every page, including the LOOP page.
 
+// TEMPO, joined by the P-6's PATTERN knob in the window and on the tablet when
+// the P-6 is the active backend, so the P-6 rack below fits on one row (a second
+// row cost the 850-wide window ~60 of height it doesn't have on 1.25x screens).
 rack transport {
-  RackPanel { HBox { tempo } }
+  RackPanel { HBox { tempo; pattern if p6_active && !console && !phone } }
 }
 
 // The P-6-only rack's controls: transport (Play/Stop), pattern select, and the
@@ -232,18 +246,18 @@ rack transport {
 // the layout only places it `if p6_active`. Note there's no RackPanel here — Go
 // wraps these controls in the P-6's yellow tinted plate (device-specific styling).
 // The arrangement follows the width the rack gets (it's full-width everywhere):
-//   - desktop console (full screen): Play, PATTERN and the four Delay/Reverb
-//     knobs on ONE row — the only desktop arrangement wide enough (`console`);
-//   - the fixed 850-wide window and the tablet: Play + PATTERN on top, the four
-//     knobs wrapped onto a second row (six controls in one row overflow 850);
-//   - phones (~420-440dp): not even four knobs fit a row, so they split 2+2.
-// `phone` / `console` are rack-env flags; the rack is recomposed when either
-// flips (see composeP6).
+//   - desktop console (full screen or maximized): Play, PATTERN and the four
+//     Delay/Reverb knobs on ONE row — the only desktop arrangement wide enough;
+//   - the 850-wide window and the tablet: Play and the four knobs on one row,
+//     with PATTERN moved beside TEMPO (`rack transport`);
+//   - phones (~420-440dp): Play + PATTERN, then the knobs split 2+2.
+// `phone` / `console` / `p6_active` are rack-env flags; the rack is recomposed
+// when any flips (see composeP6).
 rack p6 {
   VBox {
     HBox { play; Separator; pattern; Separator; delayTime; delayLevel; reverbTime; reverbLevel } if console
-    HBox { play; Separator; pattern } if !console
-    HBox { delayTime; delayLevel; reverbTime; reverbLevel } if !console && !phone
+    HBox { play; Separator; delayTime; delayLevel; reverbTime; reverbLevel } if !console && !phone
+    HBox { play; Separator; pattern } if phone
     HBox { delayTime; delayLevel } if phone
     HBox { reverbTime; reverbLevel } if phone
   }

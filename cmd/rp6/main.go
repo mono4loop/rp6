@@ -197,6 +197,10 @@ type ui struct {
 	// paksRows is the `paks(rows: N)` bound the variant being built requested
 	// (0 = none); relayout clears it before the build and applies it after.
 	paksRows int
+	// seqRows is the `seq(rows: N)` cap of the variant being built (0 = none):
+	// the most step rows the sequencer reserves; the rest scroll. Same
+	// reset-in-relayout lifecycle as paksRows.
+	seqRows int
 	// padFill is the `pads(cells: fill)` request of the variant being built
 	// (phones): the pad cells grow past their 130px ceiling to fill the pane.
 	// Same reset-in-relayout lifecycle as paksRows; re-applied on grid rebuilds.
@@ -207,14 +211,15 @@ type ui struct {
 	// again afterwards (see hookLifecycle).
 	closeOnce sync.Once
 
-	// p6Reg / keysFXReg are the sub-widget registries of the two racks whose
-	// `rack` block branches on the rack key (phone: knob rows split; console:
-	// the P-6 rack on one row); composeP6 / composeKeysFX rebuild the rack from
-	// them when the key changes (see relayout). p6Inner is the P-6 plate's
+	// transportReg / p6Reg / keysFXReg are the sub-widget registries of the
+	// racks whose `rack` block branches on the rack key (phone: knob rows split;
+	// console: the P-6 rack on one row; P-6 active: PATTERN beside TEMPO outside
+	// the console); composeTransport / composeP6 / composeKeysFX rebuild the rack
+	// from them when the key changes (see relayout). p6Inner is the P-6 plate's
 	// content (the composed block), kept for tests/inspection.
-	p6Reg, keysFXReg layoutspec.Registry
-	p6Inner          fyne.CanvasObject
-	rackKey          rackKey
+	transportReg, p6Reg, keysFXReg layoutspec.Registry
+	p6Inner                        fyne.CanvasObject
+	rackKey                        rackKey
 
 	// mobileForTest/tabletForTest override the compile-time platform for the
 	// headless layout-inspection harness only (the real platform is a build-tag
@@ -232,16 +237,28 @@ type ui struct {
 	contentHolder *fyne.Container
 	layoutScale   float32
 
-	// fullScreen is our own console-layout intent (set only by setConsole via
+	// fullScreen is our own full-screen intent (set only by setConsole via
 	// F11 / Ctrl+Shift+Enter / the CONSOLE toggle), NOT the window flag — mobile
 	// reports FullScreen()==true inherently, and the console layout is desktop-
-	// only. On desktop, console means the OS window is full screen while windowed
-	// is a single fixed, non-resizable size (see setConsole).
+	// only. On desktop the console layout shows while the OS window is full
+	// screen or maximized (see isFullScreen); windowed is the screen-fitted
+	// windowed size (windowedSize).
 	fullScreen bool
-	// relockWindowed is set when leaving the console: the fixed-size lock is
-	// dropped for full screen (so Mutter restores geometry like a normal app) and
-	// re-applied by onCanvasResize once the windowed size settles.
-	relockWindowed bool
+	// native reads and drives the OS window state Fyne doesn't expose: maximize
+	// and the screen size (nil where it can't: X11, web, mobile, tests).
+	// maximized mirrors the maximize state, re-read on every resize and every
+	// meter tick (syncMaximized), and selects the console layout like
+	// fullScreen does. snapWindowed is set when the window leaves the maximized
+	// state or full screen: the compositor restores the earlier frame, which may
+	// be a size the user dragged to, so the meter tick puts it back at the
+	// windowed size (snapToWindowed, snapTries attempts so far). sizedFor is the
+	// screen (monitor mode and scale) the window was last fitted to
+	// (fitWindowToScreen).
+	native       nativeWindow
+	maximized    bool
+	snapWindowed bool
+	snapTries    int
+	sizedFor     string
 	// forced tracks the racks the active layout variant force-shows/hides via a
 	// `show:` property, keyed by rack id, each remembering the visibility the
 	// rack had *before* the variant forced it. On a variant switch these are
@@ -304,15 +321,25 @@ type ui struct {
 	recProfile string
 }
 
-// windowedWidth/windowedHeight are the single fixed, non-resizable desktop
-// windowed size (see resolutions.txt: "Thinkpad X13 - 850 x 950 window mode").
-// Sticking to one windowed size means the `window` layout variant only has to be
-// correct at one geometry — no continuous adaptation. Desktop full screen uses
+// designWidth/designHeight are the desktop windowed size the `window` variant is
+// designed for, and the ceiling of the real windowed size: on a screen too short
+// for it the window opens shorter (windowedSizeFor). The window is resizable,
+// because Mutter and libdecor only allow maximize for a resizable window, so the
+// variant also tolerates being stretched. Desktop full screen and maximized use
 // the console layout at the display's size instead.
 const (
-	windowedWidth  = 850
-	windowedHeight = 950
+	designWidth  = 850
+	designHeight = 950
 )
+
+// windowedSizeFor is the windowed size on a screen of the given logical size:
+// the design size, clamped to the screen less reserve, the height panels and the
+// window's title bar take. Every desktop variant's content minimum must fit it on
+// the supported screens (TestContentFitsScreens), or Fyne grows the window past
+// the screen and Mutter refuses to maximize it.
+func windowedSizeFor(screen fyne.Size, reserve float32) fyne.Size {
+	return fyne.NewSize(min(designWidth, screen.Width), min(designHeight, screen.Height-reserve))
+}
 
 func newUI() *ui {
 	u := &ui{bpm: 120, selPad: -1, padLayout: loadPadLayout()}
@@ -428,14 +455,14 @@ func (u *ui) build(w fyne.Window) {
 		OnChange:  u.onPatternChange,
 	})
 
-	// The transport rack internals are laid out from the layout file too; the
-	// fallback below (built only when there's no `rack` block) reproduces the
-	// stock Go arrangement. composeRack never builds both trees.
-	u.transportRack = u.composeRack("transport", layoutspec.Registry{
-		"tempo": u.tempo.Object(),
-	}, func() fyne.CanvasObject {
-		return components.NewRackPanel(container.NewHBox(u.tempo.Object()))
-	})
+	// The transport rack internals are laid out from the layout file too (see
+	// composeTransport). With the P-6 active, PATTERN sits here beside TEMPO in
+	// the window and on the tablet, and in the P-6 rack elsewhere.
+	u.transportReg = layoutspec.Registry{
+		"tempo":   u.tempo.Object(),
+		"pattern": u.patternStep.Object(),
+	}
+	u.composeTransport()
 
 	// The P-6-only rack: Play/Stop, PATTERN and the four Delay/Reverb knobs.
 	// Everything here talks to the hardware over MIDI (transport clock, Program
@@ -533,6 +560,9 @@ func (u *ui) build(w fyne.Window) {
 	u.buildPageNav()
 
 	u.status = widget.NewLabel("")
+	// Truncate rather than widen: the window variants put the status beside the
+	// toggles, where a long message must not raise the window's minimum width.
+	u.status.Truncation = fyne.TextTruncateEllipsis
 	info := widget.NewButtonWithIcon("", theme.InfoIcon(), u.showInfo)
 	info.Importance = widget.LowImportance
 	u.statusLED = components.NewLED(ledRed)
@@ -573,7 +603,9 @@ func (u *ui) build(w fyne.Window) {
 		w.Canvas().SetOnTypedKey(func(ev *fyne.KeyEvent) {
 			if ev.Name == fyne.KeyF11 {
 				u.toggleFullScreen()
+				return
 			}
+			u.autopilotKey(ev.Name)
 		})
 	}
 	// Ctrl+Shift+Enter is the always-works alternative (a modified shortcut fires
@@ -627,6 +659,7 @@ func (u *ui) relayout() {
 	// and re-requested by the variant's property during the build (see
 	// applyPaksRows), then applied once below.
 	u.paksRows = 0
+	u.seqRows = 0     // `seq(rows: N)` — same lifecycle; applied below
 	u.padFill = false // `pads(cells: fill)` — same lifecycle; applied below
 	// Keep the CONSOLE toggle lit whenever the console layout is active, however
 	// it was entered (button, F11, or Ctrl+Shift+Enter).
@@ -640,6 +673,7 @@ func (u *ui) relayout() {
 	// from its first real size, and the console flag flips with the toggle.
 	if key := u.rackKeyNow(); key != u.rackKey {
 		u.rackKey = key
+		u.composeTransport()
 		u.composeP6()
 		u.composeKeysFX()
 	}
@@ -648,6 +682,9 @@ func (u *ui) relayout() {
 	u.root = u.selectLayout(reg)
 	if u.paksRack != nil {
 		u.paksRack.setListRows(u.paksRows) // 0 (no property) restores the default
+	}
+	if u.seqRack != nil {
+		u.seqRack.SetReservedRows(u.seqRows) // 0 (no property) reserves every row
 	}
 	if u.grid != nil {
 		u.grid.SetFillCells(u.padFill) // false (no property) restores the ceiling
@@ -669,6 +706,103 @@ func (u *ui) relayout() {
 		u.contentHolder.Refresh()
 	}
 	u.layoutScale = u.canvasPhysicalScale()
+}
+
+// screenReserve estimates the logical height a desktop takes from a window
+// beside the screen: panels plus the window's title bar (GNOME 69, KDE ~74).
+// Only used until the real work area is learned from a maximize.
+const screenReserve = 100
+
+// screenKey identifies the screen setup the window is on (the smallest monitor's
+// mode and the window's scale) and returns its logical size. ok is false until
+// both are known (the scale arrives once the window is shown).
+func (u *ui) screenKey() (key string, screen fyne.Size, ok bool) {
+	if u.native == nil {
+		return "", fyne.Size{}, false
+	}
+	w, h, ok := u.native.ScreenPixels()
+	scale := u.canvasPhysicalScale()
+	if !ok || scale <= 0 {
+		return "", fyne.Size{}, false
+	}
+	return fmt.Sprintf("%dx%d@%.2f", w, h, scale), fyne.NewSize(float32(w)/scale, float32(h)/scale), true
+}
+
+// windowedSize is the windowed size for the window's screen: the design size
+// clamped to the work area. The work area is the canvas the window last had
+// maximized on this screen setup (exact on any desktop: GNOME, KDE, docks), or
+// else the screen less screenReserve; the design size until the screen is known.
+func (u *ui) windowedSize() fyne.Size {
+	key, screen, ok := u.screenKey()
+	if !ok {
+		return fyne.NewSize(designWidth, designHeight)
+	}
+	if area, ok := loadWorkArea(key); ok {
+		return windowedSizeFor(area, 0)
+	}
+	return windowedSizeFor(screen, screenReserve)
+}
+
+// resizeWindowed resizes the window to windowedSize unless it's already there.
+func (u *ui) resizeWindowed() {
+	target := u.windowedSize()
+	if sz := u.canvasSize(); absFloat(sz.Width-target.Width) > 2 || absFloat(sz.Height-target.Height) > 2 {
+		u.win.Resize(target)
+	}
+}
+
+// fitWindowToScreen sizes the windowed window for its screen once per screen
+// setup: at startup once the window's real (fractional) scale is known, and
+// again if the monitor mode or scale changes. Never while full screen or
+// maximized, where the compositor decides the size. Runs on the UI loop from
+// the meter tick.
+func (u *ui) fitWindowToScreen() {
+	if u.win == nil || onMobile || u.isFullScreen() {
+		return
+	}
+	key, _, ok := u.screenKey()
+	if !ok || key == u.sizedFor {
+		return
+	}
+	u.sizedFor = key
+	u.resizeWindowed()
+}
+
+// learnWorkArea remembers the canvas of a maximized window as its screen's work
+// area, so windowedSize knows exactly how much height panels and the title bar
+// leave. A maximize the compositor couldn't size (still about the windowed
+// width) isn't learned.
+func (u *ui) learnWorkArea() {
+	if !u.maximized || u.fullScreen {
+		return
+	}
+	key, _, ok := u.screenKey()
+	sz := u.canvasSize()
+	if !ok || sz.Width <= designWidth+2 {
+		return
+	}
+	if area, ok := loadWorkArea(key); ok && area == sz {
+		return
+	}
+	if app := fyne.CurrentApp(); app != nil {
+		app.Preferences().SetString(prefKeyWorkArea+key, fmt.Sprintf("%.0fx%.0f", sz.Width, sz.Height))
+	}
+}
+
+// prefKeyWorkArea prefixes the learned work area of a screen setup (screenKey).
+const prefKeyWorkArea = "window.workarea."
+
+// loadWorkArea returns the work area learned for a screen setup.
+func loadWorkArea(key string) (fyne.Size, bool) {
+	app := fyne.CurrentApp()
+	if app == nil {
+		return fyne.Size{}, false
+	}
+	var w, h float32
+	if _, err := fmt.Sscanf(app.Preferences().String(prefKeyWorkArea+key), "%fx%f", &w, &h); err != nil || w <= 0 || h <= 0 {
+		return fyne.Size{}, false
+	}
+	return fyne.NewSize(w, h), true
 }
 
 // canvasSize reports the current window canvas size, or the zero size if there's
@@ -711,38 +845,92 @@ func (u *ui) applyMeterOrientation(horizontal bool) {
 // onCanvasResize is called by the content holder's layout on every window resize.
 // Under the fixed-form-factor policy the layout does NOT adapt continuously to
 // pixel size: it relays out only when the discrete variant the size resolves to
-// actually changes (see variantFor). That happens in two real cases — a mobile
-// device learning its first real size (phone vs tablet), and the desktop console
-// settling after an async SetFullScreen — not while a window is dragged (the
-// windowed size is fixed, and the console's proportional splits reflow on their
-// own without a rebuild).
+// actually changes (see variantFor). That happens in three real cases — a mobile
+// device learning its first real size (phone vs tablet), the desktop console
+// settling after an async SetFullScreen, and the desktop window being maximized
+// or restored (syncMaximized) — not while a window is dragged (the window and
+// console variants reflow on their own without a rebuild).
 func (u *ui) onCanvasResize(size fyne.Size) {
 	if size.Width <= 1 || size.Height <= 1 {
 		return
 	}
-	// After leaving the console, re-lock the fixed windowed size once the
-	// compositor has restored the pre-full-screen geometry (width back near the
-	// windowed width — not an intermediate full-screen frame). One-shot, so it
-	// can't loop or fight the compositor.
-	if u.relockWindowed && !onMobile && !u.isFullScreen() && u.win != nil {
-		if absFloat(size.Width-windowedWidth) <= 2 {
-			u.relockWindowed = false
-			u.win.SetFixedSize(true)
-			u.diagRelock(size)
-		}
-	}
+	u.syncMaximized()
+	u.learnWorkArea()
 	if u.variantFor(size) == u.activeVariant {
 		return
 	}
-	// Request a relayout off this layout pass (calling relayout synchronously here
-	// would re-enter layout). The relayoutWatch goroutine (started in main())
-	// marshals it through fyne.Do so it runs serialized on the UI loop. A buffered
-	// send coalesces bursts; if the watcher isn't running (tests use build(), not
-	// main()), the request is simply dropped and the test drives relayout itself.
+	u.requestRelayout()
+}
+
+// requestRelayout asks for a relayout off the current pass (calling relayout
+// synchronously from a layout pass would re-enter layout). The relayoutWatch
+// goroutine (started in main()) marshals it through fyne.Do so it runs
+// serialized on the UI loop. A buffered send coalesces bursts; if the watcher
+// isn't running (tests use build(), not main()), the request is simply dropped
+// and the test drives relayout itself.
+func (u *ui) requestRelayout() {
 	select {
 	case u.relayoutReq <- struct{}{}:
 	default:
 	}
+}
+
+// pollWindow runs on the UI loop from the meter tick. It re-reads the maximize
+// state, because a maximize the compositor can't size doesn't resize the window
+// and resize-driven detection alone misses it, and it fits the windowed window
+// to its screen once the scale is known.
+func (u *ui) pollWindow() {
+	if u.syncMaximized() {
+		u.requestRelayout()
+	}
+	u.learnWorkArea()
+	u.snapToWindowed()
+	u.fitWindowToScreen()
+}
+
+// snapMaxTries bounds snapToWindowed's retries (meter ticks, ~1s).
+const snapMaxTries = 25
+
+// snapToWindowed brings the window back to windowedSize after it leaves the
+// console (restored from maximized, or out of full screen). It retries on later
+// ticks until the size sticks: the console's larger content minimum stays the
+// window's size limit until Fyne applies the window variant's a frame later, and
+// until then Fyne grows the window straight back. Bounded, so it can't fight a
+// window that won't shrink (a content minimum over the target).
+func (u *ui) snapToWindowed() {
+	if !u.snapWindowed || u.isFullScreen() || u.win == nil {
+		return
+	}
+	target := u.windowedSize()
+	if sz := u.canvasSize(); (absFloat(sz.Width-target.Width) <= 2 && absFloat(sz.Height-target.Height) <= 2) || u.snapTries >= snapMaxTries {
+		u.snapWindowed, u.snapTries = false, 0
+		return
+	}
+	u.snapTries++
+	u.win.Resize(target)
+}
+
+// syncMaximized reads the OS window's maximize state into u.maximized and
+// reports whether it changed. Fyne has no maximize event, so it's re-read on
+// every resize (onCanvasResize) and every meter tick (pollWindow): GLFW updates
+// the state before it reports the new size, and a maximize the compositor
+// can't size never resizes at all. The console/window variant switch rides the
+// relayout either path requests, which also restores the racks the console
+// force-shows (selectLayout). Frozen while full screen: the explicit
+// full-screen intent decides the layout there, and the state from before full
+// screen is what leaving it returns to (see toggleFullScreen).
+func (u *ui) syncMaximized() bool {
+	if u.native == nil || u.fullScreen {
+		return false
+	}
+	on := u.native.Maximized()
+	if on == u.maximized {
+		return false
+	}
+	u.maximized = on
+	u.snapWindowed, u.snapTries = !on, 0
+	u.diagMaximized(on)
+	return true
 }
 
 // relayoutWatch marshals resize-driven relayout requests (from onCanvasResize)
@@ -787,10 +975,7 @@ func (u *ui) requestRelayoutIfScaleChanged() {
 	if !u.canvasScaleChanged() {
 		return
 	}
-	select {
-	case u.relayoutReq <- struct{}{}:
-	default:
-	}
+	u.requestRelayout()
 }
 
 func (u *ui) canvasScaleChanged() bool {
@@ -951,6 +1136,16 @@ func (u *ui) composeP6() {
 	if !visible {
 		u.p6Obj.Hide()
 	}
+}
+
+// composeTransport (re)builds the transport rack from its `rack transport` block,
+// recomposed on rack-key changes like composeP6: PATTERN moves between this rack
+// (P-6 active, outside the console and phones, so the P-6 rack is one row) and
+// the P-6 rack. Its knob is re-parented within the same window, which is allowed.
+func (u *ui) composeTransport() {
+	u.transportRack = u.composeRack("transport", u.transportReg, func() fyne.CanvasObject {
+		return components.NewRackPanel(container.NewHBox(u.tempo.Object()))
+	})
 }
 
 // composeKeysFX (re)builds the keyboard-FX rack from its `rack keysfx` block,
@@ -1243,11 +1438,21 @@ func (u *ui) refreshPaksRack() {
 	u.paksRack.refresh(active)
 }
 
-// toggleFullScreen toggles the "mixing console" layout (F11 / Ctrl+Shift+Enter).
-func (u *ui) toggleFullScreen() { u.setConsole(!u.fullScreen) }
+// toggleFullScreen toggles full screen and the "mixing console" layout with it
+// (F11 / Ctrl+Shift+Enter). From a maximized window it goes full screen on top,
+// and leaving full screen returns the compositor to maximized, so the console
+// stays (leaveFullScreen).
+func (u *ui) toggleFullScreen() {
+	if u.fullScreen && u.maximized {
+		u.leaveFullScreen()
+		return
+	}
+	u.setConsole(!u.fullScreen)
+}
 
 // toggleConsole toggles the console layout via the bottom-bar CONSOLE button.
-func (u *ui) toggleConsole() { u.setConsole(!u.fullScreen) }
+// It leaves the console however it was entered: full screen, maximized or both.
+func (u *ui) toggleConsole() { u.setConsole(!u.isFullScreen()) }
 
 // buildPageNav creates the page-navigation strip: one backlit key per declared
 // page (the active page lit), framed as its own rack panel — the epic's
@@ -1392,55 +1597,71 @@ func (u *ui) cyclePage(delta int) {
 }
 
 // setConsole enters (on) or leaves (off) the "mixing console" layout, then
-// re-lays out. On desktop it also drives the OS window: the console is full
-// screen, while windowed is a single fixed, non-resizable size — so entering
-// clears the fixed-size lock before going full screen and leaving restores the
-// fixed windowed size. On mobile there's no console (the phone/tablet variants
-// are chosen by device size), so setConsole is desktop-only in practice.
+// re-lays out. On desktop it also drives the OS window: entering goes full
+// screen; leaving drops full screen and un-maximizes, since a maximized window
+// shows the console too (isFullScreen). On mobile there's no console (the
+// phone/tablet variants are chosen by device size), so setConsole is
+// desktop-only in practice.
 //
 // The console force-shows some racks (FX, KEYS, PAKS, SEQ via `show: true`). We
 // restore them to the user's prior state when leaving the console, so they don't
 // leak into the windowed layout. This is done here (a single-threaded user
 // action), not in relayout, so a background resize-driven relayout can't hide
 // racks mid-build. The set is generic — whatever a variant force-shows via
-// `show:` is recorded in u.forced by applyRackShow and restored here.
+// `show:` is recorded in u.forced by applyRackShow and restored here. Entering
+// or leaving by maximize has no action to hook, so that switch rides the resize
+// relayout, and selectLayout restores the racks when the variant changes.
 //
 // SetFullScreen is applied asynchronously (Fyne queues it onto the main loop),
 // so we can't rely on the canvas size here; the console layout keys off the
 // fullscreen intent (not pixel size) and its proportional splits adapt as the
 // window settles, so the synchronous relayout below is authoritative.
 func (u *ui) setConsole(on bool) {
-	if on {
+	wasConsole := u.isFullScreen()
+	if on && !wasConsole {
 		u.forced = nil // the entering variant's applyRackShow repopulates it
 	}
 	u.fullScreen = on
 	rememberConsole(on) // persist the choice so it's restored next launch
 	if !onMobile && u.win != nil {
 		if on {
-			// Behave like a normal resizable app while full screen: unlock the
-			// fixed size so the window isn't a fixed-size window in full screen
-			// (which confused Mutter's geometry restore on exit).
-			u.win.SetFixedSize(false)
 			u.win.SetFullScreen(true)
 		} else {
-			// Leave full screen. Mutter restores the pre-full-screen frame to the
-			// windowed size, but glfw-Wayland doesn't always propagate that to
-			// Fyne's canvas, so it can stay laid out at the full-screen size. An
-			// explicit Resize reconciles the canvas with the restored frame (both
-			// are the windowed size now, so this doesn't fight the compositor). The
-			// fixed-size lock is re-applied once it settles (see onCanvasResize).
 			u.win.SetFullScreen(false)
-			// Set the re-lock flag before Resize so the resize it triggers re-locks
-			// the fixed windowed size once it settles (see onCanvasResize).
-			u.relockWindowed = true
-			u.win.Resize(fyne.NewSize(windowedWidth, windowedHeight))
+			if u.maximized && u.native != nil {
+				// Un-maximize too. The compositor answers with a resize, where
+				// onCanvasResize sees the window restored, switches to the window
+				// variant and snaps the size back. The console stays until then.
+				u.native.Restore()
+			} else {
+				// Mutter restores the pre-full-screen frame to the windowed size,
+				// but glfw-Wayland doesn't always propagate that to Fyne's canvas,
+				// so it can stay laid out at the full-screen size. An explicit
+				// Resize reconciles the canvas with the restored frame (both are
+				// the windowed size now, so this doesn't fight the compositor), and
+				// the meter tick repeats it until the console's larger minimum is
+				// gone (snapToWindowed).
+				u.win.Resize(u.windowedSize())
+				u.snapWindowed, u.snapTries = true, 0
+			}
 		}
 		u.diagConsole(on)
 	}
-	if !on {
+	if wasConsole && !u.isFullScreen() {
 		u.restoreForcedRacks() // put the force-shown racks back before relayout
 	}
 	u.relayout() // immediate variant switch; onCanvasResize corrects the sizing
+}
+
+// leaveFullScreen drops full screen but keeps the console layout: the window
+// was maximized before it went full screen, and the compositor returns it there.
+func (u *ui) leaveFullScreen() {
+	u.fullScreen = false
+	rememberConsole(false)
+	if !onMobile && u.win != nil {
+		u.win.SetFullScreen(false)
+		u.diagConsole(false)
+	}
 }
 
 // diagConsole logs the console/window transition and the resulting canvas size
@@ -1451,17 +1672,27 @@ func (u *ui) diagConsole(on bool) {
 		return
 	}
 	sz := u.win.Canvas().Size()
-	log.Printf("rp6: setConsole(%v) -> fullScreen()=%v canvas=%.0fx%.0f (windowed target %dx%d)",
-		on, u.win.FullScreen(), sz.Width, sz.Height, windowedWidth, windowedHeight)
+	log.Printf("rp6: setConsole(%v) -> fullScreen()=%v maximized=%v canvas=%.0fx%.0f (windowed target %dx%d)",
+		on, u.win.FullScreen(), u.maximized, sz.Width, sz.Height, designWidth, designHeight)
 }
 
-// diagRelock logs when the fixed windowed size is re-applied after a console
-// exit (RP6_DIAG=1), so the compositor's geometry restore can be confirmed.
-func (u *ui) diagRelock(size fyne.Size) {
+// diagVariant logs layout variant switches (RP6_DIAG=1); scripts/smoke-maximize.sh
+// checks them.
+func (u *ui) diagVariant(name string) {
 	if os.Getenv("RP6_DIAG") == "" {
 		return
 	}
-	log.Printf("rp6: re-locked windowed size at canvas=%.0fx%.0f", size.Width, size.Height)
+	log.Printf("rp6/diag: layout variant -> %s (maximized=%v fullscreen=%v)", name, u.maximized, u.fullScreen)
+}
+
+// diagMaximized logs maximize-state changes (RP6_DIAG=1), so a title-bar
+// double-click can be traced to the console switch.
+func (u *ui) diagMaximized(on bool) {
+	if os.Getenv("RP6_DIAG") == "" {
+		return
+	}
+	sz := u.canvasSize()
+	log.Printf("rp6: window maximized=%v canvas=%.0fx%.0f", on, sz.Width, sz.Height)
 }
 
 // savedRack captures a toggleable rack's visibility so it can be restored.
@@ -2369,6 +2600,7 @@ func (u *ui) startMeter() {
 				pending.Store(true)
 				fyne.Do(func() {
 					u.requestRelayoutIfScaleChanged()
+					u.pollWindow()
 					src := u.meterSrc
 					src.step()
 					u.meter.SetLevel(src.level())
@@ -3269,27 +3501,23 @@ func main() {
 	if strings.TrimSpace(u.emuDir) == "" {
 		u.emuDir = u.savedEmuDir()
 	}
-	w.Resize(fyne.NewSize(windowedWidth, windowedHeight))
-	// Restore the remembered console-layout choice. On desktop the windowed size
-	// is a single fixed, non-resizable size (see resolutions.txt); the lock stays
-	// on the whole time (glfw full-screen ignores the size limits, and keeping
-	// them present helps the compositor restore the windowed size on exit — see
-	// setConsole). Mobile picks phone-or-tablet from the device size (see the
-	// `phone`/`tablet` variants), so there's no console choice or fixed size.
+	// Open at the design size; once the window is shown and its scale known, the
+	// meter tick fits it to the screen (fitWindowToScreen).
+	w.Resize(fyne.NewSize(designWidth, designHeight))
+	// Restore the remembered console-layout choice (full screen). The window
+	// stays resizable so the title bar can maximize it, which also shows the
+	// console (see syncMaximized); its content minimum is the drag minimum.
+	// Mobile picks phone-or-tablet from the device size (see the
+	// `phone`/`tablet` variants), so there's no console choice there.
 	startConsole := false
 	if on, saved := loadConsolePref(); saved && !onMobile {
 		startConsole = on
 	}
 	if !onMobile {
 		u.fullScreen = startConsole
+		u.native = newNativeWindow(w)
 		if startConsole {
-			// Start full screen unlocked (like a normal app), so leaving the
-			// console later restores the windowed size and re-locks it — see
-			// setConsole / onCanvasResize.
-			u.relockWindowed = true
 			w.SetFullScreen(true)
-		} else {
-			w.SetFixedSize(true) // windowed is a single fixed, non-resizable size
 		}
 	}
 	u.build(w)
