@@ -12,32 +12,44 @@ that has shaped the whole design.
 
 ## 1. What rp6 is
 
-A desktop GUI that drives a Roland **P-6** (AIRA Compact sampler) over its
-class-compliant **USB MIDI** port:
+A touch-friendly GUI that drives a Roland **P-6** (AIRA Compact sampler) over
+its class-compliant **USB MIDI** port, or plays the same kit through the
+built-in **software emulator** when no P-6 is attached. It ships for desktop
+Linux (also as a flatpak, `flatpak/`), Android, and the browser (WebAssembly,
+emulator-only — `make web`).
 
-- A 4×6 grid of 24 finger-friendly pads, paged between banks **A–D** and **E–H**
-  (all 48 pads reachable), with a selection highlight on the last-tapped pad.
-  The pad rack has a slim **left tool column** of backlit icon toggles
-  (`components.RackToggle`, lit when active): the first **floats** the
-  pad rack into its own window and **docks** it back (also on window close); the
-  second toggles **listening to P-6 MIDI input** (reflecting hardware pad
-  presses in the UI — eye icon; on by default for a connected P-6, off for the
-  emulator, which has no MIDI input — see `setListenDefault`); the third is
-  **double density**
-  (grid icon) — all 8 banks on a single page with half-size pads (off by
-  default). Density rebuilds the grid and swaps it into a holder container.
-- A "rack unit" toolbar: illuminated **Play/Stop** transport (with a MIDI clock
-  generator so Play actually runs), a **TEMPO** rotary knob and a **PATTERN**
-  rotary knob (drag / scroll / arrow keys; lit ring when focused), and
-  **Delay/Reverb** sliders with red 7-segment readouts.
-- A toggleable vertical **master activity meter** on the right (real USB-audio
-  VU when built with `-tags capture`, otherwise a trigger-activity meter),
-  framed as a rack panel. The pad rack has a modest per-pad min size so it
-  **adapts** (pads shrink to fit) rather than forcing the window larger — no
-  scrollbars — including when the sequencer is docked as a right-hand column.
-- A toggleable **effects rack** for the selected pad (4 slots + Roll rate).
-- A toggleable **software step sequencer** (up to 8 assignable tracks, default
-  6; each track 1–4 **bars** long and looping at its own length = polymeter;
+- A grid of finger-friendly pads covering all 48 pads (banks **A–H**), with a
+  selection highlight on the last-tapped pad. A **tool strip** across the top
+  of the pad rack holds backlit icon toggles (`components.RackToggle`, lit when
+  active): **float** the pad rack into its own window and **dock** it back (also
+  on window close); **listen** to P-6 MIDI input (reflect hardware pad presses
+  in the UI — eye icon; on by default for a connected P-6, off for the emulator,
+  which has no MIDI input — see `setListenDefault`); **keys route** (external
+  controller notes play the on-screen keyboard instead of pads); and the **pad
+  layout** cycle (`components.RackCycle`): paged A–D/E–H (default) → two-bank
+  A–B…G–H → dense all-8 with half-size pads. A layout change rebuilds the grid
+  and swaps it into a stable holder (`applyPadLayout`). The right end of the
+  strip has the blue **store** key and the **device badge** (see below). Pads
+  have a modest min size, so the rack **adapts** (pads shrink to fit) rather
+  than forcing the window larger — no scrollbars.
+- A **transport** rack: the **TEMPO** rotary knob (drag / scroll / arrow keys;
+  lit ring when focused), joined by **PATTERN** in some variants.
+- A **P-6 rack** (yellow plate, `P-6` toggle): illuminated **Play/Stop** (with a
+  MIDI clock generator so Play actually runs), **PATTERN** (Program Change), and
+  four **Delay/Reverb** knobs (`DLY TIME`/`DLY LVL`/`REV TIME`/`REV LVL`, global
+  FX CCs). All of it is MIDI-only, so `applyBackendGating` hides the rack and
+  disables its toggle while the emulator is the backend.
+- A **VU meter**, a horizontal strip beside TEMPO (or along the bottom on
+  compact variants) — real USB-audio level when built with `-tags capture`,
+  otherwise a trigger-activity meter.
+- A **keyboard** rack (`KEYS`): a chromatic piano + OCT knob that plays the
+  selected sample pitched (P-6 keyboard mode on hardware, pitched playback on
+  the emulator — see §4). On the emulator a **KEYS FX** rack drives a host-side
+  instrument chain (`internal/audiofx`: tone, compressor, chorus, delay, reverb).
+- A **PAD FX** rack for the selected pad: a backlit **Roll** toggle + **Rate**
+  knob (Roll is the only effect kind so far).
+- A **software step sequencer** (`SEQ`; up to 8 assignable tracks, default 6;
+  each track 1–4 **bars** long and looping at its own length = polymeter;
   16 steps/bar, tempo-synced, own Play/Stop, per-track mute) that drives the
   pads host-side. Each track row is just a **pad-assign** key (the `A1`..`H6`
   label) followed by that track's step cells. Mute and bar-length are **not**
@@ -52,70 +64,92 @@ class-compliant **USB MIDI** port:
   Tap the armed key again to cancel; arm another track to move the arm. It can
   also **dock** as a right-hand column beside the pads (the pad rack then adapts
   to the remaining space).
-  **Sequences are saved to SQLite** (`internal/store`) in numbered slots with a
-  name + tempo; the working slot autosaves on quit and reloads on launch.
+  **Sequences are persisted** (`internal/store`: SQLite on desktop, a JSON file
+  on mobile, localStorage on web) in numbered slots with a name + tempo; the
+  working slot autosaves on quit and reloads on launch.
   Persistence is **scoped to a profile** (`"p6"` for hardware / no-`-emu` runs,
   `"emu:<abs-samples-dir>"` per emulator kit) so P-6 and emulator sequences
   never intermingle (see `ui.storeProfile`).
   Changing the sequence slot (SEQ knob) while playing is **quantized to the next
   bar** (queued in `pendingSlot`, applied from the step callback / on stop).
+- A **recorder / looper** (`REC`, on the LOOP page — `internal/recorder`,
+  `cmd/rp6/recorderrack.go`, `docs/architecture/recorder.md`): records **PCM
+  audio** (the P-6's USB capture, or the emulator's mix) into up to 8 clip
+  tracks — 4 by default (`defaultRecorderTracks`), raised per variant via the
+  layout `rec(tracks: N)` property.
+- A **PAKS** rack (kit selector): one backlit key per installed sample pak,
+  with a filter field; tapping a key loads that pak into the emulator.
+- A **sample-pak store** (the blue store key in the pad tool strip, and in the
+  PAKS rack header): browses an online catalog and installs **`.rp6sp`** sample
+  paks (ZIP kits of P-6-style samples + metadata + optional cover) into the
+  emulator; already-installed packs offer **Select** (load) instead of
+  **Install**. Runs on **desktop + Android/iOS** (the web build stubs it out);
+  pak *authoring* (`rp6 pak create|install|list`, `-pak file.rp6sp`) is
+  desktop-only. Where paks install is the one platform difference, behind the
+  `paksSamplesDir()` seam. Full design: `docs/architecture/store.md`.
+- **External MIDI controllers** (MacroPad, Arturia KeyStep/MiniLab, Synido
+  TempoPAD C16, …) are described by text **`.midimap`** files that bind incoming
+  MIDI to named intents (`pad.trigger`, `transport.play`, `tempo.delta`, …) —
+  new hardware is a data file, not Go. Embedded maps live in
+  `cmd/rp6/assets/midimaps/`, user maps in `$XDG_CONFIG_HOME/rp6/midimaps/`.
+  Design: `docs/architecture/midimaps.md`.
 - A **shared jam session** (bottom-bar person-icon toggle): several RP6s connect
   peer-to-peer over WebRTC and share **live pad hits** — a peer's tap plays on
   your device and blinks the pad (like an external MIDI controller), without
   disturbing your selection/UI. **Desktop-only**, built by default (disable with
   `-tags nojam`; excluded on web + mobile). Needs a small signaling server
   (`cmd/rp6-signal`). Design + setup: `docs/architecture/jams.md`, `docs/jams.md`.
-- A **sample-pak store** (pad-rack blue store toggle, left of the device badge):
-  browses an online catalog and installs **`.rp6sp`** sample paks (ZIP kits of
-  P-6-style samples + metadata + optional cover) into the emulator; already-
-  installed packs offer **Select** (load) instead of **Install**. Runs on
-  **desktop + Android/iOS** (the web build stubs it out); pak *authoring*
-  (`rp6 pak create|install|list`, `-pak file.rp6sp`) is desktop-only. Where paks
-  install is the one platform difference, behind the `paksSamplesDir()` seam.
-  Full design: `docs/architecture/store.md`.
-- The pad grid, delay/reverb, effects and sequencer are all **toggleable racks**
-  (see the bottom-bar toggles below).
 - **Application pages** (`docs/architecture/layouts.md` §12): the UI is split into
   named pages, only one attached to the canvas at a time, switched by backlit
   **PLAY / LOOP** keys at the start of the bottom bar — beside TEMPO on phones,
   where the bottom bar is too narrow and every row costs the pads height — (also
   **Ctrl+Shift+←/→**).
-  **PLAY** is the default page (pads, sequencer, effects, paks); **LOOP** holds
-  the **recorder / looper** (`internal/recorder`, `cmd/rp6/recorderrack.go`) — 4
-  tracks by default (`defaultRecorderTracks`), raised per variant via the layout
-  `rec(tracks: N)` property up to its 8-track capacity — with the pads as a record
-  source, plus TEMPO and the VU meter. A page is a first-class `page … { … }`
-  block in the .layout files (selected by id, then form factor); switching pages
-  rebuilds only the scaffolding around the **same wired rack objects** (no rack in
-  two trees) and doesn't disturb MIDI/sequencer/recorder/audio state.
-- A **rack-framed bottom bar** that hosts the **PLAY / LOOP page nav** (`pagenav`)
-  then the **visibility toggles** — backlit
-  rack-label `components.RackToggle`s (component icon · `P-6` · `FX` · `PAKS` · `VU`, lit when
-  shown / greyed when hidden, also **Ctrl+Shift+P/D/F/S/M**) — a red/green
-  connection **LED** (breathing glow), status text, and an **ⓘ info** dialog
-  button. The component icon floats a vertical **page-specific** rack selector
-  above the bar (the racks the active page places — `PADS`/`SEQ`/`KEYS` on PLAY,
-  `PADS`/`KEYS`/`REC` on LOOP);
-  `FX` floats its own vertical `PAD FX` / `KEYS FX` selector. There is **no Reconnect button**: the app auto-connects/reconnects
-  (see the device watcher in §4).
-- Amber/orange theme; **Ctrl+Q** quits.
+  **PLAY** is the default page (pads, sequencer, keyboard, FX, paks); **LOOP**
+  holds the recorder with the pads as a record source, plus the keyboard, TEMPO
+  and the VU meter. A page is a first-class `page … { … }` block in the .layout
+  files (selected by id, then form factor); switching pages rebuilds only the
+  scaffolding around the **same wired rack objects** (no rack in two trees) and
+  doesn't disturb MIDI/sequencer/recorder/audio state.
+- A **rack-framed bottom bar**: the **PLAY / LOOP page nav** (`pagenav`), then
+  the **visibility toggles** — backlit rack-label `components.RackToggle`s
+  (grid icon · `P-6` · `FX` · `PAKS` · `VU` · `CONSOLE` on desktop · the jam
+  toggle; lit when shown / greyed when hidden) — and an **ⓘ info** dialog
+  button. The grid icon floats a vertical **page-specific** rack selector above
+  the bar (the racks the active page places — `PADS`/`SEQ`/`KEYS` on PLAY,
+  `PADS`/`KEYS`/`REC` on LOOP); `FX` floats its own `PAD FX` / `KEYS FX`
+  selector. Below it, a slim **status strip** carries the red/green connection
+  **LED** (breathing glow) and the status text.
+- A **device badge** (top-right of the pad rack) names the backend — amber
+  `P-6` or cyan emulator — with an Offline/Searching/Online LED. Tap the plate to
+  switch backend, the gear for device settings. There is **no Reconnect
+  button**: the app auto-connects/reconnects (see the device watcher in §4).
+- **Shortcuts:** **Ctrl+Shift+P/D/F/S/K/A/M** toggle Pads / P-6 / FX selector /
+  Sequencer / Keyboard / Paks / Meter; **Ctrl+Shift+←/→** switch pages;
+  **F11** or **Ctrl+Shift+Enter** toggles full screen (the console layout);
+  **Ctrl+Q** quits. Amber/orange theme.
 
-It runs on the machine the P-6 is plugged into (GUI + USB both needed). On Linux
-that's the host, not a VM/container (USB passthrough + display).
+The hardware path needs the GUI on the machine the P-6 is plugged into (GUI +
+USB). On Linux that's the host, not a VM/container (USB passthrough + display).
 
 ---
 
 ## 2. Build / test / dev commands
 
 ```bash
-make run          # go run -tags "capture wayland migrated_fynedo" ./cmd/rp6  (needs a display + ideally the P-6)
+make run          # go run -tags "$(TAGS)" ./cmd/rp6  (needs a display; falls back to the emulator without a P-6)
 make build        # -> build/rp6  (capture backend + native Wayland + fyne.Do model)
 make test         # go test ./...  (NO build tags -> no audio backend needed)
-make check        # fmt + vet + test + staticcheck (incl. -tags capture on audio)
+make check        # fmt + vet + test + staticcheck (incl. the build tags on internal/audio)
+make inspect-layouts # regenerate the layout-inspection PNG/JSON artifacts (see §7)
 make smoke-maximize  # live, needs a Wayland display: maximize/restore the real app, check the log
+make web / serve  # WebAssembly bundle in build/web (emulator-only); serve on :8080
+make android      # APK (ANDROID_ABI=android/arm64 for phones); see §8
+scripts/flatpak build  # local flatpak build (manifest in flatpak/; not Flathub-ready)
 ```
 
-The default build tags are **`capture wayland migrated_fynedo`**:
+The default build tags are **`capture wayland migrated_fynedo`** (the
+Makefile's `TAGS` also lists `jam`, which no file checks — jam is on unless
+`nojam` is set):
 - **`capture`** pulls in the malgo/miniaudio audio backend for the live VU
   meter.
 - **`wayland`** builds Fyne's glfw driver against GLFW's native Wayland
@@ -190,20 +224,26 @@ p6/                 dependency-free MIDI client for the P-6 (NO Fyne, NO cgo)
   pad.go            bank/pad <-> note mapping (48..95), labels
   midi.go           status byte + message builders (NoteOn/CC/PC/realtime)
   cc.go             Control Change numbers + AutoCC/GranularCC helpers
-  device.go         ALSA rawmidi discovery + open (O_RDWR) + Send methods, Config
-  device_alsa.go    (!js && !android) ALSA rawmidi backend (Discover/Open/OpenPath)
+  device.go         Device: Send methods (pads, PlayNote, CC/PC, transport),
+                    Config + factory channel defaults, KeyboardCenterNote
+  device_alsa.go    (!js && !android) ALSA rawmidi backend (Discover/Open/OpenPath,
+                    O_RDWR)
   device_js.go      (js) Web MIDI backend; device_android.go (android) MIDI-bridge
                     backend — both reuse device.go builders + input.go parser,
-                    only the byte transport differs (see midibridge/)
+                    only the byte transport differs (see midibridge/);
+                    portname.go is their shared "is this port a P-6?" match
   input.go          MIDI input parser (running status/realtime) + Device.Listen
   clock.go          Clocker: MIDI Start/Stop + timing-clock generator
-  controller.go     Controller interface (pad/CC/PC/transport/Listen) — the
-                    swap point: *Device and *emu.Emulator both implement it
+  controller.go     Controller interface (pad/PlayNote/CC/PC/transport/
+                    Listen) — the swap point: *Device and *emu.Emulator both
+                    implement it
 internal/emu/       software P-6 emulator: plays WAV/FLAC samples (NO Fyne)
   emu.go            Emulator: implements p6.Controller; loads a P-6-style
                     sample set (A1..H6, .wav or .flac) from an fs.FS (os.DirFS,
                     the embedded kit, or a .rp6sp zip via OpenFS), fires pads
-                    into a mixer
+                    into a mixer; PlayNote pitches the last-played pad (keyboard
+                    mode) on a separate keyboard bus run through internal/audiofx
+                    (SetKeyboardFX) before it joins the pad voices
   kit.go            //go:embed of the built-in "modular-hits" kit + credits;
                     OpenDefault() loads it (48 pads, playable out of the box)
   assets/modular-hits/  the embedded default kit: A1.wav..H6.wav + CREDITS.txt
@@ -212,12 +252,12 @@ internal/emu/       software P-6 emulator: plays WAV/FLAC samples (NO Fyne)
   flac.go           FLAC decode (mewkiz/flac, pure Go) -> Clip; emulator-only
                     (the P-6 hardware imports WAV, not FLAC)
   mixer.go          voice mixer (16-voice cap, sums+clamps) — pure, testable
+  limiter.go        look-ahead peak limiter on the final mix (preallocated,
+                    safe in the audio callback)
   sink.go           sink interface (audio output the mixer renders into)
   sink_stub.go      default (no tag): silent sink (loads+mixes, no sound)
   sink_malgo.go     //go:build capture: miniaudio/malgo playback backend
   sink_js.go        (js) Web Audio sink (AudioWorklet, resumed on a user gesture)
-                    Keyboard-mode voices use a separate bus through
-                    internal/audiofx before joining pad voices at the limiter.
 internal/effects/   host-side effects engine (NO Fyne, NO p6 — pure logic)
   effects.go        Engine: per-pad slots, Roll (tempo-synced retrigger), Tap,
                     background rollers; fires pads via a Trigger callback
@@ -227,15 +267,19 @@ internal/sequencer/ host-side step sequencer (NO Fyne, NO p6 — pure logic)
                     mute, tempo-synced drift-compensated tick clock; fires pads
                     via Trigger, playhead via OnStep(tick); Snapshot/Restore
 internal/midiin/    pluggable MIDI *input* controllers (NO Fyne) — the input-
-                    side mirror of p6; drivers register via init(), the app
-                    blank-imports them, Detect() opens whichever is plugged in
-  midiin.go         Handlers (TriggerPad/Transport) + Device/Driver + registry
+                    side mirror of p6; drivers call Register (cmd/rp6/midimap.go
+                    registers one per .midimap; webmidi registers from init via a
+                    blank import), Detect()/Present() find what's plugged in
+  midiin.go         Handlers + Intent (named control actions) + Device/Driver +
+                    registry
   alsa.go           FindRawMIDI: /proc/asound/cards scan by card-name substring
-  macropad/         Adafruit MacroPad RP2040 driver (note 48..95 -> pad,
-                    realtime Start/Stop -> transport); reuses p6.ParseMIDI.
-                    macropad_alsa.go (!android && !js) opens the rawmidi node;
-                    macropad_android.go (android) reads from midibridge instead
-                    — the MIDI->Handlers mapping (handle) is shared
+  mapped/           the data-driven driver behind most controllers: parses
+                    `.midimap` files (mapfile.go) binding incoming MIDI to
+                    Intents; device.go runs one, encoder.go handles relative
+                    encoders; platform_alsa.go / platform_android.go /
+                    platform_js.go are the per-OS byte transports. The intent
+                    vocabulary lives in cmd/rp6/midimap.go; embedded maps in
+                    cmd/rp6/assets/midimaps/. Design: docs/architecture/midimaps.md
   webmidi/          (js) Web MIDI input driver — the browser counterpart to the
                     ALSA drivers; webmidi_js.go uses the Web MIDI API + p6.ParseMIDI
                     (webmidi.go is a no-op stub elsewhere)
@@ -243,8 +287,9 @@ midibridge/         (NO Fyne, NO p6 — pure Go, gomobile-bindable) the Android
                     MIDI transport bridge: the Java MidiManager layer reports
                     devices + shuttles bytes (AddDevice/RemoveDevice/SetOutput/
                     PushInput/Reset), the Go backends grab Writer(id)/OpenReader(
-                    id). Used by p6/device_android.go + macropad_android.go. See
-                    docs/android-midi.md for the Java contract + remaining work
+                    id). Used by p6/device_android.go +
+                    midiin/mapped/platform_android.go. See docs/android-midi.md
+                    for the Java contract + remaining work
 internal/androidusb/ (android) reads USB-MIDI straight from Go over JNI — no
                     Java: driver.RunNative gives the JVM/Context, then it drives
                     UsbManager (enumerate/permission/bulkTransfer) and feeds
@@ -269,8 +314,8 @@ internal/store/     sequence persistence (NO Fyne, NO p6); (profile,slot) ->
   store_mobile.go   (android||ios) a JSON file in private storage (modernc sqlite
                     trips Android's seccomp filter); store_js.go (js) a localStorage
                     JSON blob (no fs / no sqlite on wasm) — both mirror the SQLite
-                    store's API + profile scoping exactly
-                    (also: SamplesDir() -> XDG_DATA_HOME/rp6/samples, where paks install)
+                    store's API + profile scoping exactly. store.go also has
+                    SamplesDir() -> XDG_DATA_HOME/rp6/samples, where paks install
 internal/samplepak/ sample paks (.rp6sp) — pure logic (NO Fyne, NO p6): ZIP +
                     JSON + a stdlib http catalog client. Full design:
                     docs/architecture/store.md
@@ -278,10 +323,18 @@ internal/samplepak/ sample paks (.rp6sp) — pure logic (NO Fyne, NO p6): ZIP +
                     samples/<id>), List, ReadManifest
   catalog.go        Catalog/CatalogEntry, FetchCatalog (resolves relative
                     cover/download URLs), DownloadTemp, FetchBytes, ReadCover
-internal/audio/     reusable audio capture (NO Fyne, NO p6)
+internal/audio/     reusable audio capture + output (NO Fyne, NO p6)
   audio.go          Capturer interface, Peak/RMS, NormDB, Meter (smoothed VU)
   capture_stub.go   default (no tag): OpenCapture -> ErrUnavailable
   capture_malgo.go  //go:build capture: miniaudio/malgo capture backend
+  output.go         Output interface (pull-model playback); output_malgo.go /
+                    output_stub.go, same tag split. The recorder's host output
+                    on the P-6 path
+internal/recorder/  the LOOP page's PCM clip recorder (NO Fyne, NO MIDI, NO
+                    device packages): up to 8 tracks, quantized record/play,
+                    per-track mute + DSP, WAV project save/load (project.go).
+                    Audio callbacks never allocate or touch files. Design:
+                    docs/architecture/recorder.md
 internal/audiofx/   reusable host-side DSP (NO Fyne, NO p6): allocation-free
                     interleaved-float32 processors + the keyboard instrument
                     chain (tone, compressor, chorus, delay, room reverb)
@@ -295,7 +348,7 @@ internal/jam/       host-side shared jam sessions (NO Fyne, NO p6, NO pion) —
                     codes; loopback.go in-memory Transport for tests
   webrtc/           (!nojam && !js && !android && !ios) pion/webrtc mesh transport:
                     unreliable/unordered data channel, WS signaling client,
-                    supervised reconnect, RTT logging; doc.go is the !jam stub that
+                    supervised reconnect, RTT logging; doc.go is the nojam stub that
                     keeps pion out of the excluded builds
   signal/           the WS signaling hub (NO pion): path-gated /s/<code> + rate
                     limits/caps/keepalive; served by the cmd/rp6-signal binary.
@@ -305,31 +358,41 @@ internal/ui/components/   GENERIC, reusable Fyne widgets (NO p6 import!)
   pad.go            Pad: colored, selectable, tap-flash key + bottom badge icons
   padgrid.go        PadGrid: generic paged, selectable grid (Cell/Badges/OnTrigger);
                     the page selector is a row of backlit RackToggles (PageAccent)
+  physicalgrid.go   PhysicalGrid: square cells bounded in *physical* pixels
+                    (pads, sequencer steps) — see the §7 touch-cell contracts
+  contentfit.go     ContentFit: one-child wrapper that sizes content to a
+                    preferred size within its allocation
+  piano.go          PianoKeyboard: touch-friendly chromatic keyboard (KEYS rack)
   stepbutton.go     StepButton: backlit physical seq-key: dim(off)/fully-lit
                     (programmed)/white-hot (playhead); SetAccent tints it with
                     the track's pad bank color
-  sevenseg.go       SevenSeg: red 7-segment numeric readout
+  sevenseg.go       SevenSeg: red 7-segment numeric readout (unused by the app
+                    since Delay/Reverb became knobs)
   knob.go           Knob: a machined gunmetal rotary cap (seated on the rack)
                     on the left + a dark LCD display (amber caption + value) to
                     its right; focusable (cap ring lights when focused); mouse
-                     drag / scroll wheel / arrow keys change it. TEMPO + PATTERN,
-                    and the sequencer's TRK (track count) + SEQ (slot) knobs
+                    drag / scroll wheel / arrow keys change it. TEMPO, PATTERN,
+                    Delay/Reverb, Roll Rate, OCT, the keyboard FX macros, and
+                    the sequencer's TRK (track count) + SEQ (slot) knobs
   transportbutton.go TransportButton: illuminated play/stop key (the triangle +
                     ■ are drawn as images, not font glyphs, so they render on web
                     too); NewTransportToggle is the toolbar's Play<->Stop toggle,
                     NewWalkerToggle the same toggle with walking-feet icons (the
                     sequencer's Play/Stop)
-  levelmeter.go     LevelMeter: vertical segmented LED meter + peak hold
+  levelmeter.go     LevelMeter: segmented LED meter + peak hold (vertical, or
+                    horizontal via SetHorizontal — the app uses horizontal)
   led.go            LED: round status indicator, soft glow, optional breathe
+  ticker.go         coalescedTicker: the shared fyne.Do animation tick behind the
+                    LED pulse and the Knob's pending-flash blink (see §6)
   racktoggle.go     RackToggle: backlit rack-label on/off toggle (lit in accent
                     when on, greyed when off; hover brightens the lit state; an
                     "armed" state floods the whole plate with the accent color —
                     see SetArmed); text or icon; optional Ctrl+click alt action
                     (via desktop.Mouseable). Used for the bottom-bar section
-                    toggles (PADS/DLY-REV/FX/SEQ/VU), the pad rack's left tool
-                    strip (float/listen/density icons), the pad grid's A-D/E-H
-                    page selector, the sequencer's armed-track mute + bar-length
-                    controls (a shared second row), and the sequencer's per-track
+                    toggles and their popup selectors, the pad rack's tool
+                    strip (float/listen/keys-route icons + store), the pad
+                    grid's bank-page selector, the sequencer's armed-track
+                    mute + bar-length controls (a shared second row), and the sequencer's per-track
                     pad-assign keys (tap to arm, then tap a pad to assign —
                     tinted with the track's pad bank color)
   devicebadge.go    DeviceBadge: backlit synth "nameplate" naming the connected
@@ -339,6 +402,8 @@ internal/ui/components/   GENERIC, reusable Fyne widgets (NO p6 import!)
                     OnToggle (switch backend); the gear fires OnSettings.
                     Generic — the app supplies name/tag/accent (amber=P-6
                     hardware, cyan=emu) and the actions.
+  rackcycle.go      RackCycle: backlit control that cycles a fixed set of icon
+                    states (the pad rack's paged / two-bank / dense selector)
   rackpanel.go      RackPanel: gunmetal rack-unit frame with corner screws
 internal/ui/layoutspec/  layout builder IR (NO p6): a tree of Nodes (Ref/RefWith,
                     VBox/HBox/Stack/Border/Split/Grid/RackPanel/Spacer/Separator)
@@ -351,10 +416,25 @@ internal/ui/layoutlang/  the text layout language (imports only layoutspec +
                     layoutspec Nodes; conditions evaluate over an Env of flags.
                     Pages() returns the `page <id> <Label> { … }` blocks; each page
                     holds its own variants, selected by SelectForPage(pageID, env).
+internal/ui/inspect/  semantic layout inspection (NO p6): records logical +
+                    physical rects, visibility, clipping and state for stable
+                    IDs, renders annotated PNG/JSON artifacts, and checks layout
+                    contracts. See §7
 internal/ui/theme/theme.go   Amber: dark Fyne theme with amber accent
 cmd/rp6/padgrid.go    P-6 grid config + padID<->(bank,number) mapping + colors
-cmd/rp6/effectsrack.go the "effects rack" for the selected pad (4 slots + Rate)
+cmd/rp6/effectsrack.go the PAD FX rack for the selected pad (Roll toggle + Rate)
 cmd/rp6/sequencerrack.go the step-sequencer panel (tracks + step grid + transport)
+cmd/rp6/keyboardrack.go the KEYS rack (piano + OCT); keyboardfxrack.go the
+                    emulator-only KEYS FX rack over the internal/audiofx chain
+cmd/rp6/recorderrack.go the LOOP page's REC rack (UI adapter over
+                    internal/recorder); recorderpersist.go + recorderdir_*.go
+                    save/load its projects per platform
+cmd/rp6/paksrack.go   the PAKS kit selector (installed paks + filter + store key)
+cmd/rp6/midimap.go    the external-controller intent vocabulary + .midimap loading
+                    (embedded maps + $XDG_CONFIG_HOME/rp6/midimaps/)
+cmd/rp6/metersource.go the VU meter's sources (live audioSource / activitySource)
+cmd/rp6/inspection.go the semantic inspection targets (stable IDs) — see §7
+cmd/rp6/platform*.go  per-platform constants/seams (desktop, mobile, js)
 cmd/rp6/layout.go     loads the embedded UI layout, selects a variant per env,
                     composes rack internals + applies component properties
 cmd/rp6/assets/*.layout  the compiled-in UI layouts: default.layout is the PLAY
@@ -421,8 +501,8 @@ cmd/rp6/screens_test.go the desktop screen matrix + TestContentFitsScreens: ever
 ### The emulator (use rp6 without the hardware)
 
 - `p6.Controller` is the swap point: everything the app needs from a "P-6"
-  (trigger pads, CC/PC, transport, `Listen`, `Config`/`Path`/`Close`). Both the
-  real `*p6.Device` and `*emu.Emulator` implement it, so `ui.dev` is a
+  (trigger pads, `PlayNote`, CC/PC, transport, `Listen`, `Config`/`Path`/
+  `Close`). Both the real `*p6.Device` and `*emu.Emulator` implement it, so `ui.dev` is a
   `p6.Controller` and `p6.NewClocker` takes a `p6.ClockTarget` (a subset).
 - Run it with **`rp6 -emu /path/to/samples`** (or env **`RP6_EMU_SAMPLES`**).
   `openDevice()` picks the emulator when `u.useEmu` (loading `emu.Open(emuDir)`,
@@ -455,15 +535,20 @@ cmd/rp6/screens_test.go the desktop screen matrix + TestContentFitsScreens: ever
 - **Sample paks & the store.** A directory of samples + metadata can be packed
   into a single **`.rp6sp`** file (a ZIP: `manifest.json` + samples + optional
   cover/credits) and installed into `XDG_DATA_HOME/rp6/samples/<id>/`, which the
-  emulator loads like any other samples dir. The pad rack's blue **store** toggle
-  browses an online **catalog** and installs packs; `rp6 pak create|install|list`
-  and `-pak file.rp6sp` do it from the CLI. Desktop-only (web/mobile get stubs).
-  Full design: `docs/architecture/store.md`.
-- The emulator **only plays pad triggers** — it has no internal
+  emulator loads like any other samples dir (`paksSamplesDir()` picks the
+  platform's location). The blue **store** key browses an online **catalog** and
+  installs packs (desktop + Android/iOS; the web build stubs it), and the PAKS
+  rack switches between installed ones; `rp6 pak create|install|list` and
+  `-pak file.rp6sp` do it from the CLI (desktop-only). Full design:
+  `docs/architecture/store.md`.
+- The emulator **only plays pad triggers and keyboard-mode notes** (`PlayNote`
+  pitches the last-played pad) — it has no internal
   sequencer/patterns/granular/FX, so `Start/Stop/Clock/ProgramChange/*CC` are
   accepted **no-ops** and `Listen` returns `p6.ErrNoInput` (the connect
-  goroutine special-cases it). rp6's host-side step sequencer still works: it
-  fires pads via `firePadVel` → `TriggerPadVelocity`, which the emulator plays.
+  goroutine special-cases it). That's why the P-6 rack (Play/PATTERN/Delay/
+  Reverb) is gated off on the emulator (`applyBackendGating`). rp6's host-side
+  step sequencer still works: it fires pads via `firePadVel` →
+  `TriggerPadVelocity`, which the emulator plays.
 - **Sequences are profile-scoped** so they don't intermingle with the P-6's:
   each `-emu` samples directory persists under its own `"emu:<abs-dir>"` profile
   in the store, and hardware/no-`-emu` runs use `"p6"` (see §3 store notes).
@@ -545,8 +630,13 @@ also **verified live** against real hardware.
   setting **MIDI Clock Sync (`SYnC`) = USB**. Crucially, `Start` alone does
   nothing visible — the sequencer only advances on a stream of **clock pulses**
   (24 PPQN). That's why `p6.Clocker` streams `0xF8` at the set tempo; the tempo
-  slider *is* the P-6's tempo when clock-slaved. (Verified: Play/Stop/tempo all
+  knob *is* the P-6's tempo when clock-slaved. (Verified: Play/Stop/tempo all
   work once `SYnC=USB`.)
+- **Keyboard mode**: a Note On on the **Auto** channel plays the *physically
+  selected* pad's sample pitched chromatically, `p6.KeyboardCenterNote` (C4 =
+  60) being the original pitch (`Device.PlayNote`). The KEYS rack uses this.
+  Which sample sounds is still the user's selection on the hardware — see below.
+  (Not recorded here as hardware-verified like the items above.)
 - **Granular engine + global Delay/Reverb** via Control Change (see `p6/cc.go`).
 
 ### What you CANNOT control (do not build these; verified impossible)
@@ -618,10 +708,12 @@ selects the granular source A1..H6).
   dumps goroutine stacks to `/tmp/rp6-stall.txt` when the loop freezes >1.5s.
 - **Coalesce periodic `fyne.Do` updates — don't flood the loop.** Fyne runs one
   render loop for all windows; `fyne.Do` closures queue on it. Periodic animators
-  (the VU meter and the LED breathe, both 40 ms) skip posting while their
-  previous update is still pending (an `atomic.Bool` guard), so a slow frame
-  can't grow the queue unboundedly. (Hygiene — the historical multi-window freeze
-  was the vsync/`SwapBuffers` stall above, not queue flooding.)
+  (the VU meter and LED breathe at 40 ms, the Knob's pending-flash blink) skip
+  posting while their previous update is still pending (the meter via its own
+  `atomic.Bool` in `main.go`, the components via the shared `coalescedTicker` in
+  `components/ticker.go`), so a slow frame can't grow the queue unboundedly.
+  (Hygiene — the historical multi-window freeze was the vsync/`SwapBuffers`
+  stall above, not queue flooding.)
 - **Toggling visibility doesn't relayout by itself.** Fyne's border layout
   respects `Visible()`, but you must trigger a relayout: keep a reference to the
   container (`u.root`) and call `.Refresh()` after `Show()/Hide()` (see
@@ -652,10 +744,11 @@ selects the granular source A1..H6).
   canvas first reads as its *pixel* size (1344×2992 = tablet-class), the tablet
   variant is entered, and its `paks`/`keys(show: true)` used to leak into the
   phone layout once the real scale settled (PAKS + KEYS on at every launch).
-  Never restore *mid-build* or from an ad-hoc goroutine (the shaper race). Also:
-  after a synchronous relayout that handled a full-screen flip, set
-  `u.lastFullScreen` yourself so `onCanvasResize` doesn't fire a *second*,
-  redundant relayout.
+  Never restore *mid-build* or from an ad-hoc goroutine (the shaper race).
+  `onCanvasResize` only queues a relayout when the new size selects a different
+  variant (`variantFor(size) != u.activeVariant`), so a resize that follows a
+  synchronous relayout (e.g. a full-screen flip) doesn't build the same variant
+  twice.
 - **Don't move a CanvasObject tree between windows — rebuild it.** Fyne keys the
   object→canvas association in a global 1:1 map (`internal/cache/canvases.go`,
   `SetCanvasForObject` uses `LoadOrStore`), so re-parenting the *same* tree to a
@@ -666,7 +759,7 @@ selects the granular source A1..H6).
   selection state) rather than moving `padRackObj`. Each window then owns its
   objects, so normal `Refresh()` works there (flash included) with no repaint
   hacks. (Docking a rack that stays in the *same* window — e.g. the sequencer
-  side-column, or the density grid swap — is fine; that's not a window change.)
+  side-column, or the pad-layout grid swap — is fine; that's not a window change.)
 - **Maximize needs a resizable window, minimums that fit, and polling.** On
   GNOME, libdecor and Mutter refuse to maximize a fixed-size window (min ==
   max), so the desktop window is resizable — with **no artificial minimum**:
@@ -857,17 +950,3 @@ pads" facts were nailed down.
   size-dependent launch defaults (e.g. tablets starting in the console layout) are
   decided there, once. Persist per-session UI choices with `app.Preferences()`
   (see `pad.layout` / `console.on`).
-
----
-
-## 10. Ideas / not-yet-built
-
-- Velocity control for pad hits (currently fixed `p6.DefaultVelocity`).
-- More effect kinds in `internal/effects` (probability, ratchet, delay-throw…):
-  add a `Kind`, an `Icon()`, and behavior. **Roll** is the only one implemented;
-  it's a host-side *retrigger*, not the hardware LOOP (which has no MIDI). A pad
-  with a Roll slot toggles rolling on tap, tempo-synced to the current BPM.
-- PC-keyboard shortcuts (keys → visible row of pads, space = Play/Stop).
-- A scripting CLI over the `p6` package (`rp6 pad E1`, `rp6 pattern 5`, ...).
-- A capture-based looper (record the P-6's audio via `internal/audio` and loop
-  it host-side) — the `Capturer` interface already yields the raw frames it needs.
