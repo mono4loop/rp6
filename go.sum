@@ -1,7 +1,7 @@
-code.rbel.co/rubiojr/fade v0.12.5-0.20261006184108-0f61861a78a8 h1:jtjnd+lSJTO6AkzaYoEVJC548+AZhVjRw87YzF6IvEk=
-code.rbel.co/rubiojr/fade v0.12.5-0.20261006184108-0f61861a78a8/go.mod h1:XWvIArHCjJN77UFNNg/dxXTNKMUQRMNTRKP3hQdW+zk=
-code.rbel.co/rubiojr/fade/third_party/glfw-touch v0.0.0-20261006184108-0f61861a78a8 h1:h6T7E75dpq6i6RQoK0Dn4o8ah22+EPfxr22/vNtJkdY=
-code.rbel.co/rubiojr/fade/third_party/glfw-touch v0.0.0-20261006184108-0f61861a78a8/go.mod h1:T5Dn0JwIJOX1euPZ/iT4tq6nFYtmukjcYa7937HuYK8=
+code.rbel.co/rubiojr/fade v0.13.0 h1:Kev8x662cdiyDCrJamyunUlrRr9ZwUA761R4N0a8K5o=
+code.rbel.co/rubiojr/fade v0.13.0/go.mod h1:XWvIArHCjJN77UFNNg/dxXTNKMUQRMNTRKP3hQdW+zk=
+code.rbel.co/rubiojr/fade/third_party/glfw-touch v0.0.0-20261008095649-22ae172be326 h1:OO+e+6aF9pSVaXSFU+NoMheHxKfU7Bnqx6LYJMT1+Cc=
+code.rbel.co/rubiojr/fade/third_party/glfw-touch v0.0.0-20261008095649-22ae172be326/go.mod h1:T5Dn0JwIJOX1euPZ/iT4tq6nFYtmukjcYa7937HuYK8=
 fyne.io/fyne/v2 v2.8.1 h1:EztGuE2W3Qhd0cWVmU+h5rkzNezUD1To6UqsoLQYUIM=
 fyne.io/fyne/v2 v2.8.1/go.mod h1:kpeuFrClm0fiAgJYr2soTfwKMT5rzNcSKzmgGjxvHOY=
 fyne.io/systray v1.12.3-0.20260810170012-af4e8e793ec4 h1:149/+Wa5EsLLXfyj2pdTmvnQf2VIlgCIwSjcCTHYhIo=

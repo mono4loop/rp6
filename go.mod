@@ -3,7 +3,7 @@ module github.com/mono4loop/rp6
 go 1.27.1
 
 require (
-	code.rbel.co/rubiojr/fade v0.12.5-0.20261006184108-0f61861a78a8
+	code.rbel.co/rubiojr/fade v0.13.0
 	fyne.io/fyne/v2 v2.8.1
 	github.com/gen2brain/malgo v0.11.25
 	github.com/go-gl/glfw/v3.4/glfw v0.1.0-pre.1.0.20260707082822-2a407d02d01a
@@ -83,4 +83,4 @@ require (
 
 tool golang.org/x/mobile/cmd/gobind
 
-replace github.com/go-gl/glfw/v3.4/glfw => code.rbel.co/rubiojr/fade/third_party/glfw-touch v0.0.0-20261006184108-0f61861a78a8
+replace github.com/go-gl/glfw/v3.4/glfw => code.rbel.co/rubiojr/fade/third_party/glfw-touch v0.0.0-20261008095649-22ae172be326

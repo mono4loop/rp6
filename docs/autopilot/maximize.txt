@@ -1,12 +1,13 @@
 # Live maximize check, run by `make smoke-maximize` (scripts/smoke-maximize.sh
-# checks the RP6_DIAG log it leaves). F9 is bound only in -tags autopilot builds:
-# it asks the compositor to maximize the window through GLFW, the request a
-# title-bar double-click makes, and F9 again restores it.
+# also checks the RP6_DIAG log it leaves). The window commands make the same
+# compositor requests the title bar does; the console shows the keyboard, the
+# window layout puts it away again.
 wait idle
-key F9
-wait 3s
-wait keyboard_keys
-key F9
-wait 3s
+window maximize
+wait maximized 5s
+wait keyboard_keys 5s
+window restore
+wait windowed 5s
+wait gone keyboard_keys 5s
 wait idle
 quit

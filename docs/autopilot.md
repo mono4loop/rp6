@@ -88,19 +88,21 @@ success RP6 quits; a step that fails stops the script and leaves RP6 open, so
 run it under `timeout` and treat a timeout as a failure.
 
 [`autopilot/maximize.txt`](autopilot/maximize.txt) is the live maximize check
-behind `make smoke-maximize` (`scripts/smoke-maximize.sh`). Autopilot builds
-bind **F9** to toggle maximize through GLFW, the same compositor request a
-title-bar double-click makes; the script maximizes and restores, and the
-wrapper checks the `RP6_DIAG` log that the compositor sized the maximize, the
-console showed, and the window came back at the windowed size.
+behind `make smoke-maximize` (`scripts/smoke-maximize.sh`): `window maximize`
+makes the compositor request a title-bar double-click makes; the script waits
+for `maximized` and for the console's keyboard to show, restores, and waits for
+`windowed` and the keyboard to go. The wrapper then checks the `RP6_DIAG` log
+that the compositor really sized the maximize and the window came back at the
+windowed width.
 
 ## Limits
 
-- **No modifiers.** Ctrl+click (Ctrl+click Clear deletes the whole sequence)
-  and the Ctrl+Shift shortcuts can't be scripted. Tap the buttons instead.
+- **No modified clicks.** Ctrl+click (Ctrl+click Clear deletes the whole
+  sequence) can't be scripted; tap the buttons instead. Keys take modifiers:
+  `key ctrl+shift+Return` is the Ctrl+Shift+Enter console toggle.
 - **No window chrome.** The title bar is drawn by libdecor, outside the app, so
-  a title-bar double-click can't be scripted; F9 (autopilot builds only) makes
-  the same maximize request.
+  a title-bar double-click can't be scripted; `window maximize` makes the same
+  request.
 - **`quit` is a normal quit.** It runs RP6's shutdown through Fyne's lifecycle
   stop hook: the working sequence and recorder takes are autosaved, a playing
   P-6 is sent MIDI Stop, and the devices are released — the same as closing

@@ -144,8 +144,8 @@ script `FADE_AUTOPILOT` names — taps, drags, typing — for demos and real-dis
 / on-device smoke checks. Script names are the inspection IDs with `_` for `.`
 (`sequencer_track_1_step_1`). Without the tag `Attach` is a no-op. Usage, limits
 and the Android flow: `docs/autopilot.md`. **`go.mod` replaces
-`github.com/go-gl/glfw/v3.4/glfw` with Fade's patched GLFW** (Wayland touch) for
-every build — the tagged build needs it, and keeping it on for all builds means
+`github.com/go-gl/glfw/v3.4/glfw` with Fade's patched GLFW** (Wayland touch, and
+the window lookups fade's `toplevel` package needs) for every build — the tagged build needs it, and keeping it on for all builds means
 they all run the same GLFW. Bump the `fade` requirement and the replacement to
 the same Fade commit together. Because of the `replace`,
 `go install github.com/mono4loop/rp6/cmd/rp6@<version>` doesn't work; build
@@ -370,13 +370,12 @@ cmd/rp6/pak.go        (desktop) sample-pak CLI (pak create/install/list), the -p
 cmd/rp6/autopilot.go  attaches Fade's autopilot to the main window (-tags
                     autopilot; a no-op otherwise): Named resolves script names
                     through inspectionTargets(), Idle = no sample pak loading
-                    (loadingSamples) and no relayout queued. See docs/autopilot.md.
-                    autopilot_keys.go (-tags autopilot) binds F9 to maximize/
-                    restore for `make smoke-maximize`
+                    (loadingSamples) and no relayout queued. See docs/autopilot.md
 cmd/rp6/nativewin*.go the nativeWindow seam to window state Fyne hides: maximize
-                    state/requests and the monitor mode. nativewin_wayland.go
-                    (wayland tag) gets GLFW's window from Fyne's wl_surface;
-                    nativewin_stub.go returns nil elsewhere. See layouts.md §8
+                    state/requests/events, the compositor's bounds and the
+                    monitor mode. nativewin_desktop.go is fade's toplevel package
+                    + GLFW's monitors; nativewin_stub.go returns nil on web and
+                    mobile. See layouts.md §8
 cmd/rp6/screens_test.go the desktop screen matrix + TestContentFitsScreens: every
                     desktop variant's content min fits every resolutions.txt screen
 ```
@@ -675,13 +674,13 @@ selects the granular source A1..H6).
   flags the window maximized and leaves the size), and Fyne grows any window
   back to its content minimum. So every desktop variant's content minimum must
   fit every supported screen (`TestContentFitsScreens`, `resolutions.txt`).
-  Fyne has no maximize API or event: `nativewin_wayland.go` gets GLFW's window
-  from the `wl_surface` Fyne exposes and `syncMaximized` reads `glfw.Maximized`
-  on every resize and every meter tick (an unsized maximize never resizes); a
-  maximized window shows the console. The windowed size is fitted to the screen
-  (`windowedSize`, learned work area or monitor mode ÷ scale − 100). Wayland-only
-  (`wayland` tag); elsewhere `native` is nil. Details:
-  `docs/architecture/layouts.md` §8.
+  Fyne has no maximize API or event: fade's `toplevel` package (v0.13.0) supplies
+  them, wrapped by `nativewin_desktop.go`; the maximize event and the meter tick
+  both run `pollWindow` (an unsized maximize never resizes), and a maximized
+  window shows the console. The windowed size is fitted to the screen
+  (`windowedSize`: the compositor's bounds where known, else the learned work
+  area, else monitor mode ÷ scale − 100). Desktop builds; on web/mobile `native`
+  is nil. Details: `docs/architecture/layouts.md` §8.
 - **Keep widget footprints fixed if they swap content**, or the layout jumps —
   either reserve the space (`container.NewGridWrap`) or make the widget always
   render the same layout rather than hiding/showing sub-objects on state change.
@@ -764,8 +763,9 @@ selects the granular source A1..H6).
   `TestContentFitsScreens` checks every desktop screen in `resolutions.txt`.
 - **Compositor behaviour needs a live check on the real app.** Headless tests
   and a toy probe window passed while the real app couldn't maximize. Run
-  `make smoke-maximize` after window sizing/maximize changes: it maximizes and
-  restores the actual app (an autopilot-only F9) and checks the `RP6_DIAG` log.
+  `make smoke-maximize` after window sizing/maximize changes: its autopilot
+  script maximizes and restores the actual app (`window maximize`, `wait
+  maximized`, `wait keyboard_keys`…) and the wrapper checks the `RP6_DIAG` log.
   The title-bar double-click itself stays a hand check (libdecor draws the bar).
 - **Containment is different from rack non-overlap.** A child can paint outside
   its rack while rack rectangles remain disjoint because Fyne containers usually

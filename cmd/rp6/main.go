@@ -603,9 +603,7 @@ func (u *ui) build(w fyne.Window) {
 		w.Canvas().SetOnTypedKey(func(ev *fyne.KeyEvent) {
 			if ev.Name == fyne.KeyF11 {
 				u.toggleFullScreen()
-				return
 			}
-			u.autopilotKey(ev.Name)
 		})
 	}
 	// Ctrl+Shift+Enter is the always-works alternative (a modified shortcut fires
@@ -729,10 +727,17 @@ func (u *ui) screenKey() (key string, screen fyne.Size, ok bool) {
 }
 
 // windowedSize is the windowed size for the window's screen: the design size
-// clamped to the work area. The work area is the canvas the window last had
-// maximized on this screen setup (exact on any desktop: GNOME, KDE, docks), or
-// else the screen less screenReserve; the design size until the screen is known.
+// clamped to the work area. The work area is what the compositor suggests for
+// the window where that is known (nativeWindow.Bounds: not on GNOME, whose
+// libdecor keeps it), else the canvas the window last had maximized on this
+// screen setup (exact on any desktop: GNOME, KDE, docks), else the screen less
+// screenReserve; the design size until the screen is known.
 func (u *ui) windowedSize() fyne.Size {
+	if u.native != nil {
+		if b, ok := u.native.Bounds(); ok {
+			return windowedSizeFor(fyne.NewSize(b[0], b[1]), 0)
+		}
+	}
 	key, screen, ok := u.screenKey()
 	if !ok {
 		return fyne.NewSize(designWidth, designHeight)
@@ -873,6 +878,16 @@ func (u *ui) requestRelayout() {
 	case u.relayoutReq <- struct{}{}:
 	default:
 	}
+}
+
+// watchNativeWindow reacts to the window being maximized or restored, by the
+// user or by us, as soon as the compositor says so: the same work the meter
+// tick polls for, run on the UI loop from the event.
+func (u *ui) watchNativeWindow() {
+	if u.native == nil {
+		return
+	}
+	u.native.OnMaximize(func(bool) { u.pollWindow() })
 }
 
 // pollWindow runs on the UI loop from the meter tick. It re-reads the maximize
@@ -3516,6 +3531,7 @@ func main() {
 	if !onMobile {
 		u.fullScreen = startConsole
 		u.native = newNativeWindow(w)
+		u.watchNativeWindow()
 		if startConsole {
 			w.SetFullScreen(true)
 		}

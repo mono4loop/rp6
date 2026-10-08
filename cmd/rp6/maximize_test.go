@@ -17,11 +17,15 @@ type fakeNative struct {
 	on               bool
 	restores         int
 	screenW, screenH int
+	bounds           [2]float32
+	onMaximize       func(bool)
 }
 
-func (f *fakeNative) Maximized() bool { return f.on }
-func (f *fakeNative) Maximize()       { f.on = true }
-func (f *fakeNative) Restore()        { f.restores++; f.on = false }
+func (f *fakeNative) Maximized() bool            { return f.on }
+func (f *fakeNative) Maximize()                  { f.on = true }
+func (f *fakeNative) Restore()                   { f.restores++; f.on = false }
+func (f *fakeNative) OnMaximize(h func(bool))    { f.onMaximize = h }
+func (f *fakeNative) Bounds() ([2]float32, bool) { return f.bounds, f.bounds[0] > 0 }
 func (f *fakeNative) ScreenPixels() (int, int, bool) {
 	return f.screenW, f.screenH, f.screenW > 0
 }
@@ -35,6 +39,7 @@ func newMaximizeTestUI(t *testing.T) (*ui, *fakeNative) {
 	u := newTestUI(t)
 	f := &fakeNative{}
 	u.native = f
+	u.watchNativeWindow()
 	u.win.Resize(fyne.NewSize(designWidth, designHeight))
 	require.Equal(t, "window", u.activeVariant)
 	return u, f
@@ -234,4 +239,30 @@ func TestWindowFitsScreen(t *testing.T) {
 	compositorResize(u, fyne.NewSize(1000, 900))
 	assert.Equal(t, "window", u.activeVariant)
 	assert.Equal(t, fyne.NewSize(designWidth, maximizedSize.Height), u.canvasSize(), "snapped to the learned work area")
+}
+
+// TestMaximizeEventShowsConsole: the compositor's answer to a maximize reaches
+// the app as an event (fade's toplevel), before any resize, and that alone
+// switches to the console.
+func TestMaximizeEventShowsConsole(t *testing.T) {
+	u, f := newMaximizeTestUI(t)
+	require.NotNil(t, f.onMaximize, "the app listens for maximize events")
+	f.on = true
+	f.onMaximize(true)
+	select {
+	case <-u.relayoutReq:
+		u.relayout()
+	default:
+		t.Fatal("the event requests a relayout")
+	}
+	assert.Equal(t, "console", u.activeVariant)
+}
+
+// TestBoundsSizeTheWindow: where the compositor tells the window its bounds,
+// the windowed size is clamped to them, with no estimate and nothing learned.
+func TestBoundsSizeTheWindow(t *testing.T) {
+	u, f := newMaximizeTestUI(t)
+	f.screenW, f.screenH = 1920, 1200
+	f.bounds = [2]float32{1536, 928}
+	assert.Equal(t, fyne.NewSize(designWidth, 928), u.windowedSize())
 }

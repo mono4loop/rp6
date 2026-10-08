@@ -309,26 +309,27 @@ layout at the windowed size. What makes this work:
   earlier 850×950 floor broke maximize on 1.25× laptops: taller than the work
   area, so Mutter flagged the window maximized without sizing it. The `window`
   variant tolerates being stretched (`thinkpad-x13-window-stretched-1100x1000`).
-- **Fyne has no maximize API or event.** `nativewin_wayland.go` reaches GLFW
-  through the window's `wl_surface` (Fyne's `driver.NativeWindow`), whose user
-  data GLFW sets to its own window, and reads `glfw.Maximized`. `syncMaximized`
-  re-reads it on every resize *and* every 40 ms meter tick (`pollWindow`): a
-  maximize the compositor can't size never resizes the window, so resize-driven
-  detection alone misses it. A flip queues a relayout, and the variant switch
-  also restores the racks the console force-showed (`selectLayout`). Native
-  Wayland builds only; X11, web and mobile get a nil `nativeWindow` (only full
-  screen selects the console there, and the window keeps the design size).
-  Tests use a fake.
-- **The windowed size fits the screen.** Fyne exposes no screen, and GLFW on
-  Wayland only knows each monitor's mode (its "work area" is the whole mode;
-  `xdg_wm_base` is bound at v1, so no `configure_bounds`). `windowedSize()`
-  clamps the design size to the screen's work area: the canvas the window last
-  had maximized on that screen setup (learned into the `window.workarea.<mode>@<scale>`
-  preference, exact on any desktop), or else the smallest monitor's mode ÷ the
-  window's scale less `screenReserve` (100, for panels and the title bar). The
-  scale is only known once the window is shown, so the window opens at the
-  design size and the meter tick fits it once per screen setup
-  (`fitWindowToScreen`).
+- **Fyne has no maximize API or event; fade's `toplevel` package supplies
+  them.** `nativewin_desktop.go` wraps `toplevel.Maximized`, `SetMaximized`,
+  `OnMaximize` and `Bounds`, which reach the GLFW window behind the Fyne window
+  through fade's GLFW fork (v0.13.0: a lookup by native handle and a default
+  maximize callback). The maximize event (`watchNativeWindow` → `pollWindow`)
+  switches the layout as soon as the compositor answers; `syncMaximized` also
+  re-reads the state on every resize and every 40 ms meter tick. A flip queues
+  a relayout, and the variant switch also restores the racks the console
+  force-showed (`selectLayout`). Desktop builds only; web and mobile get a nil
+  `nativeWindow` (only full screen selects the console there, and the window
+  keeps the design size). Tests use a fake.
+- **The windowed size fits the screen.** `windowedSize()` clamps the design
+  size to the work area, from the first of: the bounds the compositor sent the
+  window (`toplevel.Bounds`, `xdg_toplevel.configure_bounds` — unknown on GNOME,
+  where libdecor keeps it, and on X11); the canvas the window last had
+  maximized on that screen setup (learned into the
+  `window.workarea.<mode>@<scale>` preference, exact on any desktop); else the
+  smallest monitor's mode ÷ the window's scale less `screenReserve` (100, for
+  panels and the title bar). The scale is only known once the window is shown,
+  so the window opens at the design size and the meter tick fits it once per
+  screen setup (`fitWindowToScreen`).
 - **The snap back retries.** On un-maximize (or leaving full screen) the
   compositor restores an earlier frame, which may be a dragged size, so the
   meter tick resizes the window to `windowedSize()` (`snapToWindowed`). Right

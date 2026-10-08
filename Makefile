@@ -135,9 +135,10 @@ test:
 inspect-layouts:
 	RP6_UPDATE_LAYOUT_ARTIFACTS=1 go test ./cmd/rp6 -run TestCurrentLayoutsAtTargetResolutions -count=1 -v
 
-# Live check on a real Wayland display: maximize and restore the real app (an
-# autopilot-only F9) and check from the RP6_DIAG log that the compositor sized
-# the maximize and the layout switched. See scripts/smoke-maximize.sh.
+# Live check on a real Wayland display: an autopilot script maximizes and
+# restores the real app and waits for the console layout to show and go, then
+# the RP6_DIAG log confirms the compositor sized the maximize. See
+# scripts/smoke-maximize.sh.
 smoke-maximize:
 	./scripts/smoke-maximize.sh
 
